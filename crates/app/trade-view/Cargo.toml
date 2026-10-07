@@ -13,6 +13,12 @@ crate-type = ["cdylib", "rlib"]
 ducktape-view-guest.workspace = true
 gpui.workspace = true
 serde.workspace = true
+# the program's types and rules, linked with `module` off
+trade.workspace = true
+# `Reads`: which tables a query reads, asked of each block's change
+program.workspace = true
+# `PageRequest`: the page a list asks for
+store.workspace = true
 
 [dev-dependencies]
 # a test writes the frame it drew as the JSON the app's `--render-tree` reads
