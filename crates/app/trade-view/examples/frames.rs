@@ -7,8 +7,6 @@
 use ducktape_view_guest::testing::TestAppContext;
 use trade_view::Trade;
 
-// the screens draw on some of the sample; the tests on all of it
-#[allow(dead_code)]
 #[path = "../src/tests/sample.rs"]
 mod sample;
 

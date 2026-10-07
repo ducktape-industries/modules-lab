@@ -151,9 +151,9 @@ impl View for Trade {
     const CAPABILITIES: &'static [Capability] =
         &[Capability::Module, Capability::Op, Capability::Host];
     const TARGETS: &'static [&'static str] = &[trade::MODULE];
-    // The pane layout's column, and a chart beside it that still holds
-    // its tools and the panel's seven columns.
-    const MIN_WINDOW_WIDTH: u32 = 720;
+    // The pane layout's 256 px column, and beside it the 480 px a chart
+    // needs for its tools and the panel for an order's columns.
+    const MIN_WINDOW_WIDTH: u32 = 736;
 
     /// Follows the host and reads what the screen shows: on a first mount,
     /// and again after a snapshot, which carries none of the rows.

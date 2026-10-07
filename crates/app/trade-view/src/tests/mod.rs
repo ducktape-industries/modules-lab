@@ -78,7 +78,7 @@ fn the_manifest_names_the_program_and_what_the_view_asks_of_the_host() {
         [Capability::Module, Capability::Op, Capability::Host]
     );
     // narrower than the desk's 768 px pane, which the view is laid out in
-    assert_eq!(<Trade as View>::MIN_WINDOW_WIDTH, 720);
+    assert_eq!(<Trade as View>::MIN_WINDOW_WIDTH, 736);
 }
 
 #[test]

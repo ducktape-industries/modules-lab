@@ -134,6 +134,9 @@ impl Trade {
     /// What a market order of `amount` comes to against the book on
     /// screen, as far as that book goes; none while its other side is
     /// empty.
+    // ponytail: the prices on screen only (`data::DEPTH` a side), so an
+    // order deeper than those is estimated short, and `affords` likewise;
+    // a `Quote` query answered by the program would be exact.
     fn estimate(&self, side: Side, amount: u64) -> Option<u64> {
         let makers = self.makers(side);
         let (mut left, mut total) = (amount, 0u64);
