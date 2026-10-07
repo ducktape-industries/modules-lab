@@ -47,7 +47,7 @@ pub fn newest_first(number: u64) -> u64 {
     u64::MAX - number
 }
 
-/// An account's open orders: `(owner, order id)`.
+/// An account's open orders, newest first: `(owner, newest_first(id))`.
 pub const OPEN: Set<(u64, u64)> = Set::new("open/");
 /// Every order of an account, newest first: `(owner, newest_first(id))`.
 pub const MINE: Set<(u64, u64)> = Set::new("mine/");

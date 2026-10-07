@@ -8,9 +8,17 @@
 //!   borsh, and [`describe()`]
 //! - `state.rs`: the tables
 //! - `program.rs`: [`Trade`], the program (its name and types, which a view
-//!   names it by)
+//!   names it by) and the module: one match over every op and one over
+//!   every query
+//! - `rules.rs`: what each op checks and writes
+//! - `queries.rs`: one function per question
+//! - `tests.rs`: the module natively over `guest::MockHost`
 mod program;
+mod queries;
+mod rules;
 pub mod state;
+#[cfg(test)]
+mod tests;
 
 pub use program::Trade;
 
@@ -309,4 +317,64 @@ pub struct Fill {
     pub time: u64,
     /// Whether this side's order was resting on the book.
     pub maker: bool,
+}
+
+/// An op as a person reads it: a title and its fields. The source of the
+/// `ducktape.describe` module this module ships (`make wasm-describes`).
+pub fn describe(op: &Op) -> describe::Description {
+    use describe::{Value, field};
+    // an amount or a price, in the parts of one it counts in
+    let units = |value: u64| Value::Amount {
+        value: u128::from(value),
+        decimals: 8,
+    };
+    let (title, fields) = match op {
+        Op::Fund => ("Get practice funds".to_owned(), vec![]),
+        Op::Place {
+            market,
+            side,
+            amount,
+            limit,
+        } => {
+            let market = match MARKETS.get(usize::from(*market)) {
+                Some(market) => market.name.to_owned(),
+                None => format!("market {market}"),
+            };
+            let side = match side {
+                Side::Buy => "Buy",
+                Side::Sell => "Sell",
+            };
+            let mut fields = vec![
+                field("market", Value::text(&market)),
+                field("side", Value::text(side)),
+                field("amount", units(*amount)),
+            ];
+            let how = match limit {
+                Some(limit) => {
+                    fields.push(field("price", units(*limit)));
+                    "at a limit"
+                }
+                None => "at market",
+            };
+            (format!("{side} {market} {how}"), fields)
+        }
+        Op::Cancel { order } => (
+            format!("Cancel order {order}"),
+            vec![field("order", Value::count(*order))],
+        ),
+        Op::CancelAll => ("Cancel all open orders".to_owned(), vec![]),
+    };
+    describe::Description { title, fields }
+}
+
+describe::export!(Op, describe);
+
+/// Old op bytes are described with the current code (`describe`): the op
+/// enum only grows at its end. Append a new variant here; never reorder.
+#[test]
+fn op_variants_only_append() {
+    assert_eq!(
+        describe::variants::<Op>(),
+        ["Fund", "Place", "Cancel", "CancelAll"]
+    );
 }
