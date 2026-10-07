@@ -248,3 +248,21 @@ fn a_reader_with_no_account_reads_everything_and_sends_nothing() {
 fn chart_candles(cx: &TestAppContext) -> usize {
     chart::slots(cx)
 }
+
+/// A market order's funds are checked against the book: while the book
+/// has not been read, the order is not sent.
+#[test]
+fn a_market_order_waits_for_the_book_it_is_checked_against() {
+    let (mut cx, ..) = wide();
+    cx.host()
+        .refuse::<Ask<trade::Trade>>("unavailable", "the node is catching up");
+    // another step asks for the book again, and is refused it
+    cx.simulate_click("trade-step");
+    cx.simulate_click("trade-step-menu-2");
+    cx.run_until_parked();
+    cx.simulate_click("trade-at-market");
+    cx.simulate_input("trade-amount", "0.0100");
+    assert!(!pressable(&cx, "trade-submit"));
+    cx.simulate_submit("trade-amount");
+    assert_eq!(ops(&cx), []);
+}

@@ -257,6 +257,9 @@ impl Trade {
                 if index < book::STEPS.len() && index != self.step {
                     self.step = index;
                     self.book_cursor = 0;
+                    // the old step's rows would be written with this
+                    // one's decimals, and a click would take that price
+                    self.book = Loadable::Idle;
                     self.read_book(cx);
                     cx.notify();
                 }
@@ -395,9 +398,11 @@ impl Trade {
         if let Some(refusal) = self.stats.failed() {
             return bar.child(design::quiet(refusal.message.clone(), theme));
         }
+        // a day nobody traded in has no high and no low to tell
+        let traded = stats.filter(|stats| stats.high > 0);
         bar.when(!wide, |bar| bar.child(div().flex_1()))
-            .child(fact("24h high", stats.map(|stats| self.price(stats.high))))
-            .child(fact("24h low", stats.map(|stats| self.price(stats.low))))
+            .child(fact("24h high", traded.map(|stats| self.price(stats.high))))
+            .child(fact("24h low", traded.map(|stats| self.price(stats.low))))
             .when(wide, |bar| {
                 let volume = stats.map(|stats| format!("{} {base}", format::quote(stats.volume)));
                 bar.child(fact("24h volume", volume))

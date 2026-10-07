@@ -65,11 +65,21 @@ pub(crate) fn volume(value: u64) -> String {
     }
 }
 
-/// What a field holds as a count of 1e-8, grouping commas allowed: `None`
-/// when it is not a number, has more than eight places or does not fit.
+/// What a field holds as a count of 1e-8: `None` when it is not a number,
+/// has more than eight places or does not fit. A comma is read only where
+/// the view writes one, between the whole part's groups of three: `0,5`
+/// is not a number, and never five.
 pub(crate) fn typed(text: &str) -> Option<u64> {
-    let text = text.trim().replace(',', "");
-    let (whole, fraction) = text.split_once('.').unwrap_or((&text, ""));
+    let text = text.trim();
+    let (whole, fraction) = text.split_once('.').unwrap_or((text, ""));
+    let mut groups = whole.split(',');
+    let first = groups.next().unwrap_or_default();
+    let rest: Vec<&str> = groups.collect();
+    let grouped = (1..=3).contains(&first.len()) && rest.iter().all(|group| group.len() == 3);
+    if !(rest.is_empty() || grouped) {
+        return None;
+    }
+    let whole = &whole.replace(',', "");
     let digits = |part: &str| part.bytes().all(|byte| byte.is_ascii_digit());
     if whole.is_empty() && fraction.is_empty() || !digits(whole) || !digits(fraction) {
         return None;
@@ -77,7 +87,7 @@ pub(crate) fn typed(text: &str) -> Option<u64> {
     if fraction.len() > PLACES as usize {
         return None;
     }
-    let whole: u64 = match whole {
+    let whole: u64 = match whole.as_str() {
         "" => 0,
         whole => whole.parse().ok()?,
     };

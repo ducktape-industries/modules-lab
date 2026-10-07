@@ -430,6 +430,14 @@ fn a_number_is_written_with_its_steps_decimals_and_grouped() {
 #[test]
 fn a_typed_number_is_read_back_exactly_or_not_at_all() {
     assert_eq!(format::typed("63,200.0"), Some(63_200 * UNIT));
+    assert_eq!(
+        format::typed("1,000,000.5"),
+        Some(1_000_000 * UNIT + UNIT / 2)
+    );
+    assert_eq!(format::typed("0,5"), None, "a decimal comma is not five");
+    assert_eq!(format::typed("1,5"), None);
+    assert_eq!(format::typed("1000,000"), None);
+    assert_eq!(format::typed("1.000,5"), None);
     assert_eq!(format::typed(" 0.1 "), Some(UNIT / 10));
     assert_eq!(format::typed(".5"), Some(UNIT / 2));
     assert_eq!(format::typed("0.00000001"), Some(1));

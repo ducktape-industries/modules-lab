@@ -176,11 +176,20 @@ impl Trade {
         Some(amount - amount % LOT).filter(|amount| *amount > 0)
     }
 
+    /// Whether the order has its price: the limit typed, or for a market
+    /// order the book read, which its funds are checked against.
+    fn priced(&self, draft: &Draft) -> bool {
+        match self.ticket.market {
+            true => self.book.ready().is_some(),
+            false => draft.limit.is_some(),
+        }
+    }
+
     /// The order the ticket holds, sent: once it is whole, covered, and
     /// the reader may trade.
     fn place(&mut self, cx: &mut Context<Self>) {
         let draft = self.draft();
-        let priced = self.ticket.market || draft.limit.is_some();
+        let priced = self.priced(&draft);
         let (Some(amount), None, true) = (draft.amount, &draft.problem, priced) else {
             return;
         };
@@ -418,7 +427,7 @@ impl Trade {
                     ),
             ),
         };
-        let priced = ticket.market || draft.limit.is_some();
+        let priced = self.priced(&draft);
         let ready = draft.amount.is_some() && draft.problem.is_none() && priced && !ticket.placing;
         let place: Press =
             Box::new(cx.listener(|view: &mut Trade, _: &ClickEvent, _, cx| view.place(cx)));
