@@ -407,10 +407,14 @@ impl Render for Market {
             None => div().size_full().into_any_element(),
             Some(plot) => self.chart(plot, &theme, cx).into_any_element(),
         };
-        let measured = cx.listener(|view: &mut Market, size: &(Pixels, Pixels), _, cx| {
-            view.size = (f32::from(size.0), f32::from(size.1));
-            cx.notify();
-        });
+        // The host tells a first sight of the chart as a show and every
+        // later size as a resize; the chart is drawn from either.
+        let measured = || {
+            cx.listener(|view: &mut Market, size: &(Pixels, Pixels), _, cx| {
+                view.size = (f32::from(size.0), f32::from(size.1));
+                cx.notify();
+            })
+        };
         div()
             .size_full()
             .flex()
@@ -439,7 +443,8 @@ impl Render for Market {
                 sensor("market-chart", chart)
                     .flex_1()
                     .min_h_0()
-                    .on_resize(measured),
+                    .on_show(measured())
+                    .on_resize(measured()),
             )
     }
 }
@@ -461,10 +466,12 @@ impl Market {
                 .text_size(design::text::CAPTION)
                 .text_color(theme.muted)
         };
-        let prices = (0..=BANDS).map(|rule| {
-            let (y, at) = plot.ruled(rule);
-            label(price(at)).left(px(plot.width + 6.)).top(px(y - 7.))
-        });
+        // The last price's tag covers a rule's price that is under it.
+        let tagged = plot.candles.last().map(|last| plot.y(last.close).round());
+        let prices = (0..=BANDS)
+            .map(|rule| plot.ruled(rule))
+            .filter(|(y, _)| tagged.is_none_or(|tag| (tag - y).abs() > 14.))
+            .map(|(y, at)| label(price(at)).left(px(plot.width + 6.)).top(px(y - 7.)));
         let last = plot.candles.last().map(|last| {
             label(price(last.close))
                 .left(px(plot.width + 1.))

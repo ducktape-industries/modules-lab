@@ -51,7 +51,35 @@ There is no runner that keeps one view alive without a node. What there is:
    both and leaves `shots/*.png`. The frame is still: nothing answers a click.
 3. **Live, in the app.** The app loads `<program>_view.wasm` out of
    `DUCKTAPE_VIEWS_DIR` in place of the view the network serves for that
-   program. It needs a node whose roster lists the program.
+   program, and takes the tab's name from the file's own manifest. It needs
+   a node whose roster lists the program; qa's founding lists `explorer` as
+   a view with no program behind it, so on a `kit` stage:
+
+   ```sh
+   make wasm-views
+   mkdir -p /tmp/views && cp target/wasm32-unknown-unknown/release/market_view.wasm /tmp/views/explorer_view.wasm
+   DUCKTAPE_VIEWS_DIR=/tmp/views kit app NAME    # the Explorer tab is now Market
+   ```
+
+   The file is read again each time the pane opens: rebuild, copy, close
+   the pane and open it.
+
+## Measured
+
+market-view in the app at 833487e8 (a release build, `DUCKTAPE_PERF=1`,
+read at the test door's `/perf`), on a Ryzen 9 5950X. One redraw is one tick:
+a slot the pointer enters, a wheel notch, a drag step, a clock tick. p50,
+with p95 in brackets:
+
+| Candles on screen | fuel | wasm tick | decode + merge + replace | host render | frame |
+|---|---|---|---|---|---|
+| 120 | 4.5M | 0.6–0.7 ms (0.8) | 0.3–0.4 ms | 0.3 ms (0.4) | 23 kB |
+| 240 | 8.3M | 1.1 ms (1.3–1.8) | 0.5 ms | 0.5 ms (0.7) | 45 kB |
+
+The app's limit is 250M fuel a tick, and the guest's memory stays under
+2.6 MB. A redraw costs in proportion to the candles on screen, since every
+one sends the whole canvas again. What the GPU takes to paint the quads is
+not in these numbers: the box that ran them paints in software.
 
 ## What the SDK does not give a chart yet
 
@@ -63,6 +91,10 @@ There is no runner that keeps one view alive without a node. What there is:
   `line`. The wire carries paths, dashes, clips and transforms, which a line
   or area series, dashed rules and an indicator need.
 - **Text on the canvas.** Labels are elements positioned over it.
+- **A sensor's first size.** The app sends a sensor's first measurement to
+  `on_show` only; `TestAppContext::simulate_measure` also sends it to a
+  sensor that has only `on_resize`. A view that listens to `on_resize`
+  alone passes its tests and draws nothing in the app.
 - **gpui's geometry names.** `canvas().rect` takes a `Bounds`, which the
   SDK does not re-export, so a view that draws depends on gpui itself.
 - **Prices.** A view asks programs and the host, nothing else: there is no

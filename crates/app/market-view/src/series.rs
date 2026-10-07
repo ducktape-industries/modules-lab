@@ -88,10 +88,11 @@ impl Series {
             // square root of its minutes, as a random walk does.
             reach: 0.0005 * (frame.minutes as f64).sqrt(),
             random: symbol.seed ^ frame.minutes,
-            ticks: 0,
+            // The last candle is live and half way through.
+            ticks: TICKS_PER_CANDLE / 2,
         };
         let mut open = symbol.price;
-        for _ in 0..HISTORY {
+        for index in 0..HISTORY {
             let mut candle = Candle {
                 open,
                 high: open,
@@ -99,7 +100,8 @@ impl Series {
                 close: open,
                 volume: 0.,
             };
-            for _ in 0..TICKS_PER_CANDLE {
+            let live = index + 1 == HISTORY;
+            for _ in 0..TICKS_PER_CANDLE - if live { series.ticks } else { 0 } {
                 series.trade(&mut candle);
             }
             open = candle.close;
@@ -194,7 +196,8 @@ mod tests {
     #[test]
     fn the_live_candle_closes_and_the_next_opens_at_its_close() {
         let mut series = Series::new(&SYMBOLS[1], &FRAMES[0]);
-        for _ in 0..TICKS_PER_CANDLE {
+        for _ in 0..TICKS_PER_CANDLE / 2 {
+            assert_eq!(series.candles.len(), HISTORY, "still the live candle");
             series.tick();
         }
         assert_eq!(series.candles.len(), HISTORY + 1);
