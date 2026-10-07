@@ -413,7 +413,10 @@ fn table(
 ) -> AnyElement {
     let theme = *theme;
     let names = columns.iter().map(|(name, _)| (*name).into_any_element());
+    // the head ends where the rows do, short of the gutter the host keeps
+    // beside the list
     let head = line(columns, wide, names, &theme)
+        .mr(design::size::SCROLLBAR)
         .flex_none()
         .h(HEAD_H)
         .text_size(design::text::CAPTION)
@@ -422,6 +425,7 @@ fn table(
         let rows = paint(rows, app).into_iter();
         let rows = rows.map(|cells| {
             line(columns, wide, cells, &theme)
+                .w_full()
                 .h(ROW_H)
                 .text_size(design::text::SECONDARY)
                 .hover(move |style| style.bg(theme.surface))

@@ -29,15 +29,17 @@ const MOST: usize = 240;
 /// The gutters the labels sit in: prices on the right, times underneath.
 const PRICES: f32 = 64.;
 const TIMES: f32 = 24.;
-/// The room left over the highest price and under the lowest.
+/// The room left over the highest price, which the readout's line is in,
+/// and under the lowest.
 const HEADROOM: f32 = 20.;
-const FOOTROOM: f32 = 24.;
-/// The share of the plot the volume pane takes, under the prices, and the
-/// room over its tallest bar.
-const VOLUME: f32 = 0.18;
+const FOOTROOM: f32 = 36.;
+/// The share of the plot the volume pane takes, under the prices, the
+/// most it grows to, and the room over its tallest bar.
+const VOLUME: f32 = 0.2;
+const VOLUME_MOST: f32 = 90.;
 const VOLUME_ROOM: f32 = 12.;
 /// Two price rules are no closer than this.
-const RULED: f32 = 36.;
+const RULED: f32 = 32.;
 /// The smallest plot there is a chart in.
 const SMALLEST: (f32, f32) = (48., 96.);
 /// The closes each moving average is of.
@@ -179,12 +181,6 @@ impl Plot {
         HEADROOM + share as f32 * (self.prices - HEADROOM - FOOTROOM)
     }
 
-    /// The price drawn at height `y`.
-    fn price_at(&self, y: f32) -> f64 {
-        let share = (y - HEADROOM) / (self.prices - HEADROOM - FOOTROOM);
-        self.high - f64::from(share) * (self.high - self.low)
-    }
-
     /// The left edge of a slot: the last one ends at the plot's edge.
     fn x(&self, slot: usize) -> f32 {
         self.width - (self.slots.len() - slot) as f32 * self.step
@@ -202,12 +198,13 @@ impl Plot {
     }
 
     /// The prices the pane is ruled at, and the step between them: round
-    /// numbers, no closer than [`RULED`], no finer than the market's tick.
+    /// numbers from the lowest price on screen to the highest, no closer
+    /// than [`RULED`], no finer than the market's tick.
     fn rules(&self, tick: u64) -> (u64, impl Iterator<Item = u64> + use<>) {
         let a_pixel = (self.high - self.low) / f64::from(self.prices - HEADROOM - FOOTROOM);
         let step = round_step((a_pixel * f64::from(RULED)).max(tick as f64));
-        let lowest = (self.price_at(self.prices).max(0.) / step as f64).ceil() as u64;
-        let highest = (self.price_at(0.) / step as f64).floor() as u64;
+        let lowest = (self.low / step as f64).ceil() as u64;
+        let highest = (self.high / step as f64).floor() as u64;
         (step, (lowest..=highest).map(move |rule| rule * step))
     }
 }
@@ -295,11 +292,14 @@ impl Chart {
             let room = tick as f64 * 5.;
             (low, high) = ((low - room).max(0.), high + room);
         }
-        let volume = if self.volume { VOLUME } else { 0. };
+        let volume = match self.volume {
+            true => (height * VOLUME).min(VOLUME_MOST).floor(),
+            false => 0.,
+        };
         Some(Plot {
             width,
             height,
-            prices: (height * (1. - volume)).floor(),
+            prices: height - volume,
             step: self.candle,
             first,
             slots,
@@ -609,10 +609,16 @@ impl Trade {
             .find(|axis| *axis >= needed && axis.is_multiple_of(minutes))
             .unwrap_or(needed)
             / minutes;
+        // the candle under the pointer, and where its time is told: under
+        // it, kept whole inside the plot
+        let hovered = self.chart.hovered.filter(|slot| *slot < plot.slots.len());
+        let told_at = hovered.map(|slot| plot.middle(slot).clamp(44., (plot.width - 44.).max(44.)));
         let times = (0..plot.slots.len())
             .filter(|slot| (plot.first + *slot as u64).is_multiple_of(every))
             .map(|slot| (slot, plot.middle(slot)))
             .filter(|(_, middle)| *middle >= 30. && *middle <= plot.width - 30.)
+            // that time covers a label that is under it
+            .filter(|(_, middle)| told_at.is_none_or(|told| (told - middle).abs() >= 64.))
             .map(|(slot, middle)| {
                 label(format::axis((plot.first + slot as u64) * span.millis))
                     .left(px(middle - 40.))
@@ -620,8 +626,7 @@ impl Trade {
                     .w(px(80.))
                     .text_center()
             });
-        // The candle under the pointer, or the newest one on screen.
-        let hovered = self.chart.hovered.filter(|slot| *slot < plot.slots.len());
+        // the readout tells that candle, or the newest one on screen
         let told = hovered.unwrap_or(plot.slots.len() - 1);
         let told = plot.slots[told].map(|candle| (told, candle));
         let stamp = |candle: &Candle| match span.millis >= 86_400_000 {
@@ -663,8 +668,7 @@ impl Trade {
                 .children(average("MA25", &plot.slow, theme.warning))
         });
         // the hovered candle's time, on the time axis under it
-        let hovered_time = hovered.and_then(|slot| {
-            let middle = plot.middle(slot).clamp(44., (plot.width - 44.).max(44.));
+        let hovered_time = hovered.zip(told_at).and_then(|(slot, middle)| {
             Some(
                 label(stamp(&plot.slots[slot]?))
                     .left(px(middle - 44.))

@@ -181,6 +181,19 @@ fn a_block_that_wrote_the_book_asks_the_book_alone() {
     );
 }
 
+/// A block that changed nothing on screen: every read is asked again, the
+/// same rows land, and the view draws nothing for them.
+#[test]
+fn a_block_whose_reads_land_the_same_rows_draws_nothing() {
+    let (mut cx, ..) = wide();
+    let changes = cx.host().stream::<Changes<trade::Trade>>();
+    let (before, renders) = (reads(&cx), cx.renders());
+    changes.send(None);
+    cx.run_until_parked();
+    assert_ne!(reads(&cx), before);
+    assert_eq!(cx.renders(), renders);
+}
+
 /// A block's candle lands in the chart on screen: the newest page is laid
 /// over the candles held, which stay where the reader panned them.
 #[test]
@@ -258,6 +271,12 @@ fn the_markets_list_is_searched_and_enter_takes_the_first_found() {
     let (mut cx, view, _) = wide();
     cx.simulate_click("trade-market");
     cx.run_until_parked();
+    let focused = cx.focused().and_then(|node| node.key());
+    assert_eq!(
+        focused,
+        Some("trade-markets-search"),
+        "the keys are the search's"
+    );
     cx.simulate_input("trade-markets-search", "duck");
     cx.run_until_parked();
     assert!(cx.find("market-DUCK/USD").is_some());

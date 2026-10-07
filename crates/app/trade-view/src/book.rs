@@ -87,7 +87,7 @@ impl Trade {
             .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                 view.open_menu(Menu::Step, window, cx)
             }))
-            .child(design::mono(named(STEPS[self.step])))
+            .child(named(STEPS[self.step]))
             .child(chevron(open, theme));
         let menu = open.then(|| {
             let steps = STEPS.iter().enumerate();

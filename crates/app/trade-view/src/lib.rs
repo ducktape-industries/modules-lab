@@ -22,6 +22,7 @@ use ducktape_view_guest::prelude::*;
 use ducktape_view_guest::{
     Anchor, AnchoredPositionMode, Div, Edges, FontWeight, Paged, Point, Stateful,
 };
+use gpui::relative;
 use serde::{Deserialize, Serialize};
 use trade::{ASSETS, Balance, Book, Fill, MARKETS, Order, SPANS, Stats, Traded};
 
@@ -314,6 +315,7 @@ impl Render for Trade {
             .bg(theme.background)
             .text_color(theme.foreground)
             .text_size(design::text::BODY)
+            .line_height(relative(1.3))
             .child(bar)
             .child(columns)
     }
@@ -409,6 +411,7 @@ impl Trade {
         let opener = chip("trade-market", theme)
             .h(design::size::CONTROL)
             .pl(design::space::MD)
+            .gap(design::space::SM)
             .aria_expanded(open)
             .text_size(design::text::SECTION)
             .font_weight(FontWeight::MEDIUM)
