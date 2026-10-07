@@ -205,7 +205,14 @@ impl Trade {
         self.chart.rereading = Some(cx.land(page, |view, page, cx| {
             match (page, view.chart.candles.ready_mut()) {
                 (Ok(page), Some(candles)) => {
+                    let was = candles.tip();
                     if candles.lay(page) {
+                        // a reader looking back stays on the candles they
+                        // were on when a newer one opens
+                        let opened = candles.tip().zip(was).map_or(0, |(now, was)| now - was);
+                        if view.chart.back > 0 {
+                            view.chart.back += opened;
+                        }
                         cx.notify();
                     }
                 }

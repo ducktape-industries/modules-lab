@@ -146,6 +146,11 @@ impl Candles {
         self.rows.keys().next().copied()
     }
 
+    /// The bucket of the newest candle held.
+    pub(crate) fn tip(&self) -> Option<u64> {
+        self.rows.keys().next_back().copied()
+    }
+
     fn last(&self) -> Option<&Candle> {
         self.rows.values().next_back()
     }

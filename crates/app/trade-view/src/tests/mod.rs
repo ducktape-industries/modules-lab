@@ -194,33 +194,6 @@ fn a_block_whose_reads_land_the_same_rows_draws_nothing() {
     assert_eq!(cx.renders(), renders);
 }
 
-/// A block's candle lands in the chart on screen: the newest page is laid
-/// over the candles held, which stay where the reader panned them.
-#[test]
-fn a_block_that_traded_moves_the_last_candle() {
-    let (mut cx, view, world) = wide();
-    let changes = cx.host().stream::<Changes<trade::Trade>>();
-    cx.simulate_focus("trade-plot");
-    cx.simulate_key_down("trade-plot", "left");
-    cx.run_until_parked();
-    let hour = sample::NOW / 3_600_000;
-    {
-        let mut world = world.borrow_mut();
-        let candles = world.candles.get_mut(&(0, 3)).expect("the 1h candles");
-        candles.last_mut().expect("a newest candle").close = 64_000 * UNIT;
-        world.stats[0].last = 64_000 * UNIT;
-    }
-    changes.send(Some(Change {
-        height: 2,
-        keys: vec![state::CANDLES.key(&(0u8, 3u8, hour))],
-    }));
-    cx.run_until_parked();
-    // the bar's last price and the chart's tag both say it
-    let said = cx.texts().iter().filter(|text| *text == "64,000.0").count();
-    assert_eq!(said, 2, "{:?}", cx.texts());
-    view.read(|trade| assert_eq!(trade.chart.back, 8, "the pan is the reader's"));
-}
-
 #[test]
 fn another_market_and_another_span_are_asked_for() {
     let (mut cx, view, _) = wide();

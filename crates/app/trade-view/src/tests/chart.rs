@@ -370,3 +370,52 @@ fn another_span_starts_over_at_its_newest_candle() {
     shows(&cx, &["Oct 7", "5,000"]);
     assert_eq!(readout(&cx)[..2], ["O", "63,000.0"]);
 }
+
+/// A block's candle lands in the chart on screen: the newest page is laid
+/// over the candles held, and a reader looking back stays on the candles
+/// they were on.
+#[test]
+fn a_block_that_traded_moves_the_last_candle_and_not_the_reader() {
+    let (mut cx, view, world) = wide();
+    let changes = cx.host().stream::<Changes<trade::Trade>>();
+    let traded = |world: &Shared, bucket: u64, close: u64| {
+        let mut world = world.borrow_mut();
+        let candles = world.candles.get_mut(&(0, 3)).expect("the 1h candles");
+        match candles.last_mut().filter(|last| last.bucket == bucket) {
+            Some(last) => last.close = close,
+            None => candles.push(trade::Candle {
+                bucket,
+                open: close,
+                high: close,
+                low: close,
+                close,
+                volume: UNIT,
+            }),
+        }
+        world.stats[0].last = close;
+        Some(Change {
+            height: 2,
+            keys: vec![state::CANDLES.key(&(0u8, 3u8, bucket))],
+        })
+    };
+    key(&mut cx, "left");
+    let looked_at = readout(&cx);
+    changes.send(traded(&world, HOUR, 64_000 * UNIT));
+    cx.run_until_parked();
+    // the bar's last price and the chart's tag both say it
+    let said = cx.texts().iter().filter(|text| *text == "64,000.0").count();
+    assert_eq!(said, 2, "{:?}", cx.texts());
+    assert_eq!((back(&view), readout(&cx)), (8, looked_at.clone()));
+    // the next hour opens: the candles looked at are one further back
+    changes.send(traded(&world, HOUR + 1, 64_100 * UNIT));
+    cx.run_until_parked();
+    shows(&cx, &["64,100.0"]);
+    assert_eq!((back(&view), readout(&cx)), (9, looked_at));
+    // at the live edge the chart follows the newest candle
+    key(&mut cx, "right");
+    key(&mut cx, "right");
+    changes.send(traded(&world, HOUR + 2, 64_200 * UNIT));
+    cx.run_until_parked();
+    assert_eq!(back(&view), 0);
+    assert_eq!(readout(&cx)[6..8], ["C", "64,200.0"]);
+}
