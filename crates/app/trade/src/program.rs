@@ -5,7 +5,7 @@
 use guest::{Error, ExecCtx, Module, Program, QueryCtx};
 
 use crate::queries::{balances, book, candles, fills, orders, stats, trades};
-use crate::rules::{cancel, cancel_all, fund, place};
+use crate::rules::{cancel, cancel_all, found, fund, place};
 use crate::{MODULE, Op, Query, Reply};
 
 pub struct Trade;
@@ -18,6 +18,10 @@ impl Program for Trade {
 }
 
 impl Module for Trade {
+    fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
+        found(ctx, params)
+    }
+
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         // every op acts as an account: the funds and the orders are its own
         let account = ctx.sender_account()?;

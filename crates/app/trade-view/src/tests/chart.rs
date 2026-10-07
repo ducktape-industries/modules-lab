@@ -268,8 +268,47 @@ fn the_wheel_zooms_between_the_widest_and_the_narrowest_candle() {
     for _ in 0..60 {
         wheel(&mut cx, -1.);
     }
-    assert_eq!(slots(&cx), 234, "3 px a candle");
+    assert_eq!(slots(&cx), 300, "a pixel a candle: every hour there is");
     assert_eq!(back(&view), 0, "about the right edge");
+}
+
+/// Zoomed all the way out, the chart holds the most candles one canvas
+/// carries, and reads page after page until it has them: a week of 15m
+/// candles is on one screen.
+#[test]
+fn zoomed_out_the_chart_reads_on_until_the_screen_is_full() {
+    let tip = sample::NOW / 900_000;
+    // more than a week of 15m candles, rising and falling by turns
+    let rows = (0..800u64).rev().map(|back| {
+        let open = 63_000 * UNIT + (back % 7) * 10 * UNIT;
+        let close = 63_000 * UNIT + ((back + 3) % 7) * 10 * UNIT;
+        trade::Candle {
+            bucket: tip - back,
+            open,
+            high: open.max(close) + UNIT,
+            low: open.min(close) - UNIT,
+            close,
+            volume: (1 + back % 5) * UNIT,
+        }
+    });
+    let mut world = sample::board();
+    world.candles.insert((0, 2), rows.collect());
+    let (mut cx, ..): Opened = opened(world, (1400., 760.), Some(READER));
+    cx.simulate_click("15m");
+    for _ in 0..40 {
+        wheel(&mut cx, -1.);
+    }
+    cx.run_until_parked();
+    assert_eq!(slots(&cx), 720, "the most candles on screen");
+    // the newest page and the two before it cover the screen
+    assert_eq!(older(&cx, tip - 255), 1);
+    assert_eq!(older(&cx, tip - 511), 1);
+    assert_eq!(older(&cx, tip - 767), 0, "the screen is full");
+    let commands = canvas(&cx).len();
+    assert!(
+        commands > 720 * 5 && commands <= 4096,
+        "{commands} commands"
+    );
 }
 
 /// The arrow keys, for a reader without a pointer: ← → pan a tenth of the

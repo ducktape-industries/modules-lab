@@ -20,12 +20,14 @@ use trade::{Candle, MAX_ROWS, SPANS, Side};
 
 use crate::{Trade, format};
 
-/// The narrowest and the widest a candle's slot is zoomed to, in pixels.
-const NARROWEST: f32 = 3.;
+/// The narrowest and the widest a candle's slot is zoomed to, in pixels:
+/// a candle is at least the one column its wick is drawn in.
+const NARROWEST: f32 = 1.;
 const WIDEST: f32 = 40.;
 /// The most candles on screen, whatever the zoom: three quads and two
-/// lines a candle stay well inside the 4096 commands a canvas carries.
-const MOST: usize = 240;
+/// lines a candle, with the rules and the orders' lines, stay inside the
+/// 4096 commands a canvas carries. A week of 15m candles is 672.
+const MOST: usize = 720;
 /// The gutters the labels sit in: prices on the right, times underneath.
 const PRICES: f32 = 64.;
 const TIMES: f32 = 24.;
@@ -334,8 +336,9 @@ impl Chart {
 impl Trade {
     /// Moves the chart's right edge `buckets` older, or newer below zero,
     /// as far as the candles held go, and asks for the page before them
-    /// when it gets there.
-    fn pan(&mut self, buckets: i64, cx: &mut Context<Self>) {
+    /// when it gets there. With no buckets to move, that is the page a
+    /// screen with room left of the oldest candle is waiting for.
+    pub(crate) fn pan(&mut self, buckets: i64, cx: &mut Context<Self>) {
         let chart = &mut self.chart;
         let Some(candles) = chart.candles.ready() else {
             return;

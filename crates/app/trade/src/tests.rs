@@ -9,8 +9,9 @@ use store::PageRequest;
 
 use crate::state::{BALANCES, BOOK, Funds, OPEN, ORDERS, newest_first, rank};
 use crate::{
-    ASSETS, Balance, Book, Candle, Fill, LOT, Level, MARKETS, MAX_CANCELS, MAX_FILLS, MAX_ROWS,
-    MODULE, Op, Order, OrderState, Query, Reply, SPANS, Side, Stats, Trade, Traded, UNIT, describe,
+    ASSETS, Balance, Bar, Book, Candle, Fill, History, LOT, Level, MARKETS, MAX_BARS, MAX_CANCELS,
+    MAX_FILLS, MAX_ROWS, MODULE, Op, Order, OrderState, Query, Reply, SPANS, Side, Stats, Trade,
+    Traded, UNIT, describe,
 };
 
 const ADA: u64 = 1;
@@ -1192,4 +1193,131 @@ fn in_step(desk: &Desk, granted: &[u64], seed: u64) {
             );
         }
     }
+}
+
+/// A founding at `time` with `histories` for its params.
+fn founded(time: u64, histories: &[History]) -> Result<Desk, Error> {
+    let desk = Desk {
+        time,
+        ..Desk::default()
+    };
+    let params = borsh::to_vec(histories).expect("a history encodes");
+    let ctx = desk.store.exec(desk.env().root());
+    desk.store.attempt(|| Trade::init(&ctx, &params))?;
+    Ok(desk)
+}
+
+fn bar(open: u64, high: u64, low: u64, close: u64, lots_traded: u64) -> Bar {
+    Bar {
+        open: usd(open),
+        high: usd(high),
+        low: usd(low),
+        close: usd(close),
+        volume: lots(lots_traded),
+    }
+}
+
+/// A founding's history is the market's past: its bars are the candles of
+/// their span up to the stretch before the founding's, each coarser span
+/// is folded from them, a finer one has none, and the next trade carries on
+/// from there.
+#[test]
+fn a_foundings_history_is_the_candles_before_it() {
+    const QUARTER: u64 = HOUR / 4;
+    // founded 20 minutes into an hour: the last bar is that hour's first quarter
+    let now = 500 * DAY + 7 * HOUR + 20 * 60_000;
+    let bars = vec![
+        bar(100, 104, 99, 103, 10),
+        bar(103, 110, 102, 108, 20),
+        bar(108, 109, 101, 102, 30),
+        bar(102, 106, 100, 105, 40),
+        bar(105, 107, 104, 106, 50),
+    ];
+    let history = History {
+        market: BTC_USD,
+        span: 2,
+        bars: bars.clone(),
+    };
+    let mut desk = founded(now, &[history]).unwrap();
+    let quarters = desk.candles(2, None, MAX_ROWS);
+    let newest = now / QUARTER - 1;
+    assert_eq!(quarters.len(), 5);
+    for (back, (candle, bar)) in quarters.iter().zip(bars.iter().rev()).enumerate() {
+        assert_eq!(candle.bucket, newest - back as u64);
+        assert_eq!(
+            (
+                candle.open,
+                candle.high,
+                candle.low,
+                candle.close,
+                candle.volume
+            ),
+            (bar.open, bar.high, bar.low, bar.close, bar.volume)
+        );
+    }
+    // the hour before the founding's holds four bars, the founding's hour one
+    let hours = desk.candles(3, None, MAX_ROWS);
+    assert_eq!(hours.len(), 2);
+    let (this, last) = (hours[0], hours[1]);
+    assert_eq!((this.bucket, last.bucket), (now / HOUR, now / HOUR - 1));
+    assert_eq!(
+        (last.open, last.high, last.low, last.close, last.volume),
+        (usd(100), usd(110), usd(99), usd(105), lots(100))
+    );
+    assert_eq!(
+        (this.open, this.close, this.volume),
+        (usd(105), usd(106), lots(50))
+    );
+    assert!(
+        desk.candles(0, None, MAX_ROWS).is_empty() && desk.candles(1, None, MAX_ROWS).is_empty()
+    );
+    assert_eq!(desk.candles(5, None, MAX_ROWS).len(), 1);
+    assert_eq!(desk.stats_at(now).last, usd(106));
+    // a trade in the founding's hour moves that hour's candle on
+    for who in [ADA, BO] {
+        desk.ok(who, Op::Fund);
+    }
+    desk.trade(lots(10), usd(120));
+    let this = desk.candles(3, None, 1)[0];
+    assert_eq!(
+        (this.open, this.high, this.close, this.volume),
+        (usd(105), usd(120), usd(120), lots(60))
+    );
+}
+
+#[test]
+fn a_history_that_is_not_candles_founds_nothing() {
+    let now = 500 * DAY;
+    let told = |market: u8, span: u8, bars: Vec<Bar>| History { market, span, bars };
+    let good = bar(100, 104, 99, 103, 10);
+    // no params at all is a market with no past
+    let desk = Desk::default();
+    Trade::init(&desk.store.exec(desk.env().root()), &[]).unwrap();
+    assert!(desk.candles(3, None, MAX_ROWS).is_empty());
+    let refused = |histories: &[History]| founded(now, histories).err().expect("refused").code;
+    // a high under the close, a price off the tick, an amount off the lot
+    let off_tick = Bar {
+        close: usd(103) + 1,
+        ..good
+    };
+    let off_lot = Bar { volume: 1, ..good };
+    for bad in [bar(100, 102, 99, 103, 10), off_tick, off_lot] {
+        assert_eq!(
+            refused(&[told(BTC_USD, 2, vec![good, bad])]),
+            code::INVALID_INPUT
+        );
+    }
+    assert_eq!(refused(&[told(9, 2, vec![good])]), code::NOT_FOUND);
+    assert_eq!(refused(&[told(BTC_USD, 6, vec![good])]), code::NOT_FOUND);
+    let twice = [told(BTC_USD, 2, vec![good]), told(BTC_USD, 3, vec![good])];
+    assert_eq!(refused(&twice), code::INVALID_INPUT);
+    assert_eq!(
+        refused(&[told(BTC_USD, 0, vec![good; MAX_BARS + 1])]),
+        code::CAPACITY
+    );
+    // bytes that are no history
+    let desk = Desk::default();
+    let ctx = desk.store.exec(desk.env().root());
+    let garbled = desk.store.attempt(|| Trade::init(&ctx, &[7])).unwrap_err();
+    assert_eq!(garbled.code, code::INVALID_INPUT);
 }

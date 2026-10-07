@@ -14,8 +14,8 @@ use crate::state::{
     newest_first, rank,
 };
 use crate::{
-    ASSETS, Candle, Fill, LOT, MARKETS, MAX_CANCELS, MAX_FILLS, Market, Order, OrderState, SPANS,
-    Side, Traded, UNIT,
+    ASSETS, Candle, Fill, History, LOT, MARKETS, MAX_BARS, MAX_CANCELS, MAX_FILLS, Market, Order,
+    OrderState, SPANS, Side, Traded, UNIT,
 };
 
 // ── money ───────────────────────────────────────────────────────────────────
@@ -107,6 +107,83 @@ impl Ledger {
             BALANCES.put(ctx, key, funds);
         }
     }
+}
+
+// ── the founding ────────────────────────────────────────────────────────────
+
+/// The founding's histories, written as candles. A bar sits in its span's
+/// stretch of time, counted back from the one before the founding block's,
+/// and is folded into the candle of every coarser span as a trade is.
+pub(crate) fn found(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
+    if params.is_empty() {
+        return Ok(());
+    }
+    let histories: Vec<History> =
+        borsh::from_slice(params).map_err(|_| invalid("the founding's history does not read"))?;
+    let now = ctx.env().time;
+    let mut candles: BTreeMap<(u8, u8, u64), Candle> = BTreeMap::new();
+    let mut told = Vec::new();
+    for history in &histories {
+        let market = market(history.market)?;
+        let spans = SPANS
+            .get(usize::from(history.span)..)
+            .filter(|spans| !spans.is_empty())
+            .ok_or_else(|| not_found(format!("there is no span {}", history.span)))?;
+        if told.contains(&history.market) {
+            return Err(invalid(format!("{} has two histories", market.name)));
+        }
+        told.push(history.market);
+        if history.bars.len() > MAX_BARS {
+            return Err(capacity(format!(
+                "{}'s history is more than {MAX_BARS} bars",
+                market.name
+            )));
+        }
+        let oldest = (now / spans[0].millis)
+            .checked_sub(history.bars.len() as u64)
+            .ok_or_else(|| invalid("a history reaches back before time began"))?;
+        for (bucket, bar) in (oldest..).zip(&history.bars) {
+            let prices = [bar.open, bar.high, bar.low, bar.close];
+            let sound = bar.low > 0
+                && bar.low <= bar.open.min(bar.close)
+                && bar.high >= bar.open.max(bar.close)
+                && prices.iter().all(|price| price % market.tick == 0)
+                && bar.volume % LOT == 0;
+            if !sound {
+                return Err(invalid(format!(
+                    "a bar of {}'s history is not a candle",
+                    market.name
+                )));
+            }
+            let opened = bucket * spans[0].millis;
+            for (span, kept) in (history.span..).zip(spans) {
+                let bucket = opened / kept.millis;
+                match candles.entry((history.market, span, bucket)) {
+                    Entry::Vacant(row) => {
+                        row.insert(Candle {
+                            bucket,
+                            open: bar.open,
+                            high: bar.high,
+                            low: bar.low,
+                            close: bar.close,
+                            volume: bar.volume,
+                        });
+                    }
+                    Entry::Occupied(mut row) => {
+                        let candle = row.get_mut();
+                        candle.high = candle.high.max(bar.high);
+                        candle.low = candle.low.min(bar.low);
+                        candle.close = bar.close;
+                        candle.volume = add(candle.volume, bar.volume)?;
+                    }
+                }
+            }
+        }
+    }
+    for (key, candle) in &candles {
+        CANDLES.put(ctx, key, candle);
+    }
+    Ok(())
 }
 
 // ── funds ───────────────────────────────────────────────────────────────────

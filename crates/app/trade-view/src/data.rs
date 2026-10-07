@@ -190,6 +190,8 @@ impl Trade {
         let page = cx.host().query(self.candles_page(None));
         self.chart.candles = Loadable::Loading(cx.land(page, |view, page, cx| {
             view.chart.candles = page.map(Candles::newest).into();
+            // a screen zoomed out past one page reads on until it is full
+            view.pan(0, cx);
             cx.notify();
         }));
     }
@@ -238,6 +240,7 @@ impl Trade {
             match (page, view.chart.candles.ready_mut()) {
                 (Ok(page), Some(candles)) => {
                     candles.older(page);
+                    view.pan(0, cx);
                     cx.notify();
                 }
                 (Err(refusal), _) => cx.log_refused("older candles", &refusal),

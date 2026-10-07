@@ -136,6 +136,34 @@ pub const BOOK_SCAN: u64 = 512;
 /// The most candles or trades one query answers.
 pub const MAX_ROWS: u32 = 256;
 
+/// The most bars one market's [`History`] holds: a week of minutes. Every
+/// market's at once is a founding inside the limits core's README sets
+/// (1e9 fuel, 256 MB).
+pub const MAX_BARS: usize = 10_080;
+
+/// A market's past, given at the founding so a new network's chart is not
+/// empty. The founding's params are a borsh `Vec<History>`, one a market
+/// at most; with no params every market starts with no past.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct History {
+    pub market: u8,
+    /// The span of `bars`. The candles of every coarser span are folded
+    /// from them; a finer span starts with none.
+    pub span: u8,
+    /// Oldest first. The last is the stretch before the founding block's.
+    pub bars: Vec<Bar>,
+}
+
+/// One stretch of a [`History`]: a candle not yet placed in time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Bar {
+    pub open: u64,
+    pub high: u64,
+    pub low: u64,
+    pub close: u64,
+    pub volume: u64,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum Side {
     Buy,
