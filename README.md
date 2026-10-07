@@ -173,9 +173,9 @@ software.
   `on_show` only; `TestAppContext::simulate_measure` also sends it to a
   sensor that has only `on_resize`. A view that listens to `on_resize`
   alone passes its tests and draws nothing in the app.
-- **gpui's names.** `canvas().rect` takes a `Bounds`, a share of a width
-  is `relative`, a wrong field is `accesskit::Invalid`: the SDK re-exports
-  none of them, so the view depends on gpui itself.
+- **gpui's names.** `canvas().rect` takes a `Bounds` and a share of a
+  width is `relative`: the SDK re-exports neither, so the view depends on
+  gpui itself.
 - **The time.** Without a clock the view does not know which candle is the
   current one: the chart ends at the newest candle the program holds.
 - **Prices from outside.** A view asks programs and the host, nothing else.
