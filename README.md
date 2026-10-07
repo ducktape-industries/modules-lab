@@ -16,9 +16,9 @@ app's does.
 ## market-view
 
 Candles, volume bars, a ruled price axis, a time axis, the last price on its
-line, a symbol and a candle-span picker, and a readout of the candle under
-the pointer. The wheel zooms, a drag pans, the arrow keys do both, and a
-`clock.ticks` subscription moves the live candle once a second.
+line, a symbol and a candle-span picker, a band on the candle under the
+pointer and a readout of it. The wheel zooms, a drag pans, the arrow keys do
+both, and a `clock.ticks` subscription moves the live candle once a second.
 
 The view draws the chart itself: one `canvas()` of quads the host paints in
 order (three a candle: wick, body, volume) and the labels as elements laid
@@ -73,13 +73,25 @@ with p95 in brackets:
 
 | Candles on screen | fuel | wasm tick | decode + merge + replace | host render | frame |
 |---|---|---|---|---|---|
-| 120 | 4.5M | 0.6–0.7 ms (0.8) | 0.3–0.4 ms | 0.3 ms (0.4) | 23 kB |
-| 240 | 8.3M | 1.1 ms (1.3–1.8) | 0.5 ms | 0.5 ms (0.7) | 45 kB |
+| 120 | 4.9M | 0.75 ms (0.8) | 0.4 ms | 0.35 ms (0.4) | 23 kB |
+| 240 | 9.3–9.6M | 1.1–1.3 ms (1.5) | 0.5–0.6 ms | 0.5–0.6 ms (0.7) | 45 kB |
+
+That is a redraw that changes the chart: a clock tick, a drag step, a wheel
+notch. A hover does not. The band on the hovered candle is its slot's hover
+style, which the host paints as the pointer moves, with no tick of the
+view. Only the readout takes a tick, when the pointer enters another slot:
+the view renders, and 100 B cross in place of the frame.
+
+| Candles on screen | fuel | wasm tick | decode + merge + replace | host render | frame |
+|---|---|---|---|---|---|
+| 120, a slot entered | 3.4M | 0.45 ms (0.6) | 0.2 ms | 0.3 ms (0.4) | 0.1 kB |
+| 240, a slot entered | 6.3M | 0.75 ms (1.2) | 0.35 ms | 0.5 ms (0.75) | 0.1 kB |
 
 The app's limit is 250M fuel a tick, and the guest's memory stays under
-2.6 MB. A redraw costs in proportion to the candles on screen, since every
-one sends the whole canvas again. What the GPU takes to paint the quads is
-not in these numbers: the box that ran them paints in software.
+2.7 MB. A redraw costs in proportion to the candles on screen, since every
+one sends the whole canvas again, and the readout's tick does too, since a
+view renders its whole tree whatever changed. What the GPU takes to paint
+the quads is not in these numbers: the box that ran them paints in software.
 
 ## What the SDK does not give a chart yet
 

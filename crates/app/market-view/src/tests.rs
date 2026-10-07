@@ -75,16 +75,33 @@ fn a_hovered_candle_is_told_and_the_last_one_is_when_none_is() {
     let told_last = cx.texts();
     cx.simulate_hover("candle-0", true);
     cx.run_until_parked();
-    assert_eq!(quads(&cx), FIXED + 3 * 120 + 1, "the hovered slot's band");
     assert_ne!(cx.texts(), told_last);
     // The pointer is in the next slot before it has left this one.
     cx.simulate_hover("candle-1", true);
+    let told_next = cx.texts();
     cx.simulate_hover("candle-0", false);
     cx.run_until_parked();
-    assert_eq!(quads(&cx), FIXED + 3 * 120 + 1);
+    assert_eq!(cx.texts(), told_next);
     cx.simulate_hover("candle-1", false);
     cx.run_until_parked();
     assert_eq!(cx.texts(), told_last);
+}
+
+/// The band on the hovered slot is the host's to paint, so a hover costs
+/// the view its readout and nothing of the chart.
+#[test]
+fn a_hover_sends_the_readout_and_none_of_the_chart() {
+    let mut cx = measured();
+    let whole = cx.frame_bytes();
+    let before = cx.reports().len();
+    cx.simulate_hover("candle-7", true);
+    cx.run_until_parked();
+    assert_eq!(quads(&cx), FIXED + 3 * 120, "the canvas is as it was");
+    let sent: usize = cx.reports()[before..].iter().map(|tick| tick.bytes).sum();
+    assert!(
+        sent < 400,
+        "{sent} B crossed for a hover, of a {whole} B frame"
+    );
 }
 
 #[test]

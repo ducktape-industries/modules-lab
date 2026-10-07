@@ -235,8 +235,9 @@ impl Market {
         cx.notify();
     }
 
-    /// The quads of the chart: the rules, the plot's edges, the hovered
-    /// slot, then each candle's wick, body and volume, and the last price.
+    /// The quads of the chart: the rules, the plot's edges, then each
+    /// candle's wick, body and volume, and the last price. Nothing here
+    /// follows the pointer, so a hover sends none of it again.
     fn drawn(&self, plot: &Plot<'_>, theme: &Theme) -> Canvas {
         let quad = |x: f32, y: f32, width: f32, height: f32| {
             Bounds::new(point(px(x), px(y)), size(px(width), px(height)))
@@ -251,9 +252,6 @@ impl Market {
                 quad(0., plot.height, plot.width + 1., 1.),
                 theme.border_strong,
             );
-        if let Some(slot) = self.hovered.filter(|slot| *slot < plot.candles.len()) {
-            drawn = drawn.rect(quad(plot.x(slot), 0., plot.step, plot.height), theme.hover);
-        }
         // An odd width, so the 1 px wick is the body's middle.
         let body = ((plot.step * 0.7) as i32 | 1) as f32;
         for (slot, candle) in plot.candles.iter().enumerate() {
@@ -450,9 +448,9 @@ impl Render for Market {
 }
 
 impl Market {
-    /// The plot and what is laid over it: the canvas, a price beside each
-    /// rule, the last price on its line, the times, and a slot per candle
-    /// that hears the pointer.
+    /// The plot: a slot per candle that hears the pointer, the canvas over
+    /// them, and laid over that a price beside each rule, the last price on
+    /// its line and the times.
     fn chart(
         &self,
         plot: &Plot<'_>,
@@ -503,6 +501,11 @@ impl Market {
                     .w(px(80.))
                     .text_center()
             });
+        // A slot per candle, under the canvas. The band on the hovered one
+        // is the slot's own hover style: the host paints it as the pointer
+        // moves, with no tick of the view. The listener only moves the
+        // readout, which is one text the view sends again.
+        let band = theme.hover;
         let slots = (0..plot.candles.len()).map(|slot| {
             div()
                 .id(format!("candle-{slot}"))
@@ -511,6 +514,7 @@ impl Market {
                 .top_0()
                 .w(px(plot.step))
                 .h(px(plot.height))
+                .hover(|style| style.bg(band))
                 .on_hover(
                     cx.listener(move |view: &mut Market, hovered: &bool, _, cx| {
                         view.hover(slot, *hovered, cx)
@@ -564,11 +568,11 @@ impl Market {
                 MouseButton::Left,
                 cx.listener(|view: &mut Market, _: &MouseUpEvent, _, _| view.grabbed = None),
             )
+            .children(slots)
             .child(self.drawn(plot, theme))
             .children(prices)
             .children(last)
             .children(times)
-            .children(slots)
     }
 }
 
