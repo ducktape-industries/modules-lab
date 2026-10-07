@@ -26,6 +26,19 @@ spans and every type on the wire, `src/state.rs` the tables. A view reads
 through `trade::ask::*`: each read names its reply and the tables it reads,
 so a view asks it again only when a block wrote one of them.
 
+A market's past is given at the founding: the program's params are a borsh
+`Vec<History>`, a market's bars of one span, the last of them the stretch
+before the founding block's. Each bar is written as its span's candle and
+folded into every coarser span's; a finer span starts with none. A history
+is candles, not trades: the tape and the fills start at the founding. With
+no params every market starts empty. `examples/history.rs` writes a week of
+every market's minutes, a seeded walk in integers, the same bytes on every
+run:
+
+```sh
+cargo run -p trade --example history -- trade.params
+```
+
 ## trade-view
 
 Everything a spot terminal shows, on the program's rows:
@@ -36,9 +49,12 @@ Everything a spot terminal shows, on the program's rows:
 - **The chart** (`src/chart.rs`): candles by the bucket of time each one is,
   a bucket nothing traded in drawn flat at the close before it; volume, two
   moving averages, the last price and the reader's open orders on their
-  lines; six spans, candles or a line. The wheel zooms, a drag pans, the
-  arrow keys do both, and the page before the oldest candle held is asked
-  for when the chart is panned back to it. The view draws it itself: one
+  lines; six spans, candles or a line. The wheel zooms, from 40 px a
+  candle down to one, 720 candles on screen at the most (five commands a
+  candle, inside the 4096 one canvas carries): a week of 15m candles is one
+  screen. A drag pans, the arrow keys do both, and the pages before the
+  oldest candle held are asked for as the chart is panned or zoomed back to
+  them. The view draws it itself: one
   `canvas()` of quads and lines the host paints in order, the labels as
   elements laid over it.
 - **The book and the tape** (`src/book.rs`): fifteen prices a side where
@@ -102,7 +118,8 @@ There is no runner that keeps one view alive without a node. What there is:
 3. **Live, in the app.** The view is served with its program: pack
    `trade_view.wasm` and the describe module into `trade.wasm` with qa's
    `view-pack`, and found a stage whose `founding.toml` lists
-   `[[programs]] id = "trade"`. To try a rebuilt view against a running
+   `[[programs]] id = "trade"`, with `params = ` the history file for a
+   market that has a past. To try a rebuilt view against a running
    stage, the app loads `<program>_view.wasm` out of `DUCKTAPE_VIEWS_DIR` in
    place of the view the network serves for that program:
 
@@ -129,15 +146,30 @@ orders, the tape filling. p50, with p95 in brackets:
 
 The view was 888 nodes and its memory stayed under 2 MB. A row or a candle
 under the pointer is marked by the host: the view's tick for the move
-changes nothing. A full chart was not measured live (a stage's market is as
-old as the stage); natively the wide board (88 candles, the book, the tape,
+changes nothing. Natively the wide board (88 candles, the book, the tape,
 the ticket and three open orders) is a 48 kB frame, and a slot the pointer
 enters sends 0.4 kB, the readout and the time under the candle, with the
 canvas left as it was (`a_hover_sends_the_readout_and_none_of_the_chart`).
 `trade_view.wasm` is 1.1 MB.
 
-The program on that node: an order that trades against 32 makers, the most
-one order may, was applied inside the host's fuel.
+The same, on a stage founded with the week of history, the chart 1048 px
+wide on 15m candles, zoomed out to the whole week: 673 candles, 1.4 px
+each, 1850 nodes, 8 MB.
+
+| What happened | fuel | wasm tick | merge + replace | host render | frame |
+|---|---|---|---|---|---|
+| a wheel notch between 490 and 673 candles | 29M (57M) | 4.2 ms (6.5) | 2.0 ms | 2.7 ms (3.5) | 264 kB when the candles on screen change |
+| the pointer entering another candle's slot | 29M (32M) | 4.3 ms (4.8) | 2.3 ms | 2.9 ms (3.8) | 0.4 kB |
+
+A redraw costs in proportion to the candles on screen, and so does the
+readout's tick: near three times the candles of the spike's 240 is three
+times its numbers and more. The line on the hovered candle is still the host's, with no
+tick.
+
+The program on a node with core's README limits (1e9 fuel, 256 MB): the
+founding took the week of every market's minutes (30,240 bars, 39 thousand
+candles written), and an order that trades against 32 makers, the most one
+order may, was applied.
 
 The numbers below are the spike's, market-view, the chart alone on a made-up
 series, in the app at 833487e8 (a release build, `DUCKTAPE_PERF=1`, read at
