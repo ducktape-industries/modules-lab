@@ -49,14 +49,17 @@ Everything a spot terminal shows, on the program's rows:
 - **The chart** (`src/chart.rs`): candles by the bucket of time each one is,
   a bucket nothing traded in drawn flat at the close before it; volume, two
   moving averages, the last price and the reader's open orders on their
-  lines; six spans, candles or a line. The wheel zooms, from 40 px a
-  candle down to one, 720 candles on screen at the most (five commands a
-  candle, inside the 4096 one canvas carries): a week of 15m candles is one
-  screen. A drag pans, the arrow keys do both, and the pages before the
-  oldest candle held are asked for as the chart is panned or zoomed back to
-  them. The view draws it itself: one
-  `canvas()` of quads and lines the host paints in order, the labels as
-  elements laid over it.
+  lines; six spans, candles or a line. The wheel zooms about the pointer,
+  from 40 px a candle down to one, 720 candles on screen at the most (five
+  commands a candle, inside the 4096 one canvas carries): a week of 15m
+  candles is one screen. A drag pans, the arrow keys do both (their zoom is
+  about the right edge), and the pages before the oldest candle held are
+  asked for as the chart is panned or zoomed back to them. The view draws
+  it itself: one `canvas()` of quads and lines the host paints in order,
+  the labels as elements laid over it. Its `sensor` tells where the host
+  laid the chart out, so one listener on the plot turns the pointer's
+  position into the candle under it: that candle's line, its time and the
+  readout are three elements, and the frame holds none per candle.
 - **The book and the tape** (`src/book.rs`): fifteen prices a side where
   they fit, each with what rests at it and the side's running total, in
   price steps of 1, 10 or 100 ticks. A press on a row puts its price in the
@@ -114,7 +117,8 @@ There is no runner that keeps one view alive without a node. What there is:
    both and leaves `shots/*.png`. The frame is still: nothing answers a
    click. A fixture's `"hover": true` has the capture put the pointer at 60%
    of the width, 165 px over the bottom; `trade-hover` is a pane sized so
-   that point is on a candle, which shows the line the host paints there.
+   that point is on a candle, and its frame holds the line the view draws
+   on that candle.
 3. **Live, in the app.** The view is served with its program: pack
    `trade_view.wasm` and the describe module into `trade.wasm` with qa's
    `view-pack`, and found a stage whose `founding.toml` lists
@@ -144,12 +148,14 @@ orders, the tape filling. p50, with p95 in brackets:
 | a block that traded: the view asks again what it wrote and draws | 5.7M (6.3M) | 0.74 ms (0.94) | 0.3 ms | 0.27 ms (0.33) | 0.35 kB (2.9 kB) |
 | the pointer moving down the book and across the plot | 0.01M | 0.01 ms | none | none | unchanged |
 
-The view was 888 nodes and its memory stayed under 2 MB. A row or a candle
-under the pointer is marked by the host: the view's tick for the move
-changes nothing. Natively the wide board (88 candles, the book, the tape,
-the ticket and three open orders) is a 48 kB frame, and a slot the pointer
-enters sends 0.4 kB, the readout and the time under the candle, with the
-canvas left as it was (`a_hover_sends_the_readout_and_none_of_the_chart`).
+The view was 888 nodes and its memory stayed under 2 MB. A row under the
+pointer is marked by the host, and so was a candle then, by the hover style
+of an element laid over each one: the view's tick for the move changed
+nothing. Natively the wide board (88 candles, the book, the tape, the
+ticket and three open orders) is now 665 nodes and a 41 kB frame, and a slot
+the pointer enters sends 0.46 kB, the candle's line, the readout and the
+time under it, with the canvas left as it was
+(`a_hover_sends_the_line_and_the_readout_and_none_of_the_chart`).
 `trade_view.wasm` is 1.1 MB.
 
 The same, on a stage founded with the week of history, the chart 1048 px
@@ -163,8 +169,8 @@ each, 1850 nodes, 8 MB.
 
 A redraw costs in proportion to the candles on screen, and so does the
 readout's tick: near three times the candles of the spike's 240 is three
-times its numbers and more. The line on the hovered candle is still the host's, with no
-tick.
+times its numbers and more. The line on the hovered candle was still the
+host's then, with no tick.
 
 The program on a node with core's README limits (1e9 fuel, 256 MB): the
 founding took the week of every market's minutes (30,240 bars, 39 thousand
@@ -203,11 +209,15 @@ software.
 
 ## What the SDK does not give a trading view yet
 
-- **Where the pointer is on the chart.** A mouse event's position is in the
-  window's pixels, and a view is not told where its elements sit in the
-  window. So there is no horizontal line at the pointer, no price read off
-  it and no zoom about it; the hovered candle is found by laying one element
-  over each candle's slot, and its vertical line is that slot's hover style.
+- **Where the pointer is on the chart.** Given now. A mouse event's
+  position is in the window's pixels, and the chart's `sensor` tells its
+  bounds in the same pixels (`on_bounds`): the position less the bounds'
+  origin is the pointer on the plot. One listener finds the candle under it,
+  and the wheel zooms about it. What is left is the cost: the line on that
+  candle is an element the view moves, with a tick for each slot the pointer
+  enters, where a hover style was the host's alone. A horizontal line at the
+  pointer and the price read off it are not drawn yet; they wait for
+  nothing of the SDK's.
 - **More than quads and lines on the canvas.** The builder has `rect`,
   `circle` and `line`. The wire carries paths, dashes, clips and transforms,
   which an area series, dashed order lines and an indicator pane need.
@@ -217,13 +227,15 @@ software.
   field are in the frame and do not reach the text (app
   `src/render/inputs.rs:308`). The ticket's price and amount are in the UI
   face, not in mono like the figures around them. `text_right` is kept.
-- **A sensor's first size.** The app sends a sensor's first measurement to
-  `on_show` only; `TestAppContext::simulate_measure` also sends it to a
-  sensor that has only `on_resize`. A view that listens to `on_resize`
-  alone passes its tests and draws nothing in the app.
-- **gpui's names.** `canvas().rect` takes a `Bounds` and a share of a
-  width is `relative`: the SDK re-exports neither, so the view depends on
-  gpui itself.
+- **A sensor's first size.** Given now. One listener, `on_bounds`, hears
+  the chart's bounds at its first sight and at every change after, and
+  `TestAppContext::simulate_bounds` tells them as the app does. The pair it
+  replaces let a view that listened to `on_resize` alone pass its tests and
+  draw nothing in the app.
+- **gpui's names.** `canvas().rect` takes a `Bounds` made of a `point` and
+  a `size`, and a share of a width is `relative`: the SDK re-exports
+  `Bounds` and none of the three functions, so the view depends on gpui
+  itself.
 - **The time.** Without a clock the view does not know which candle is the
   current one: the chart ends at the newest candle the program holds.
 - **Prices from outside.** A view asks programs and the host, nothing else.

@@ -6,15 +6,16 @@
 //! the host paints natively and in order, and every label is an element
 //! laid over it. A candle is one of its span's buckets of time; a bucket
 //! nothing traded in has no row and is drawn flat at the close before it.
-//! One element lies over each candle's slot: the line on the candle under
-//! the pointer is that slot's hover style, which the host paints as the
-//! pointer moves with no tick of the view. Only the readout and the time
-//! under the candle take a tick, when the pointer enters another slot.
+//! The chart's sensor tells where the host laid it out, so a pointer's
+//! position in the window is a place on the plot: one listener finds the
+//! candle under it. That candle's line, its time and the readout are
+//! elements, drawn again when the pointer enters another slot; a move
+//! inside one slot draws nothing, and the canvas is never sent for a hover.
 use std::collections::BTreeMap;
 
 use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Canvas, CursorStyle, FontWeight, Task};
-use gpui::{Bounds, point, size};
+use ducktape_view_guest::{Canvas, CursorStyle, FontWeight, Point, Task};
+use gpui::{point, size};
 use serde::{Deserialize, Serialize};
 use trade::{Candle, MAX_ROWS, SPANS, Side};
 
@@ -73,12 +74,15 @@ pub struct Chart {
     /// pan.
     #[serde(skip)]
     pub(crate) back: u64,
-    /// The chart's size, as the host last measured it.
+    /// Where the host last laid the chart out: its top left corner in the
+    /// window's pixels, which a pointer is placed by, and its size.
+    #[serde(skip)]
+    origin: Point<Pixels>,
     #[serde(skip)]
     pub(crate) size: (f32, f32),
-    /// The slot under the pointer, counted from the left.
+    /// The pointer while it is over the plot, in the window's pixels.
     #[serde(skip)]
-    pub(crate) hovered: Option<usize>,
+    pub(crate) pointer: Option<Point<Pixels>>,
     /// Where a drag was last accounted for, in the window's pixels.
     #[serde(skip)]
     grabbed: Option<f32>,
@@ -102,8 +106,9 @@ impl Default for Chart {
             volume: true,
             line: false,
             back: 0,
+            origin: Point::default(),
             size: (0., 0.),
-            hovered: None,
+            pointer: None,
             grabbed: None,
             candles: Loadable::Idle,
             rereading: None,
@@ -239,6 +244,46 @@ impl Chart {
         (((self.size.0 - PRICES) / self.candle) as usize).clamp(1, MOST)
     }
 
+    /// The buckets in the first slot and in the last: `None` until the
+    /// program has said a candle.
+    fn buckets(&self) -> Option<(u64, u64)> {
+        let last = self.candles.ready()?.last()?;
+        let last = last.bucket.saturating_sub(self.back);
+        Some((last.saturating_sub(self.slots() as u64 - 1), last))
+    }
+
+    /// How many slots `x` of the chart is from the plot's right edge, the
+    /// last slot being the first: `None` off the plot.
+    fn slots_to_edge(&self, x: f32) -> Option<u64> {
+        let width = self.size.0 - PRICES;
+        (0. ..width)
+            .contains(&x)
+            .then(|| ((width - x) / self.candle).ceil() as u64)
+    }
+
+    /// The slot under the pointer, counted from the left, when the pointer
+    /// is over the plot and a candle is drawn there.
+    fn hovered(&self) -> Option<usize> {
+        let at = self.pointer? - self.origin;
+        if !(0. ..self.size.1 - TIMES).contains(&f32::from(at.y)) {
+            return None;
+        }
+        let (first, last) = self.buckets()?;
+        let bucket = (last + 1).checked_sub(self.slots_to_edge(at.x.into())?)?;
+        // nothing is drawn before the oldest candle held
+        let drawn = bucket >= first.max(self.candles.ready()?.oldest()?);
+        drawn.then(|| (bucket - first) as usize)
+    }
+
+    /// Puts the pointer at `at`, in the window's pixels, or takes it off
+    /// the plot, and says whether another candle is under it now: a move
+    /// inside one slot draws nothing.
+    fn hover(&mut self, at: Option<Point<Pixels>>) -> bool {
+        let before = self.hovered();
+        self.pointer = at;
+        before != self.hovered()
+    }
+
     /// `None` until the host has measured a chart with room for a plot and
     /// the program has said a candle.
     fn plot(&self, tick: u64) -> Option<Plot> {
@@ -247,8 +292,7 @@ impl Chart {
         if width < SMALLEST.0 || height < SMALLEST.1 {
             return None;
         }
-        let last = candles.last()?.bucket.saturating_sub(self.back);
-        let first = last.saturating_sub(self.slots() as u64 - 1);
+        let (first, last) = self.buckets()?;
         // the slow average of the first slot reaches this far back
         let start = first.saturating_sub(SLOW as u64 - 1);
         let before = candles.rows.range(..start).next_back();
@@ -319,18 +363,6 @@ impl Chart {
             peak,
         })
     }
-
-    // The pointer may enter the next slot before it leaves this one.
-    fn hover(&mut self, slot: usize, hovered: bool) -> bool {
-        if hovered {
-            self.hovered = Some(slot);
-        } else if self.hovered == Some(slot) {
-            self.hovered = None;
-        } else {
-            return false;
-        }
-        true
-    }
 }
 
 impl Trade {
@@ -355,21 +387,29 @@ impl Trade {
         }
     }
 
-    /// Shows `factor` times the candles, about the right edge. A pointer's
-    /// position arrives in the window's pixels and a view is not told
-    /// where its elements sit in the window, so the zoom cannot be about
-    /// the pointer.
-    fn zoom(&mut self, factor: f32, cx: &mut Context<Self>) {
+    /// Shows `factor` times the candles. About `about`, a place on the
+    /// plot in the chart's pixels, the candle there stays there, as far as
+    /// the candles held and the live edge let the chart pan; about none,
+    /// the right edge stays.
+    fn zoom(&mut self, factor: f32, about: Option<f32>, cx: &mut Context<Self>) {
         let chart = &mut self.chart;
         let narrowest = NARROWEST.max((chart.size.0 - PRICES) / MOST as f32);
+        let before = about.and_then(|x| chart.slots_to_edge(x));
         chart.candle = (chart.candle / factor).clamp(narrowest, WIDEST.max(narrowest));
-        self.pan(0, cx);
+        // the candle is as many slots from the edge as before: the edge
+        // moves by the slots that are now between them
+        let after = about.and_then(|x| chart.slots_to_edge(x));
+        let moved = before
+            .zip(after)
+            .map_or(0, |(before, after)| before as i64 - after as i64);
+        self.pan(moved, cx);
     }
 
     fn wheel(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) {
         let lines = f32::from(event.delta.pixel_delta(px(16.)).y) / 16.;
         if lines != 0. {
-            self.zoom(0.9_f32.powf(lines), cx);
+            let about = f32::from(event.position.x - self.chart.origin.x);
+            self.zoom(0.9_f32.powf(lines), Some(about), cx);
             cx.notify();
         }
     }
@@ -400,8 +440,8 @@ impl Trade {
         match event.keystroke.key.as_str() {
             "left" => self.pan(page, cx),
             "right" => self.pan(-page, cx),
-            "up" => self.zoom(0.8, cx),
-            "down" => self.zoom(1.25, cx),
+            "up" => self.zoom(0.8, None, cx),
+            "down" => self.zoom(1.25, None, cx),
             _ => return,
         }
         cx.notify();
@@ -430,19 +470,22 @@ impl Trade {
             // nothing to draw on until the candles and the chart's size land
             _ => div().size_full().into_any_element(),
         };
-        // The host tells a first sight of the chart as a show and every
-        // later size as a resize; the chart is drawn from either.
-        let measured = || {
-            cx.listener(|view: &mut Trade, size: &(Pixels, Pixels), _, cx| {
-                view.chart.size = (f32::from(size.0), f32::from(size.1));
+        // The chart is drawn to its size and the pointer is placed by its
+        // origin: a chart that only moved is drawn again when another
+        // candle is under the pointer for it, and not otherwise.
+        let measured = cx.listener(|view: &mut Trade, bounds: &Bounds<Pixels>, _, cx| {
+            let chart = &mut view.chart;
+            let size = (bounds.size.width.into(), bounds.size.height.into());
+            let hovered = chart.hovered();
+            chart.origin = bounds.origin;
+            if std::mem::replace(&mut chart.size, size) != size || hovered != chart.hovered() {
                 cx.notify();
-            })
-        };
+            }
+        });
         sensor("trade-chart", chart)
             .flex_1()
             .min_h_0()
-            .on_show(measured())
-            .on_resize(measured())
+            .on_bounds(measured)
     }
 
     /// The reader's resting orders in this market whose price is on
@@ -530,9 +573,9 @@ impl Trade {
         }
     }
 
-    /// The plot: the canvas, a slot over each candle that hears the
-    /// pointer, and laid over them a price beside each rule, the orders
-    /// and the last price on their lines, the times and the readout.
+    /// The plot: the canvas, the line on the candle under the pointer, and
+    /// laid over them a price beside each rule, the orders and the last
+    /// price on their lines, the times and the readout.
     fn plotted(
         &self,
         plot: &Plot,
@@ -636,7 +679,7 @@ impl Trade {
             / minutes;
         // the candle under the pointer, and where its time is told: under
         // it, kept whole inside the plot
-        let hovered = self.chart.hovered.filter(|slot| *slot < plot.slots.len());
+        let hovered = self.chart.hovered();
         let told_at = hovered.map(|slot| plot.middle(slot).clamp(44., (plot.width - 44.).max(44.)));
         let times = (0..plot.slots.len())
             .filter(|slot| (plot.first + *slot as u64).is_multiple_of(every))
@@ -708,40 +751,22 @@ impl Trade {
                     .font_weight(FontWeight::MEDIUM),
             )
         });
-        // A slot over each candle. The line on the hovered one is its own
-        // child's group-hover style: the host paints it as the pointer
-        // moves, with no tick of the view. The listener only moves the
-        // readout and the time under the candle, which the view sends
-        // again alone.
-        let slots = plot
-            .slots
-            .iter()
-            .enumerate()
-            .filter(|(_, candle)| candle.is_some());
-        let slots = slots.map(|(slot, _)| {
-            let name = SharedString::from(format!("candle-{slot}"));
-            let line = div()
-                .absolute()
-                .left(px(plot.middle(slot) - plot.x(slot)))
-                .top_0()
-                .w(px(1.))
-                .h_full()
-                .group_hover(name.clone(), move |style| style.bg(theme.muted));
-            div()
-                .id(name.clone())
-                .group(name)
-                .absolute()
-                .left(px(plot.x(slot)))
-                .top_0()
-                .w(px(plot.step))
-                .h(px(plot.height))
-                .on_hover(cx.listener(move |view: &mut Trade, hovered: &bool, _, cx| {
-                    if view.chart.hover(slot, *hovered) {
-                        cx.notify();
-                    }
-                }))
-                .child(line)
-        });
+        // The time axis in a layer of its own: a hover takes the label
+        // under the candle's time away and puts it back, and the plot's
+        // other children keep their places for it.
+        let times = div()
+            .absolute()
+            .inset_0()
+            .children(times)
+            .children(hovered_time);
+        // The line on the candle under the pointer. It is always in the
+        // tree, drawn or not, so a hover moves one element and the labels
+        // after it keep their places.
+        let line = div().absolute().top_0().w(px(1.)).h(px(plot.height));
+        let line = match hovered {
+            Some(slot) => line.left(px(plot.middle(slot))).bg(theme.muted),
+            None => line,
+        };
         let named = format!(
             "{} {} candles, {} on screen, last {}",
             market.name,
@@ -776,9 +801,21 @@ impl Trade {
                     view.chart.grabbed = Some(f32::from(event.position.x));
                 }),
             )
+            // The one listener that hears the pointer: a drag pans, and the
+            // candle under the pointer is the one told.
             .on_mouse_move(
-                cx.listener(|view: &mut Trade, event: &MouseMoveEvent, _, cx| view.drag(event, cx)),
+                cx.listener(|view: &mut Trade, event: &MouseMoveEvent, _, cx| {
+                    view.drag(event, cx);
+                    if view.chart.hover(Some(event.position)) {
+                        cx.notify();
+                    }
+                }),
             )
+            .on_hover(cx.listener(|view: &mut Trade, over: &bool, _, cx| {
+                if !over && view.chart.hover(None) {
+                    cx.notify();
+                }
+            }))
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|view: &mut Trade, _: &MouseUpEvent, _, _| view.chart.grabbed = None),
@@ -788,12 +825,11 @@ impl Trade {
                 cx.listener(|view: &mut Trade, _: &MouseUpEvent, _, _| view.chart.grabbed = None),
             )
             .child(self.drawn(plot, &rules, &orders, last, &theme))
-            .children(slots)
+            .child(line)
             .children(prices)
             .children(order_tags)
             .children(last_tag)
-            .children(times)
-            .children(hovered_time)
+            .child(times)
             .children(readout)
     }
 }

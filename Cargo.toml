@@ -24,7 +24,8 @@ guest = { git = "https://github.com/ducktape-industries/modules", rev = "ccd4474
 program = { git = "https://github.com/ducktape-industries/modules", rev = "ccd4474d87244e66c0d95b723ec426d46f9a9977" }
 store = { git = "https://github.com/ducktape-industries/modules", rev = "ccd4474d87244e66c0d95b723ec426d46f9a9977" }
 describe = { git = "https://github.com/ducktape-industries/modules", rev = "ccd4474d87244e66c0d95b723ec426d46f9a9977" }
-# `canvas().rect` takes gpui's `Bounds`, which the SDK does not re-export.
+# `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
+# the SDK does not re-export.
 # The rev is the one modules names.
 gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpui-pre", rev = "3207fbe59e7badc80ab247c10314adf9f318ad5e", default-features = false }
 

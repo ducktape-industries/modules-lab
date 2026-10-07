@@ -1,5 +1,7 @@
 //! The chart: what its canvas carries, the candle under the pointer, and
-//! the wheel, a drag and the arrow keys.
+//! the wheel, a drag and the arrow keys. The pointer is where the host says
+//! it is, in the window's pixels; the chart is where `sample::chart_bounds`
+//! puts it.
 use ducktape_view_guest::wire::{CanvasCommand, CanvasShape, Node};
 use gpui::{MouseButton, MouseDownEvent, MouseMoveEvent, ScrollDelta, ScrollWheelEvent, point, px};
 
@@ -49,11 +51,27 @@ fn lines(cx: &TestAppContext) -> usize {
     lines.count()
 }
 
-/// The candles on screen: each has a slot that hears the pointer.
+/// The candles on screen, as the plot's name says them.
 pub(super) fn slots(cx: &TestAppContext) -> usize {
-    let plot = cx.node("trade-plot").children().iter();
-    plot.filter(|node| node.key().is_some_and(|key| key.starts_with("candle-")))
-        .count()
+    let named = cx.interactivity("trade-plot").aria.label.clone();
+    let named = named.expect("the plot is named");
+    let (said, _) = named.split_once(" on screen").expect("its candles");
+    let count = said.rsplit(' ').next().and_then(|count| count.parse().ok());
+    count.expect("how many")
+}
+
+/// The pointer over the middle of slot `slot` of the wide board's chart:
+/// 88 slots of 8 px across its 704 px.
+fn over(cx: &mut TestAppContext, slot: usize) {
+    sample::point(cx, WIDE, (slot as f32 * 8. + 4., 200.));
+}
+
+/// Where the line on the candle under the pointer is drawn, from the
+/// plot's left edge: `None` while it is on no candle.
+fn line(cx: &TestAppContext) -> Option<gpui::Length> {
+    let line = &cx.node("trade-plot").children()[1];
+    let style = &cx.styles()[line.style().expect("the line's style")];
+    style.background.as_ref().and(style.inset.left)
 }
 
 /// Every text laid over the plot.
@@ -79,15 +97,24 @@ fn readout(cx: &TestAppContext) -> Vec<String> {
     texts[open..open + 10].to_vec()
 }
 
-/// The wheel over the chart, `lines` away from the reader.
-pub(super) fn wheel(cx: &mut TestAppContext, lines: f32) {
+/// The wheel over the chart in a pane of `size`, `lines` away from the
+/// reader, with the pointer at `x` of the chart.
+fn wheel_at(cx: &mut TestAppContext, size: (f32, f32), x: f32, lines: f32) {
+    let (origin, _) = sample::chart_bounds(size);
     cx.simulate_scroll_wheel(
         "trade-plot",
         ScrollWheelEvent {
+            position: point(px(origin.0 + x), px(origin.1 + 200.)),
             delta: ScrollDelta::Lines(point(0., lines)),
             ..Default::default()
         },
     );
+}
+
+/// The wheel over the wide board's price axis, right of the candles: the
+/// zoom is about the plot's right edge.
+pub(super) fn wheel(cx: &mut TestAppContext, lines: f32) {
+    wheel_at(cx, WIDE, 704. + 32., lines);
 }
 
 fn key(cx: &mut TestAppContext, key: &str) {
@@ -173,7 +200,9 @@ fn a_bucket_with_no_trade_is_drawn_flat_at_the_close_before() {
     world.candles.insert((0, 3), rows);
     let (mut cx, ..) = opened(world, WIDE, Some(READER));
     assert_eq!(slots(&cx), 5, "from the first trade to the newest");
-    assert!(cx.find("candle-82").is_none());
+    let newest = readout(&cx);
+    over(&mut cx, 82);
+    assert_eq!((line(&cx), readout(&cx)), (None, newest), "no candle there");
     // the two hours between: a wick and a body one pixel tall, at one height
     let close = quads(&cx, 84. * 8., 85. * 8.);
     for gap in [85, 86] {
@@ -184,7 +213,7 @@ fn a_bucket_with_no_trade_is_drawn_flat_at_the_close_before() {
         // where the candle before closed: its body's top, as it rose
         assert_eq!(flat[1].0, close[1].0);
     }
-    cx.simulate_hover("candle-86", true);
+    over(&mut cx, 86);
     assert_eq!(
         readout(&cx),
         [
@@ -198,7 +227,8 @@ fn a_bucket_with_no_trade_is_drawn_flat_at_the_close_before() {
 fn the_candle_under_the_pointer_is_told_and_the_newest_when_none_is() {
     let (mut cx, ..) = wide();
     let newest = readout(&cx);
-    cx.simulate_hover("candle-57", true);
+    assert_eq!(line(&cx), None);
+    over(&mut cx, 57);
     assert_eq!(
         readout(&cx),
         [
@@ -211,47 +241,98 @@ fn the_candle_under_the_pointer_is_told_and_the_newest_when_none_is() {
         .filter(|text| *text == "Oct 6 08:00")
         .count();
     assert_eq!(stamps, 2, "{:?}", labels(&cx));
-    // the pointer is in the next slot before it has left this one
-    cx.simulate_hover("candle-58", true);
-    let next = readout(&cx);
-    cx.simulate_hover("candle-57", false);
-    assert_eq!(readout(&cx), next);
-    cx.simulate_hover("candle-58", false);
-    assert_eq!(readout(&cx), newest);
+    // the line is on the column its wick is drawn in
+    assert_eq!(line(&cx), Some(px(460.).into()));
+    over(&mut cx, 58);
+    assert_ne!(readout(&cx), newest);
+    assert_eq!(line(&cx), Some(px(468.).into()));
+    // over the price axis, and under the plot on the time axis: no candle
+    for off in [(720., 200.), (468., 500.)] {
+        sample::point(&mut cx, WIDE, off);
+        assert_eq!((line(&cx), readout(&cx)), (None, newest.clone()));
+        over(&mut cx, 58);
+    }
+    // the pointer leaves the plot
+    cx.simulate_hover("trade-plot", false);
+    assert_eq!((line(&cx), readout(&cx)), (None, newest));
 }
 
-/// The line on the hovered candle is the host's to paint: its slot's
-/// hover style, carried once. So a hover costs the view the readout and the
-/// time under the candle, and none of the chart.
+/// One listener on the plot finds the candle under the pointer, from where
+/// the host says the chart is. A slot the pointer enters costs the view its
+/// line, the readout and the time under the candle, and none of the canvas;
+/// a move inside one slot costs it nothing.
 #[test]
-fn a_hover_sends_the_readout_and_none_of_the_chart() {
+fn a_hover_sends_the_line_and_the_readout_and_none_of_the_chart() {
     let (mut cx, ..) = wide();
-    let slot = cx.interactivity("candle-57");
-    let group = slot.group.clone().expect("the slot is a group");
-    let Some(line) = cx.node("candle-57").children().first() else {
-        panic!("the slot holds its line");
-    };
-    let style = line
-        .interactivity()
-        .and_then(|line| line.group_hover.as_ref());
-    assert_eq!(style.map(|style| &style.group), Some(&group));
     let whole = cx.frame_bytes();
     let drawn = canvas(&cx).to_vec();
     let renders = cx.renders();
-    cx.simulate_hover("candle-57", true);
+    over(&mut cx, 57);
     let sent: usize = cx.reports().iter().map(|tick| tick.bytes).sum();
     assert_eq!(canvas(&cx), drawn, "the canvas is as it was");
     assert!(
         sent < 512,
         "{sent} B crossed for a hover, of a {whole} B frame"
     );
-    cx.simulate_hover("candle-58", true);
-    cx.simulate_hover("candle-57", false);
+    assert_eq!(cx.renders(), renders + 1);
+    // the slot's first pixel, its last, and another height in it
+    for inside in [(456., 200.), (463.9, 200.), (460., 20.)] {
+        sample::point(&mut cx, WIDE, inside);
+        let ticks = cx.reports().iter();
+        assert_eq!(ticks.map(|tick| tick.patches).sum::<usize>(), 0);
+    }
     assert_eq!(
         cx.renders(),
-        renders + 2,
-        "leaving for the next slot draws nothing"
+        renders + 1,
+        "a move inside one slot draws nothing"
     );
+    sample::point(&mut cx, WIDE, (464., 200.));
+    assert_eq!(cx.renders(), renders + 2, "the next slot's first pixel");
+    assert_eq!(line(&cx), Some(px(468.).into()));
+}
+
+/// Across the whole plot every slot the pointer enters is a small patch,
+/// where an axis label gives way to the candle's time and comes back too:
+/// the time axis is a layer of its own, so the plot's other children keep
+/// their places and none is sent again for a label that came or went.
+#[test]
+fn a_sweep_across_the_plot_is_small_patches_all_the_way() {
+    let (mut cx, ..) = wide();
+    for slot in 0..88 {
+        over(&mut cx, slot);
+        let sent: usize = cx.reports().iter().map(|tick| tick.bytes).sum();
+        let patches = cx.last_frame().patches.len();
+        assert!(
+            sent < 512 && patches <= 16,
+            "slot {slot}: {sent} B in {patches} patches"
+        );
+    }
+}
+
+/// The wheel zooms about the pointer: the candle under it stays under it,
+/// and the plot's right edge moves to make that so. At the live edge
+/// there is no newer candle to bring in, so the edge stays.
+#[test]
+fn the_wheel_keeps_the_candle_under_the_pointer() {
+    let (mut cx, view, _) = wide();
+    // the pointer on the 45th of the 88 candles
+    let x = 44. * 8. + 4.;
+    over(&mut cx, 44);
+    let told = readout(&cx);
+    for closer in 1..=6 {
+        wheel_at(&mut cx, WIDE, x, 1.);
+        assert_eq!(readout(&cx), told, "{closer} notches closer");
+    }
+    assert_eq!(slots(&cx), 46);
+    assert_eq!(back(&view), 20, "the newest candles are off the edge");
+    for _ in 0..6 {
+        wheel_at(&mut cx, WIDE, x, -1.);
+        assert_eq!(readout(&cx), told);
+    }
+    assert_eq!((slots(&cx), back(&view)), (88, 0));
+    wheel_at(&mut cx, WIDE, x, -1.);
+    assert_eq!(back(&view), 0, "no newer candle than the newest");
+    assert_ne!(readout(&cx), told, "an older candle came under the pointer");
 }
 
 #[test]
@@ -274,7 +355,7 @@ fn the_wheel_zooms_between_the_widest_and_the_narrowest_candle() {
 
 /// Zoomed all the way out, the chart holds the most candles one canvas
 /// carries, and reads page after page until it has them: a week of 15m
-/// candles is on one screen.
+/// candles is on one screen, with no element of the frame per candle.
 #[test]
 fn zoomed_out_the_chart_reads_on_until_the_screen_is_full() {
     let tip = sample::NOW / 900_000;
@@ -293,13 +374,21 @@ fn zoomed_out_the_chart_reads_on_until_the_screen_is_full() {
     });
     let mut world = sample::board();
     world.candles.insert((0, 2), rows.collect());
-    let (mut cx, ..): Opened = opened(world, (1400., 760.), Some(READER));
+    let pane = (1400., 760.);
+    let (mut cx, ..): Opened = opened(world, pane, Some(READER));
     cx.simulate_click("15m");
     for _ in 0..40 {
-        wheel(&mut cx, -1.);
+        // over the price axis, right of the 824 px of plot
+        wheel_at(&mut cx, pane, 824. + 32., -1.);
     }
     cx.run_until_parked();
     assert_eq!(slots(&cx), 720, "the most candles on screen");
+    // no element per candle: the canvas, the line, and the labels
+    let held = cx.node("trade-plot").children().len();
+    assert!(held < 64, "{held} elements over 720 candles");
+    // a slot is a little over a pixel wide, and the pointer still finds it
+    sample::point(&mut cx, pane, (412.5, 200.));
+    assert_eq!(line(&cx), Some(px(412.).into()));
     // the newest page and the two before it cover the screen
     assert_eq!(older(&cx, tip - 255), 1);
     assert_eq!(older(&cx, tip - 511), 1);
@@ -333,7 +422,8 @@ fn the_arrow_keys_pan_and_zoom() {
 #[test]
 fn a_drag_pans_by_whole_candles() {
     let (mut cx, view, _) = wide();
-    let at = |x: f32| point(px(x), px(200.));
+    let (origin, _) = sample::chart_bounds(WIDE);
+    let at = |x: f32| point(px(origin.0 + x), px(origin.1 + 200.));
     let moved = |x: f32, pressed: Option<MouseButton>| MouseMoveEvent {
         position: at(x),
         pressed_button: pressed,
@@ -391,7 +481,7 @@ fn panned_to_the_oldest_candle_the_chart_asks_for_the_page_before() {
 fn another_span_starts_over_at_its_newest_candle() {
     let (mut cx, view, world) = wide();
     key(&mut cx, "left");
-    cx.simulate_hover("candle-3", true);
+    over(&mut cx, 3);
     let day = sample::NOW / 86_400_000;
     let rows = (0..3).rev().map(|back| trade::Candle {
         bucket: day - back,
