@@ -1,5 +1,5 @@
 [package]
-name = "market-view"
+name = "trade-view"
 edition.workspace = true
 version.workspace = true
 publish = false

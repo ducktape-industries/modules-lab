@@ -1869,16 +1869,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "market-view"
-version = "0.1.0"
-dependencies = [
- "ducktape-view-guest",
- "gpui-pre",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "maybe-rayon"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3325,6 +3315,28 @@ dependencies = [
  "thread_local",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "trade"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "borsh",
+ "describe",
+ "guest",
+ "program",
+ "store",
+]
+
+[[package]]
+name = "trade-view"
+version = "0.1.0"
+dependencies = [
+ "ducktape-view-guest",
+ "gpui-pre",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

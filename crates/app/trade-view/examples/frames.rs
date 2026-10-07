@@ -3,7 +3,7 @@
 //! `<dir>/manifest.json` and one `<name>.json` per screen. The app's real
 //! renderer then draws them with no node behind it.
 use ducktape_view_guest::testing::TestAppContext;
-use market_view::Market;
+use trade_view::Market;
 
 const SIZE: (u32, u32) = (1100, 640);
 
