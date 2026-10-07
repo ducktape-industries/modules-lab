@@ -1,0 +1,57 @@
+# modules-lab — experiments written against the modules SDK, out of tree.
+#
+# A crate here keeps the shape of modules' `crates/app/*` (a view is a cdylib
+# for wasm32-unknown-unknown on `ducktape-view-guest`), so one that earns its
+# place moves over as it is.
+
+[workspace]
+resolver = "2"
+members = ["crates/app/market-view"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+
+[workspace.dependencies]
+# ---- sdk-line: modules dev @ ccd4474d, the rev the app pins. The app refuses
+# a view built against another wire, so this moves when the app's pin moves.
+ducktape-view-guest = { git = "https://github.com/ducktape-industries/modules", rev = "ccd4474d87244e66c0d95b723ec426d46f9a9977" }
+# `canvas().rect` takes gpui's `Bounds`, which the SDK does not re-export.
+# The rev is the one modules names.
+gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpui-pre", rev = "3207fbe59e7badc80ab247c10314adf9f318ad5e", default-features = false }
+
+# ---- external
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# proc-macro and build-script crates are compiled once and then run for every
+# unit below them — unoptimized they dominate a debug build.
+[profile.dev.build-override]
+opt-level = 2
+
+# The profile modules ships its views from: size for the shared code, speed
+# for the view and the SDK crates only a view links (a view's redraw is fuel
+# per instruction).
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release.package.market-view]
+opt-level = 3
+[profile.release.package.ducktape-view-guest]
+opt-level = 3
+[profile.release.package.view-wire]
+opt-level = 3
+[profile.release.package.gpui-pre]
+opt-level = 3
+
+# The patches modules' root carries: the fork's MessagePack, scheduler and
+# logging crates. A dependency's `[patch]` does not reach its dependents, so
+# they are repeated here, at the same rev.
+[patch.crates-io]
+rmp-serde = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "3207fbe59e7badc80ab247c10314adf9f318ad5e" }
+gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "3207fbe59e7badc80ab247c10314adf9f318ad5e" }
+gpui-pre-zlog = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "3207fbe59e7badc80ab247c10314adf9f318ad5e" }

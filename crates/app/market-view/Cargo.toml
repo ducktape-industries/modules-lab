@@ -1,0 +1,19 @@
+[package]
+name = "market-view"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+# A Rust-authored view, exported as a dynamically loaded wasm module by
+# `export_view!`; the rlib is what its native tests link.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ducktape-view-guest.workspace = true
+gpui.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+# a test writes the frame it drew as the JSON the app's `--render-tree` reads
+serde_json.workspace = true
