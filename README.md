@@ -117,11 +117,27 @@ There is no runner that keeps one view alive without a node. What there is:
 
 ## Measured
 
-trade-view has not been measured in the app yet. What is known of it is
-native: the wide board (88 candles, the book, the tape, the ticket and three
-open orders) is a 48 kB frame, `trade_view.wasm` is 1.1 MB, and a slot the
-pointer enters sends 0.4 kB, the readout and the time under the candle, with
-the canvas left as it was (`a_hover_sends_the_readout_and_none_of_the_chart`).
+trade-view in the app at 833487e8, against the trade program on a kit stage
+(a release build, `DUCKTAPE_PERF=1`, read at the test door's `/perf`, on a
+Ryzen 9 5950X). The market was minutes old: three candles, 36 resting
+orders, the tape filling. p50, with p95 in brackets:
+
+| What happened | fuel | wasm tick | merge + replace | host render | frame |
+|---|---|---|---|---|---|
+| a block that traded: the view asks again what it wrote and draws | 5.7M (6.3M) | 0.74 ms (0.94) | 0.3 ms | 0.27 ms (0.33) | 0.35 kB (2.9 kB) |
+| the pointer moving down the book and across the plot | 0.01M | 0.01 ms | none | none | unchanged |
+
+The view was 888 nodes and its memory stayed under 2 MB. A row or a candle
+under the pointer is marked by the host: the view's tick for the move
+changes nothing. A full chart was not measured live (a stage's market is as
+old as the stage); natively the wide board (88 candles, the book, the tape,
+the ticket and three open orders) is a 48 kB frame, and a slot the pointer
+enters sends 0.4 kB, the readout and the time under the candle, with the
+canvas left as it was (`a_hover_sends_the_readout_and_none_of_the_chart`).
+`trade_view.wasm` is 1.1 MB.
+
+The program on that node: an order that trades against 32 makers, the most
+one order may, was applied inside the host's fuel.
 
 The numbers below are the spike's, market-view, the chart alone on a made-up
 series, in the app at 833487e8 (a release build, `DUCKTAPE_PERF=1`, read at

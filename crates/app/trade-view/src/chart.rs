@@ -51,6 +51,8 @@ const SLOW: usize = 25;
 const ORDER_LINES: usize = 16;
 /// A label's height on an axis: a rule's price under a tag is left out.
 const TAG_H: f32 = 18.;
+/// The strip along the plot's top that the readout is told in.
+const READOUT: f32 = 28.;
 
 /// The chart's settings, which a snapshot keeps, and what it holds while
 /// it is on screen, which is read and measured again on every mount.
@@ -559,8 +561,20 @@ impl Trade {
         let orders = self.order_lines(plot);
         let last = self.chart.candles.ready().and_then(Candles::last);
         let last = last.and_then(|last| Some((last, plot.line(last.close)?)));
-        let mut tagged: Vec<f32> = orders.iter().map(|(y, ..)| *y).collect();
-        tagged.extend(last.map(|(_, y)| y));
+        // A tag is drawn only where it covers no other: the last price's
+        // first, then the orders' from the nearest to it outwards. An
+        // order with no tag keeps its line.
+        let mut tagged: Vec<f32> = last.iter().map(|(_, y)| *y).collect();
+        let near = last.map_or(0., |(_, y)| y);
+        let mut tags: Vec<_> = orders.iter().collect();
+        tags.sort_by(|(a, ..), (b, ..)| (a - near).abs().total_cmp(&(b - near).abs()));
+        tags.retain(|(y, ..)| {
+            let clear = tagged.iter().all(|tag| (tag - y).abs() >= TAG_H);
+            if clear {
+                tagged.push(*y);
+            }
+            clear
+        });
         let (step, rules) = plot.rules(market.tick);
         let rules: Vec<(u64, f32)> = rules
             .filter_map(|rule| Some((rule, plot.line(rule)?)))
@@ -573,28 +587,31 @@ impl Trade {
                 .left(px(plot.width + 8.))
                 .top(px(y - 7.))
         });
-        let order_tags = orders.iter().flat_map(|(y, side, left, limit)| {
+        let order_tags = tags.iter().flat_map(|(y, side, left, limit)| {
             let color = sided(*side, &theme);
             let word = match side {
                 Side::Buy => "Buy",
                 Side::Sell => "Sell",
             };
-            let named = label(format!("{word} {}", format::amount(*left)))
-                .left(design::space::SM)
-                .top(px(y - TAG_H / 2.))
-                .h(px(TAG_H))
-                .px(design::space::XS)
-                .flex()
-                .items_center()
-                .border_1()
-                .border_color(color)
-                .bg(theme.background)
-                .text_color(color);
+            // the readout is told along the plot's top: no name over it
+            let named = (y - TAG_H / 2. >= READOUT).then(|| {
+                label(format!("{word} {}", format::amount(*left)))
+                    .left(design::space::SM)
+                    .top(px(y - TAG_H / 2.))
+                    .h(px(TAG_H))
+                    .px(design::space::XS)
+                    .flex()
+                    .items_center()
+                    .border_1()
+                    .border_color(color)
+                    .bg(theme.background)
+                    .text_color(color)
+            });
             let priced = tag(*limit, *y)
                 .border_color(color)
                 .bg(theme.background)
                 .text_color(color);
-            [named, priced]
+            [named, Some(priced)].into_iter().flatten()
         });
         let last_tag = last.map(|(last, y)| {
             let color = rising(last, &theme);

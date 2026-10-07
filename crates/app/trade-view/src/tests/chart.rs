@@ -419,3 +419,32 @@ fn a_block_that_traded_moves_the_last_candle_and_not_the_reader() {
     assert_eq!(back(&view), 0);
     assert_eq!(readout(&cx)[6..8], ["C", "64,200.0"]);
 }
+
+/// A tag never covers another, nor the readout: of two orders priced
+/// close together the one nearer the last price is tagged and the other
+/// keeps its line alone, and one along the plot's top keeps its price on
+/// the axis and no name over the readout.
+#[test]
+fn an_orders_tag_gives_way_to_another_and_to_the_readout() {
+    let mut world = sample::board();
+    let sell = world.orders[1];
+    let beside = trade::Order {
+        id: 7,
+        limit: Some(644_000 * (UNIT / 10)),
+        amount: 300 * trade::LOT,
+        ..sell
+    };
+    let top = trade::Order {
+        id: 8,
+        limit: Some(677_000 * (UNIT / 10)),
+        amount: 700 * trade::LOT,
+        ..sell
+    };
+    world.orders.splice(0..0, [top, beside]);
+    let (cx, ..) = opened(world, WIDE, Some(READER));
+    let labels = labels(&cx);
+    let said = |text: &str| labels.iter().any(|label| label == text);
+    assert!(said("Sell 0.1000") && said("64,352.0"), "{labels:?}");
+    assert!(!said("Sell 0.0300") && !said("64,400.0"), "{labels:?}");
+    assert!(!said("Sell 0.0700") && said("67,700.0"), "{labels:?}");
+}
