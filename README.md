@@ -147,8 +147,9 @@ There is no runner that keeps one view alive without a node. What there is:
    The stage's modules is the rev this workspace pins, and its app is
    `APP_REF` (`dev` when not given), which must pin that same rev:
    `make live` stops and names both revs when it does not. Today the pin
-   is modules #277, which the app pins on the branch of app #470 and not
-   yet on `dev`: until both are merged, pass `APP_REF=host/sensor-bounds`.
+   is modules #278, which the app pins on the branch of app #472 and not
+   yet on `dev`: until both are merged, pass
+   `APP_REF=pin/gpui-pre-taffy-0.14`.
 
    Beyond the tools above it needs what qa's README asks of a machine that
    runs `kit`, and `git`, `python3` and `ps`. A first run builds kit, the
