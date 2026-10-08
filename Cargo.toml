@@ -24,6 +24,9 @@ guest = { git = "https://github.com/ducktape-industries/modules", rev = "10eee3d
 program = { git = "https://github.com/ducktape-industries/modules", rev = "10eee3dc9691b4e2fd70e4f55f9422ac340ff591" }
 store = { git = "https://github.com/ducktape-industries/modules", rev = "10eee3dc9691b4e2fd70e4f55f9422ac340ff591" }
 describe = { git = "https://github.com/ducktape-industries/modules", rev = "10eee3dc9691b4e2fd70e4f55f9422ac340ff591" }
+# The op that gives a key its account: what a live stage's seed sends first
+# (`crates/app/trade/examples/seed.rs`). No program or view here links it.
+identity = { git = "https://github.com/ducktape-industries/modules", rev = "10eee3dc9691b4e2fd70e4f55f9422ac340ff591" }
 # `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
 # the SDK does not re-export.
 # The rev is the one modules names.

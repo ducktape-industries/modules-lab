@@ -30,7 +30,19 @@ WASM_BUILD := RUSTFLAGS="$(WASM_RUSTFLAGS)" $(CARGO) build --release --target wa
 # builds in a target dir of its own, and its describe module in another.
 program_wasm = $(BUILD_TARGET)/$1/$2/wasm32-unknown-unknown/release/$(subst -,_,$2).wasm
 
-.PHONY: test wasm-programs wasm-describes wasm-views shots
+# A live stage is qa's kit's (`make live`): QA is a qa checkout, with core, app
+# and modules checked out beside it, and KIT its kit (default: $(QA)/kit,
+# which builds it first). The stage is STAGE, its modules the rev this
+# workspace pins, its app APP_REF (it must pin that same rev) and its core
+# CORE_REF (none: core's working checkout).
+QA ?=
+KIT ?=
+STAGE ?= lab
+APP_REF ?= dev
+CORE_REF ?=
+LIVE = QA="$(QA)" KIT="$(KIT)" STAGE="$(STAGE)" APP_REF="$(APP_REF)" CORE_REF="$(CORE_REF)" OUT="$(BUILD_TARGET)/live" RELEASE="$(RELEASE)" MAKE="$(MAKE)" sh live/live.sh
+
+.PHONY: test wasm-programs wasm-describes wasm-views shots live live-down
 
 ## fmt, clippy and the native tests: each view on a fake host.
 test:
@@ -62,3 +74,14 @@ wasm-views:
 shots:
 	$(CARGO) run -q -p trade-view --example frames -- shots/fixtures
 	CARGO_TARGET_DIR=$(abspath $(APP_TARGET)) $(APP)/dev/screens/chat-screens.sh shots/fixtures shots
+
+## the trade module in the real app: builds and packs it, founds stage
+## $(STAGE) of qa's kit with it and a week of history, seeds two accounts, a
+## book and two orders that trade, and prints the command that opens the
+## app on it. The stage's node runs until `make live-down`.
+live:
+	@$(LIVE) up
+
+## stops that node.
+live-down:
+	@$(LIVE) down

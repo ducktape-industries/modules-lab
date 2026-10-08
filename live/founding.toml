@@ -1,0 +1,17 @@
+# What a lab stage's founding adds to kit's own: `live.sh` puts this after the
+# qa checkout's founding.toml, and `kit up` fills @PROGRAMS@ with the stage's
+# programs/, where `live.sh` has put the two files.
+
+# The program with its view and its describe module packed into it. The
+# params are its markets' past: a week of every market's minutes
+# (`crates/app/trade/examples/history.rs`).
+[[programs]]
+id = "trade"
+code = "@PROGRAMS@/trade.wasm"
+params = "@PROGRAMS@/trade.params"
+
+# A kit stage meters nothing without limits. These are the ones core's README
+# gives: the program is checked against a host that counts.
+[limits]
+fuel = 1000000000
+memory_bytes = 268435456
