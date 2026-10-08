@@ -8,7 +8,7 @@ use std::rc::Rc;
 use ducktape_view_guest::host::Error;
 use ducktape_view_guest::methods::{HostSession, Query as Ask, Session, Submit};
 use ducktape_view_guest::testing::TestAppContext;
-use ducktape_view_guest::{Entity, View};
+use ducktape_view_guest::{Entity, MouseMoveEvent, Point, View, px};
 use store::{PageRequest, PageResponse};
 use trade::{
     Balance, Book, Candle, Fill, LOT, Level, Order, OrderState, Query, Reply, Side, Stats, Traded,
@@ -127,13 +127,30 @@ pub fn session(account: Option<u64>) -> Session {
     }
 }
 
-/// The size the host measures the chart at in a pane of `size`: what the
-/// bar, the tools, the panel and the other columns leave it.
-pub fn chart_size(size: (f32, f32)) -> (f32, f32) {
-    match size.0 >= 1100. {
-        true => (size.0 - 240. - 272., size.1 - 48. - 40. - 158.),
-        false => (size.0 - 256., size.1 - 40. - 34. - 136.),
-    }
+/// Where the pane's top left corner is in the app's window: a pane is
+/// laid out inside the window, never at its corner.
+const PANE_AT: (f32, f32) = (312., 96.);
+
+/// Where the host lays the chart out in a pane of `size`: its top left
+/// corner in the window's pixels, under the bar and the tools, and its
+/// size, what they, the panel and the other columns leave it.
+pub fn chart_bounds(size: (f32, f32)) -> ((f32, f32), (f32, f32)) {
+    let (over, size) = match size.0 >= 1100. {
+        true => (48. + 40., (size.0 - 240. - 272., size.1 - 48. - 40. - 158.)),
+        false => (40. + 34., (size.0 - 256., size.1 - 40. - 34. - 136.)),
+    };
+    ((PANE_AT.0, PANE_AT.1 + over), size)
+}
+
+/// The pointer moves to `at` of the chart, in the chart's own pixels, in
+/// a pane of `size`: the host says where it is in the window.
+pub fn point(cx: &mut TestAppContext, size: (f32, f32), at: (f32, f32)) {
+    let (origin, _) = chart_bounds(size);
+    let moved = MouseMoveEvent {
+        position: Point::new(px(origin.0 + at.0), px(origin.1 + at.1)),
+        ..Default::default()
+    };
+    cx.simulate_mouse_move("trade-plot", moved);
 }
 
 /// The view `V` open over `world` in a pane of `size`, the session said
@@ -150,8 +167,8 @@ pub fn opened<V: View>(
     let view = cx.open::<V>();
     sessions.send(session(account));
     cx.run_until_parked();
-    let chart = chart_size(size);
-    cx.simulate_measure("trade-chart", chart.0, chart.1);
+    let (origin, chart) = chart_bounds(size);
+    cx.simulate_bounds("trade-chart", origin, chart);
     cx.run_until_parked();
     (cx, view, world)
 }

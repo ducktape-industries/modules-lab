@@ -51,10 +51,11 @@ fn screens() -> Vec<Screen> {
         drive,
         pointer: false,
     };
-    // the wide board: the pointer on the candle of Oct 6 08:00
+    // the wide board: the pointer on the candle of Oct 6 08:00, the 58th
+    // of its 8 px slots
     let hovered = |cx: &mut TestAppContext| {
         limit_buy(cx);
-        cx.simulate_hover("candle-57", true);
+        sample::point(cx, WIDE, (57. * 8. + 4., 200.));
     };
     vec![
         board("trade-wide-light", WIDE, false, hovered),
@@ -83,12 +84,12 @@ fn screens() -> Vec<Screen> {
             world: sample::empty,
             ..board("trade-empty", WIDE, false, |_| {})
         },
-        // the line on the candle under the pointer is the host's to paint:
-        // the view only says which candle its readout tells
+        // the view draws the line on the candle under the pointer: it is
+        // told the pointer is where the capture puts it
         Screen {
             pointer: true,
             ..board("trade-hover", POINTED, false, |cx| {
-                cx.simulate_hover("candle-75", true)
+                sample::point(cx, POINTED, (600., 500. - 165. - 40. - 34.))
             })
         },
     ]

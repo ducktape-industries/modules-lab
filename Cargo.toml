@@ -13,18 +13,19 @@ edition = "2024"
 version = "0.1.0"
 
 [workspace.dependencies]
-# ---- sdk-line: modules dev @ ccd4474d, the rev the app pins. The app refuses
+# ---- sdk-line: modules dev @ 10eee3dc (modules#277), the rev the app pins. The app refuses
 # a view built against another wire, so this moves when the app's pin moves.
-ducktape-view-guest = { git = "https://github.com/ducktape-industries/modules", rev = "ccd4474d87244e66c0d95b723ec426d46f9a9977" }
+ducktape-view-guest = { git = "https://github.com/ducktape-industries/modules", rev = "10eee3dc9691b4e2fd70e4f55f9422ac340ff591" }
 # What a program is written against: the kernel ABI (a copy of core's, never
 # to drift from it), the guest and its mock host, the query derive, the
 # tables, and the describe module.
-abi = { git = "https://github.com/ducktape-industries/modules", rev = "ccd4474d87244e66c0d95b723ec426d46f9a9977" }
-guest = { git = "https://github.com/ducktape-industries/modules", rev = "ccd4474d87244e66c0d95b723ec426d46f9a9977" }
-program = { git = "https://github.com/ducktape-industries/modules", rev = "ccd4474d87244e66c0d95b723ec426d46f9a9977" }
-store = { git = "https://github.com/ducktape-industries/modules", rev = "ccd4474d87244e66c0d95b723ec426d46f9a9977" }
-describe = { git = "https://github.com/ducktape-industries/modules", rev = "ccd4474d87244e66c0d95b723ec426d46f9a9977" }
-# `canvas().rect` takes gpui's `Bounds`, which the SDK does not re-export.
+abi = { git = "https://github.com/ducktape-industries/modules", rev = "10eee3dc9691b4e2fd70e4f55f9422ac340ff591" }
+guest = { git = "https://github.com/ducktape-industries/modules", rev = "10eee3dc9691b4e2fd70e4f55f9422ac340ff591" }
+program = { git = "https://github.com/ducktape-industries/modules", rev = "10eee3dc9691b4e2fd70e4f55f9422ac340ff591" }
+store = { git = "https://github.com/ducktape-industries/modules", rev = "10eee3dc9691b4e2fd70e4f55f9422ac340ff591" }
+describe = { git = "https://github.com/ducktape-industries/modules", rev = "10eee3dc9691b4e2fd70e4f55f9422ac340ff591" }
+# `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
+# the SDK does not re-export.
 # The rev is the one modules names.
 gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpui-pre", rev = "3207fbe59e7badc80ab247c10314adf9f318ad5e", default-features = false }
 
