@@ -377,9 +377,12 @@ fn zoomed_out_the_chart_reads_on_until_the_screen_is_full() {
     let pane = (1400., 760.);
     let (mut cx, ..): Opened = opened(world, pane, Some(READER));
     cx.simulate_click("15m");
-    for _ in 0..40 {
-        // over the price axis, right of the 824 px of plot
-        wheel_at(&mut cx, pane, 824. + 32., -1.);
+    // the pointer on the plot, half way along its 824 px. 19 notches reach
+    // the narrowest candle, and there is not one more: a notch that zooms
+    // no further pans by nothing, and would ask for the page whatever the
+    // others did
+    for _ in 0..19 {
+        wheel_at(&mut cx, pane, 412.5, -1.);
     }
     cx.run_until_parked();
     assert_eq!(slots(&cx), 720, "the most candles on screen");
@@ -398,6 +401,94 @@ fn zoomed_out_the_chart_reads_on_until_the_screen_is_full() {
         commands > 720 * 5 && commands <= 4096,
         "{commands} commands"
     );
+}
+
+/// The wheel out with the pointer on the plot, until the screen holds more
+/// slots than there are candles held: the page before them is asked for
+/// and its candles fill in. A zoom out about the pointer asks the chart to
+/// pan to newer candles than there are; what asks for the page is where
+/// the chart is, at the oldest candle held, and not which way it was asked
+/// to go.
+#[test]
+fn zoomed_out_about_the_pointer_the_chart_reads_the_page_before() {
+    let (mut cx, view, _) = wide();
+    // the first page is the newest 256 of the sample's 300 hours
+    assert_eq!(older(&cx, HOUR - 255), 0);
+    for _ in 0..12 {
+        wheel_at(&mut cx, WIDE, 352., -1.);
+    }
+    assert_eq!(older(&cx, HOUR - 255), 1, "the page before the oldest");
+    assert_eq!(slots(&cx), 300, "every hour the program holds");
+    assert_eq!(back(&view), 0);
+}
+
+/// At the oldest candle the program holds the chart can pan no further:
+/// a zoom in about the pointer still keeps its candle, and a zoom out
+/// that would pan past the oldest candle keeps that one in the first slot.
+#[test]
+fn the_wheel_at_the_oldest_candle_keeps_it_in_the_first_slot() {
+    let (mut cx, view, _) = wide();
+    for _ in 0..31 {
+        key(&mut cx, "left");
+    }
+    assert_eq!(back(&view), 212, "the 88 that start at the first candle");
+    let x = 44. * 8. + 4.;
+    over(&mut cx, 44);
+    let told = readout(&cx);
+    wheel_at(&mut cx, WIDE, x, 1.);
+    assert_eq!((back(&view), readout(&cx)), (216, told.clone()));
+    wheel_at(&mut cx, WIDE, x, -1.);
+    assert_eq!((back(&view), readout(&cx)), (212, told.clone()));
+    // 97 slots: the pointer's candle would need the first slot before
+    // the oldest candle
+    wheel_at(&mut cx, WIDE, x, -1.);
+    assert_eq!((slots(&cx), back(&view)), (97, 203));
+    assert_ne!(readout(&cx), told, "a newer candle came under the pointer");
+    assert_eq!(older(&cx, HOUR - 299), 0, "the program holds none older");
+}
+
+/// A chart that only moved in the window is drawn as it was: its new
+/// origin is kept, for the pointer, and nothing renders. Under a resting
+/// pointer the move puts another candle there, and that is drawn.
+#[test]
+fn a_chart_that_moved_is_drawn_again_only_for_another_candle_under_the_pointer() {
+    let (mut cx, ..) = wide();
+    let (origin, size) = sample::chart_bounds(WIDE);
+    let renders = cx.renders();
+    cx.simulate_bounds("trade-chart", (origin.0 + 16., origin.1), size);
+    assert_eq!(cx.renders(), renders, "moved, with no pointer over it");
+    // the pointer where slot 57 was: two slots further left of the chart
+    over(&mut cx, 57);
+    assert_eq!(line(&cx), Some(px(444.).into()), "placed by the new origin");
+    let renders = cx.renders();
+    cx.simulate_bounds("trade-chart", origin, size);
+    assert_eq!(cx.renders(), renders + 1, "another candle is under it");
+    assert_eq!(line(&cx), Some(px(460.).into()));
+}
+
+/// A plot whose width is not a whole number of slots: the slots end at its
+/// right edge, where they are drawn, and the strip left of the first one
+/// is no candle's. Nor is either axis.
+#[test]
+fn the_pointer_finds_a_slot_where_the_canvas_draws_it() {
+    let pane = (1285., 760.);
+    let (mut cx, ..) = opened(sample::board(), pane, Some(READER));
+    assert_eq!(slots(&cx), 88, "709 px of plot at 8 px a candle");
+    let mut at = |x: f32, y: f32| {
+        sample::point(&mut cx, pane, (x, y));
+        line(&cx)
+    };
+    assert_eq!(at(4.9, 200.), None, "left of the first slot");
+    assert_eq!(at(5., 200.), Some(px(9.).into()), "its first pixel");
+    assert_eq!(at(708.9, 200.), Some(px(705.).into()), "the plot's last");
+    assert_eq!(at(709., 200.), None, "the price axis");
+    assert_eq!(at(300., 489.9), Some(px(297.).into()), "its lowest pixel");
+    assert_eq!(at(300., 490.), None, "the time axis");
+    // the line is on the column the canvas draws that slot's wick in
+    for wick in [9., 297., 705.] {
+        let drawn = quads(&cx, wick, wick + 1.);
+        assert!(drawn.iter().any(|(_, size)| size[0] == 1.), "{drawn:?}");
+    }
 }
 
 /// The arrow keys, for a reader without a pointer: ← → pan a tenth of the

@@ -367,9 +367,11 @@ impl Chart {
 
 impl Trade {
     /// Moves the chart's right edge `buckets` older, or newer below zero,
-    /// as far as the candles held go, and asks for the page before them
-    /// when it gets there. With no buckets to move, that is the page a
-    /// screen with room left of the oldest candle is waiting for.
+    /// as far as the candles held go. Where that leaves the chart is what
+    /// asks for the page before them: with the oldest candle held in the
+    /// first slot, or room left of it, whichever way the chart was asked
+    /// to go. With no buckets to move, that is the page a screen with room
+    /// left of the oldest candle is waiting for.
     pub(crate) fn pan(&mut self, buckets: i64, cx: &mut Context<Self>) {
         let chart = &mut self.chart;
         let Some(candles) = chart.candles.ready() else {
@@ -382,7 +384,7 @@ impl Trade {
         let furthest = held.saturating_sub(chart.slots() as u64 - 1) as i64;
         let wanted = chart.back as i64 + buckets;
         chart.back = wanted.clamp(0, furthest) as u64;
-        if wanted >= furthest {
+        if chart.back as i64 == furthest {
             self.read_older(cx);
         }
     }

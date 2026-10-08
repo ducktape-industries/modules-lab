@@ -138,39 +138,58 @@ There is no runner that keeps one view alive without a node. What there is:
 
 ## Measured
 
-trade-view in the app at 833487e8, against the trade program on a kit stage
-(a release build, `DUCKTAPE_PERF=1`, read at the test door's `/perf`, on a
-Ryzen 9 5950X). The market was minutes old: three candles, 36 resting
-orders, the tape filling. p50, with p95 in brackets:
+trade-view in the app at 833487e8 with the host telling a sensor its
+bounds, and the view built on that SDK, against the trade program on a kit
+stage founded with the week of history (a release build, `DUCKTAPE_PERF=1`,
+read at the test door's `/perf`, on a Ryzen 9 5950X). The view in a
+1560 x 940 window, the chart 1048 px wide on 15m candles. One row is one
+tick of the view: p50 of two runs, with p95 in brackets.
 
-| What happened | fuel | wasm tick | merge + replace | host render | frame |
-|---|---|---|---|---|---|
-| a block that traded: the view asks again what it wrote and draws | 5.7M (6.3M) | 0.74 ms (0.94) | 0.3 ms | 0.27 ms (0.33) | 0.35 kB (2.9 kB) |
-| the pointer moving down the book and across the plot | 0.01M | 0.01 ms | none | none | unchanged |
+At the zoom the chart opens at: 123 candles, 8.5 px each, 515 nodes, 2 MB.
 
-The view was 888 nodes and its memory stayed under 2 MB. A row under the
-pointer is marked by the host, and so was a candle then, by the hover style
-of an element laid over each one: the view's tick for the move changed
-nothing. Natively the wide board (88 candles, the book, the tape, the
-ticket and three open orders) is now 665 nodes and a 41 kB frame, and a slot
-the pointer enters sends 0.46 kB, the candle's line, the readout and the
-time under it, with the canvas left as it was
+| What happened | fuel | wasm tick | decode | merge | replace | host render | frame |
+|---|---|---|---|---|---|---|---|
+| the pointer entering another candle's slot | 4.4M (4.5M) | 0.77 ms (1.0) | 0.11 ms (0.32) | 0.18 ms (0.29) | 0.19 ms (0.26) | 0.69 ms (0.82) | 0.42 kB |
+| a wheel notch | 6.3M (7.2M) | 0.98 ms (1.1) | 0.19 ms (0.23) | 0.16 ms (0.18) | 0.18 ms (0.20) | 0.66 ms (0.71) | 27 kB (37 kB) |
+
+Zoomed out to the whole week: 673 candles, 1.4 px each, 509 nodes, 3.7 MB.
+
+| What happened | fuel | wasm tick | decode | merge | replace | host render | frame |
+|---|---|---|---|---|---|---|---|
+| the pointer entering another candle's slot | 6.3M (6.3M) | 1.0 ms (1.4) | 0.12 ms (0.26) | 0.29 ms (0.41) | 0.22 ms (0.28) | 0.71 ms (0.90) | 0.42 kB |
+| a wheel notch | 16.7M (19.8M) | 2.1 ms (2.3) | 0.70 ms (0.84) | 0.21 ms (0.25) | 0.20 ms (0.22) | 0.66 ms (0.78) | 150 kB (190 kB) |
+
+The frame holds no element for a candle, so a slot the pointer enters costs
+about the same at 123 candles and at 673: 1.9 ms and 2.4 ms for the five
+samples together. It sends the candle's line, the readout and the time
+under it, and none of the canvas; a move inside one slot is a tick that
+changes nothing, with no patch and no render. What still grows with the
+candles is the view's own tick, which works the whole plot out and builds
+every canvas command again on each render to find them unchanged, and a
+wheel notch, which sends the canvas again. A row of the book under the
+pointer is marked by the host with no tick; the line on a candle is the
+view's, and moves on its tick.
+
+These five samples stop at the element build: gpui's layout and paint of
+the view are in none of them. Measured apart, with samples added to the app
+for it, a slot the pointer entered at 673 candles took 27.8 ms when the
+view laid an element over every candle, and 11.6 ms in a build of that view
+without those elements. So read the tables as what the view's tick and the
+host's work on the tree cost, not as the time from the pointer's move to
+the pixels.
+
+Before, the view found the candle under the pointer by laying one element
+over each, whose hover style the host painted: the same week was 1,853
+nodes and 8 MB, and a slot the pointer entered cost 29M fuel and 9.7 ms in
+the five samples. A block that traded was measured then, on a market three
+candles old: the view asks again what it wrote and draws for 5.7M fuel
+(6.3M), a 0.74 ms tick (0.94) and a 0.35 kB frame (2.9 kB).
+
+Natively the wide board (88 candles, the book, the tape, the ticket and
+three open orders) is 665 nodes and a 41 kB frame, and a slot the pointer
+enters sends 0.46 kB
 (`a_hover_sends_the_line_and_the_readout_and_none_of_the_chart`).
 `trade_view.wasm` is 1.1 MB.
-
-The same, on a stage founded with the week of history, the chart 1048 px
-wide on 15m candles, zoomed out to the whole week: 673 candles, 1.4 px
-each, 1850 nodes, 8 MB.
-
-| What happened | fuel | wasm tick | merge + replace | host render | frame |
-|---|---|---|---|---|---|
-| a wheel notch between 490 and 673 candles | 29M (57M) | 4.2 ms (6.5) | 2.0 ms | 2.7 ms (3.5) | 264 kB when the candles on screen change |
-| the pointer entering another candle's slot | 29M (32M) | 4.3 ms (4.8) | 2.3 ms | 2.9 ms (3.8) | 0.4 kB |
-
-A redraw costs in proportion to the candles on screen, and so does the
-readout's tick: near three times the candles of the spike's 240 is three
-times its numbers and more. The line on the hovered candle was still the
-host's then, with no tick.
 
 The program on a node with core's README limits (1e9 fuel, 256 MB): the
 founding took the week of every market's minutes (30,240 bars, 39 thousand
@@ -209,15 +228,14 @@ software.
 
 ## What the SDK does not give a trading view yet
 
-- **Where the pointer is on the chart.** Given now. A mouse event's
-  position is in the window's pixels, and the chart's `sensor` tells its
-  bounds in the same pixels (`on_bounds`): the position less the bounds'
-  origin is the pointer on the plot. One listener finds the candle under it,
-  and the wheel zooms about it. What is left is the cost: the line on that
-  candle is an element the view moves, with a tick for each slot the pointer
-  enters, where a hover style was the host's alone. A horizontal line at the
-  pointer and the price read off it are not drawn yet; they wait for
-  nothing of the SDK's.
+- **A mark that follows the pointer with no tick.** The view knows where
+  the pointer is on its chart: the chart's `sensor` tells its bounds in the
+  window's pixels (`on_bounds`), the pixels a mouse event's position is in,
+  and one listener finds the candle under it. What it draws there it draws
+  on its own tick: the line on the hovered candle takes a tick for each slot
+  the pointer enters, where a hover style is the host's alone and takes
+  none. A horizontal line at the pointer and the price read off it are not
+  drawn yet; they wait for nothing of the SDK's.
 - **More than quads and lines on the canvas.** The builder has `rect`,
   `circle` and `line`. The wire carries paths, dashes, clips and transforms,
   which an area series, dashed order lines and an indicator pane need.
@@ -227,11 +245,6 @@ software.
   field are in the frame and do not reach the text (app
   `src/render/inputs.rs:308`). The ticket's price and amount are in the UI
   face, not in mono like the figures around them. `text_right` is kept.
-- **A sensor's first size.** Given now. One listener, `on_bounds`, hears
-  the chart's bounds at its first sight and at every change after, and
-  `TestAppContext::simulate_bounds` tells them as the app does. The pair it
-  replaces let a view that listened to `on_resize` alone pass its tests and
-  draw nothing in the app.
 - **gpui's names.** `canvas().rect` takes a `Bounds` made of a `point` and
   a `size`, and a share of a width is `relative`: the SDK re-exports
   `Bounds` and none of the three functions, so the view depends on gpui
