@@ -466,6 +466,23 @@ fn a_chart_that_moved_is_drawn_again_only_for_another_candle_under_the_pointer()
     assert_eq!(line(&cx), Some(px(460.).into()));
 }
 
+/// The pointer is the plot's. A frame drawn with no plot drops it, since
+/// the host has no element left to say the pointer went: a chart measured
+/// too small for a plot and measured back, with no word of the pointer
+/// between, draws no line and tells the newest candle.
+#[test]
+fn a_plot_that_left_the_frame_takes_the_pointer_with_it() {
+    let (mut cx, ..) = wide();
+    let newest = readout(&cx);
+    let (origin, size) = sample::chart_bounds(WIDE);
+    over(&mut cx, 57);
+    assert_eq!(line(&cx), Some(px(460.).into()));
+    cx.simulate_bounds("trade-chart", origin, (100., 100.));
+    assert!(cx.find("trade-plot").is_none(), "no room for a plot");
+    cx.simulate_bounds("trade-chart", origin, size);
+    assert_eq!((line(&cx), readout(&cx)), (None, newest));
+}
+
 /// A plot whose width is not a whole number of slots: the slots end at its
 /// right edge, where they are drawn, and the strip left of the first one
 /// is no candle's. Nor is either axis.

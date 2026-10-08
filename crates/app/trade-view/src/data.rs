@@ -185,7 +185,7 @@ impl Trade {
     /// the ones shown: the chart starts over at its live edge.
     pub(crate) fn read_candles(&mut self, cx: &mut Context<Self>) {
         let chart = &mut self.chart;
-        (chart.back, chart.pointer) = (0, None);
+        chart.back = 0;
         (chart.rereading, chart.older) = (None, None);
         let page = cx.host().query(self.candles_page(None));
         self.chart.candles = Loadable::Loading(cx.land(page, |view, page, cx| {

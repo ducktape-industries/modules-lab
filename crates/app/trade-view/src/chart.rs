@@ -80,7 +80,8 @@ pub struct Chart {
     origin: Point<Pixels>,
     #[serde(skip)]
     pub(crate) size: (f32, f32),
-    /// The pointer while it is over the plot, in the window's pixels.
+    /// The pointer while it is over the plot, in the window's pixels. It is
+    /// the plot's: a frame drawn with no plot drops it.
     #[serde(skip)]
     pub(crate) pointer: Option<Point<Pixels>>,
     /// Where a drag was last accounted for, in the window's pixels.
@@ -451,7 +452,11 @@ impl Trade {
 
     /// The chart in its sensor: the plot once the host has measured it and
     /// the program has said a candle, and until then what there is to say.
-    pub(crate) fn chart(&self, cx: &mut Context<Self>, theme: &Theme) -> impl IntoElement + use<> {
+    pub(crate) fn chart(
+        &mut self,
+        cx: &mut Context<Self>,
+        theme: &Theme,
+    ) -> impl IntoElement + use<> {
         let said = |text: SharedString| {
             div()
                 .size_full()
@@ -461,8 +466,14 @@ impl Trade {
                 .child(design::quiet(text, theme))
                 .into_any_element()
         };
-        let candles = &self.chart.candles;
         let plot = self.chart.plot(self.market().tick);
+        // The pointer goes with the plot, whatever took the plot away: the
+        // host tells that the pointer left through the plot's own element,
+        // and this frame has none.
+        if plot.is_none() {
+            self.chart.pointer = None;
+        }
+        let candles = &self.chart.candles;
         let chart = match (candles, &plot) {
             (Loadable::Failed(refusal), _) => said(refusal.message.clone().into()),
             (_, Some(plot)) => self.plotted(plot, cx, theme).into_any_element(),
