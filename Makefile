@@ -1,8 +1,9 @@
-# modules-lab — the gates of the views here. Every wasm artifact is a build
+# modules-lab — the gates of the programs and views here. Every wasm artifact is a build
 # output under $(BUILD_TARGET); none is committed.
 CARGO ?= cargo
 WASM_OPT ?= wasm-opt
-VIEWS := market-view
+PROGRAMS := trade
+VIEWS := trade-view
 
 BUILD_TARGET := $(abspath $(or $(CARGO_TARGET_DIR),target))
 RELEASE := $(BUILD_TARGET)/wasm32-unknown-unknown/release
@@ -22,7 +23,14 @@ CARGO_HOME_DIR := $(or $(CARGO_HOME),$(HOME)/.cargo)
 SYSROOT := $(shell rustc --print sysroot)
 WASM_RUSTFLAGS := --remap-path-prefix=$(CURDIR)=/build --remap-path-prefix=$(CARGO_HOME_DIR)=/cargo --remap-path-prefix=$(SYSROOT)=/rustc
 
-.PHONY: test wasm-views shots
+WASM_BUILD := RUSTFLAGS="$(WASM_RUSTFLAGS)" $(CARGO) build --release --target wasm32-unknown-unknown
+
+# A program is a cdylib its view also links, with `module` off; in one
+# target dir each build would rebuild the crate for the other. So a program
+# builds in a target dir of its own, and its describe module in another.
+program_wasm = $(BUILD_TARGET)/$1/$2/wasm32-unknown-unknown/release/$(subst -,_,$2).wasm
+
+.PHONY: test wasm-programs wasm-describes wasm-views shots
 
 ## fmt, clippy and the native tests: each view on a fake host.
 test:
@@ -30,14 +38,27 @@ test:
 	$(CARGO) clippy --workspace --all-targets -- -D warnings
 	$(CARGO) test --workspace
 
+## builds every program for wasm32 into $(RELEASE)/<name>.wasm, unpacked:
+## packing its view and describe module into it is the founding's job
+## (qa's `view-pack`).
+wasm-programs:
+	@mkdir -p $(RELEASE)
+	@$(foreach p,$(PROGRAMS),$(WASM_BUILD) --target-dir $(BUILD_TARGET)/programs/$(p) -p $(p) --features module && cp $(call program_wasm,programs,$(p)) $(RELEASE)/ || exit 1;)
+
+## builds every program's describe module (the `alloc` and `describe`
+## exports, no imports) into $(RELEASE)/<name>.describe.wasm, ABI-checked.
+wasm-describes:
+	@mkdir -p $(RELEASE)
+	@$(foreach p,$(PROGRAMS),$(WASM_BUILD) --target-dir $(BUILD_TARGET)/describe/$(p) -p $(p) --features describe && cp $(call program_wasm,describe,$(p)) $(RELEASE)/$(subst -,_,$(p)).describe.wasm && python3 $(SDK_TOOLS)/check-describe-abi.py $(RELEASE)/$(subst -,_,$(p)).describe.wasm || exit 1;)
+
 ## builds every view for wasm32 under $(RELEASE)/, optimized and ABI-checked
 ## as modules gates its own, and prints `name  bytes`.
 wasm-views:
-	@$(foreach v,$(VIEWS),RUSTFLAGS="$(WASM_RUSTFLAGS)" $(CARGO) build --release --target wasm32-unknown-unknown -p $(v) && WASM_OPT=$(WASM_OPT) sh $(SDK_TOOLS)/view-gate.sh $(v) $(RELEASE)/$(subst -,_,$(v)).wasm || exit 1;)
+	@$(foreach v,$(VIEWS),$(WASM_BUILD) -p $(v) && WASM_OPT=$(WASM_OPT) sh $(SDK_TOOLS)/view-gate.sh $(v) $(RELEASE)/$(subst -,_,$(v)).wasm || exit 1;)
 
-## a view with no node: writes the frames market-view draws and has the
+## a view with no node: writes the frames trade-view draws and has the
 ## app's real renderer paint them into shots/*.png (Linux: Xvfb, xdotool,
 ## ImageMagick; see $(APP)/dev/screens/README.md).
 shots:
-	$(CARGO) run -q -p market-view --example frames -- shots/fixtures
+	$(CARGO) run -q -p trade-view --example frames -- shots/fixtures
 	CARGO_TARGET_DIR=$(abspath $(APP_TARGET)) $(APP)/dev/screens/chat-screens.sh shots/fixtures shots
