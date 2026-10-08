@@ -1530,6 +1530,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "identity"
+version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/modules?rev=10eee3dc9691b4e2fd70e4f55f9422ac340ff591#10eee3dc9691b4e2fd70e4f55f9422ac340ff591"
+dependencies = [
+ "abi",
+ "borsh",
+ "describe",
+ "guest",
+ "program",
+ "serde",
+ "store",
+]
+
+[[package]]
 name = "idna"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3325,6 +3339,7 @@ dependencies = [
  "borsh",
  "describe",
  "guest",
+ "identity",
  "program",
  "store",
 ]
