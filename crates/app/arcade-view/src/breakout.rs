@@ -171,7 +171,7 @@ impl Breakout {
     }
 
     /// The first brick the ball overlaps breaks, and the ball turns off the
-    /// side it went in by least. A wall broken whole is built again.
+    /// side it crossed last. A wall broken whole is built again.
     fn broke(&mut self) {
         let (x, y) = self.ball;
         let r = RADIUS * SUB;
@@ -193,7 +193,9 @@ impl Breakout {
         };
         self.bricks[row][col] = false;
         self.score += POINTS[row];
-        match across < down {
+        // the side it crossed last turns it: of the two overlaps, the one
+        // its speed made in the shorter time
+        match across * self.speed.1.abs() < down * self.speed.0.abs() {
             true => self.speed.0 = -self.speed.0,
             false => self.speed.1 = -self.speed.1,
         }
@@ -303,6 +305,16 @@ mod tests {
         assert!(!breakout.bricks[5][5]);
         assert_eq!(breakout.score(), 1);
         assert!(breakout.speed.1 > 0, "it falls again");
+        assert_eq!(breakout.bricks.iter().flatten().filter(|b| !**b).count(), 1);
+    }
+
+    #[test]
+    fn a_ball_rising_straight_into_a_bricks_corner_turns_down() {
+        // straight up, its left edge 1 px under the bottom row's seventh
+        // brick and the rest under the eighth: it goes in through the bottom
+        let mut breakout = flying(7 * BRICK_W + RADIUS - 1, 125, (0, -3 * SUB));
+        breakout.tick();
+        assert!(breakout.speed.1 > 0, "{:?}", breakout.speed);
         assert_eq!(breakout.bricks.iter().flatten().filter(|b| !**b).count(), 1);
     }
 
