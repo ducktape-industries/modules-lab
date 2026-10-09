@@ -109,9 +109,10 @@ piece; Snake's length; 2048's best tile; Minesweeper's mines left and
 time; Breakout's lives and wall), and a pause. Paused or over, an overlay
 lies on the board and the panel shows the game's top ten, each account by
 the name identity gives it, by its number where it has none. An ended
-game's score is posted once when an account is seated and the score beats
-the reader's best (the program would write nothing for one that does not);
-without an account the games play and the score stays on the screen.
+game's score is sent once when an account is seated, whatever it is: the
+program keeps the best, and the line under the score says what the node
+answered, sent or refused and why. Without an account the games play and
+the score stays on the screen.
 
 Each game is one file of its rules and its drawing: `tetris.rs`,
 `snake.rs`, `merge.rs` (2048), `mines.rs`, `breakout.rs`. A game is dealt

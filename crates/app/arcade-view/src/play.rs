@@ -290,7 +290,7 @@ impl Arcade {
             ),
             Loadable::Ready(game) if game.over() => (
                 "Game over",
-                vec![posted(&play.post, self.best(which))],
+                vec![posted(&play.post)],
                 Some(
                     design::button(
                         "arcade-again",
@@ -517,11 +517,10 @@ fn entry(rank: usize, row: &Row, mine: Option<u64>, theme: &Theme) -> Div {
 }
 
 /// What became of the score, in a line.
-fn posted(post: &Post, best: Option<u64>) -> String {
+fn posted(post: &Post) -> String {
     match post {
-        Post::Playing | Post::Sending => "Posting your score…".into(),
-        Post::Posted => "Posted to the board.".into(),
-        Post::Kept => format!("Your best stays {}.", design::grouped(best.unwrap_or(0))),
+        Post::Playing | Post::Sending => "Sending your score…".into(),
+        Post::Posted => "Sent to the board, which keeps your best.".into(),
         Post::Refused(why) => format!("The score was not posted: {why}"),
         Post::Unsigned => "Scores go on the board from an account; this one stays here.".into(),
     }

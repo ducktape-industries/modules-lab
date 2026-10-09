@@ -79,8 +79,6 @@ pub(crate) enum Post {
     Playing,
     Sending,
     Posted,
-    /// At or under the reader's best, which stays: nothing to send.
-    Kept,
     Refused(String),
     /// No account is seated: scores stay on this screen.
     Unsigned,

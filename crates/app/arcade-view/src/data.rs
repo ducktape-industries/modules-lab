@@ -56,12 +56,6 @@ impl Arcade {
         }
     }
 
-    /// Whether an ended game's score goes to the program: an op is an
-    /// account's, and goes nowhere without a link.
-    pub(crate) fn may_post(&self) -> bool {
-        self.session.connected && self.session.account.is_some()
-    }
-
     /// A block of the program landed: the bests and the board are asked
     /// again where it wrote to them; `None`, a reopened link, asks both.
     fn changed(&mut self, change: Option<&Change>, cx: &mut Context<Self>) {
@@ -124,17 +118,17 @@ impl Arcade {
     /// After anything moved a game: a game that ended posts its score,
     /// once, and the clock runs while a game does and only then.
     pub(crate) fn settle(&mut self, cx: &mut Context<Self>) {
-        let may_post = self.may_post();
-        let best = self.play.as_ref().and_then(|play| self.best(play.which));
+        // a score is an account's; the program keeps the best of them
+        let seated = self.session.account.is_some();
         if let Some(play) = &mut self.play
             && play.post == Post::Playing
             && let Some(game) = play.game.ready().filter(|game| game.over())
         {
             let score = game.score();
-            play.post = match (may_post, score > best.unwrap_or(0)) {
-                (false, _) => Post::Unsigned,
-                (true, false) => Post::Kept,
-                (true, true) => Post::Sending,
+            play.post = if seated {
+                Post::Sending
+            } else {
+                Post::Unsigned
             };
             if play.post == Post::Sending {
                 let op = Op::Score {

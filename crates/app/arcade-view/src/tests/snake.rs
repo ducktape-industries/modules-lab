@@ -27,13 +27,6 @@ fn a_key_moves_the_snake_on_the_next_tick() {
     assert!(opened.cx.renders() > renders);
 }
 
-/// The reader seated with no best of Snake yet.
-fn unbeaten() -> Opened {
-    let mut world = World::default();
-    world.bests[SNAKE] = 0;
-    opened(world, Some(READER))
-}
-
 /// Sets the snake going and runs it right into the wall, past the food put
 /// in its way.
 fn crash(opened: &mut Opened) {
@@ -53,7 +46,7 @@ fn crash(opened: &mut Opened) {
 
 #[test]
 fn an_ended_game_posts_its_score_once_and_drops_the_clock() {
-    let mut opened = unbeaten();
+    let mut opened = seated();
     opened.start(SNAKE);
     crash(&mut opened);
     assert_eq!(
@@ -67,7 +60,12 @@ fn an_ended_game_posts_its_score_once_and_drops_the_clock() {
     assert_eq!(opened.post(), Post::Posted);
     shows(
         &opened.cx,
-        &["Game over", "Posted to the board.", "Play again", "Top 10"],
+        &[
+            "Game over",
+            "Sent to the board, which keeps your best.",
+            "Play again",
+            "Top 10",
+        ],
     );
     // a block after it, or the view leaving the screen, posts nothing more
     opened.changes.send(None);
@@ -99,19 +97,25 @@ fn without_an_account_an_ended_game_posts_nothing_and_says_so() {
 }
 
 #[test]
-fn a_score_at_or_under_the_best_is_not_sent() {
+fn a_score_under_the_best_is_sent_all_the_same() {
     let mut opened = seated();
     opened.start(SNAKE);
     crash(&mut opened);
-    // ten, under the reader's 120
-    assert_eq!(opened.ops(), []);
-    assert_eq!(opened.post(), Post::Kept);
-    shows(&opened.cx, &["Your best stays 120."]);
+    // ten, under the reader's 120: the program keeps the best
+    assert_eq!(
+        opened.ops(),
+        [Op::Score {
+            game: SNAKE as u8,
+            score: 10
+        }]
+    );
+    assert_eq!(opened.post(), Post::Posted);
+    shows(&opened.cx, &["Sent to the board, which keeps your best."]);
 }
 
 #[test]
 fn a_refused_score_says_why() {
-    let mut opened = unbeaten();
+    let mut opened = seated();
     opened.world.borrow_mut().refusal = Some("the node is catching up".into());
     opened.start(SNAKE);
     crash(&mut opened);

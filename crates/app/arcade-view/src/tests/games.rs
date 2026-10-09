@@ -63,9 +63,7 @@ fn a_2048_arrow_slides_at_once_and_asks_for_no_clock() {
 
 #[test]
 fn a_2048_board_with_no_move_left_posts_its_score() {
-    let mut world = World::default();
-    world.bests[MERGE] = 0;
-    let mut opened = opened(world, Some(READER));
+    let mut opened = opened(World::default(), Some(READER));
     opened.start(MERGE);
     // the last move: two 2s merge, and nothing is left to pair
     opened.game(|game| match game {
@@ -88,7 +86,10 @@ fn a_2048_board_with_no_move_left_posts_its_score() {
             score: 4
         }]
     );
-    shows(&opened.cx, &["Game over", "Posted to the board."]);
+    shows(
+        &opened.cx,
+        &["Game over", "Sent to the board, which keeps your best."],
+    );
 }
 
 /// The field's top left corner in the window, as the host lays it out.
@@ -154,9 +155,7 @@ fn minesweeper_opens_where_it_is_pressed_and_runs_its_clock_from_then() {
 
 #[test]
 fn a_mine_shown_ends_the_game_and_posts_the_cells_shown() {
-    let mut world = World::default();
-    world.bests[MINES] = 0;
-    let mut opened = opened(world, Some(READER));
+    let mut opened = opened(World::default(), Some(READER));
     opened.start(MINES);
     // open ground with the keys, then walk onto a mine
     opened.key("space");
