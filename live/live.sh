@@ -8,7 +8,9 @@
 #                  with their funds, 36 orders of one resting around BTC/USD's last price,
 #                  two market orders of the other's that trade. Prints the command that
 #                  opens the app on it. Run again, it founds a fresh network on the stage.
-#   live.sh down   stops the stage's node, which runs until then
+#   live.sh bot    runs the market maker (examples/bot.rs) as wallet bo on the stage `up`
+#                  seeded, until Ctrl-C
+#   live.sh down   stops the bot when it runs, and the stage's node, which runs until then
 #
 # qa is not edited. kit founds from the founding.toml of its root, so the root is the
 # lab's own ($OUT: qa's founding with live/founding.toml after it), and its .local is
@@ -32,12 +34,18 @@ dir=$OUT/.local/stages/$STAGE
 
 case "${1:-}" in
 up) ;;
+bot)
+  node=$(ps -ww -p "$(cat "$dir/node.pid")" -o args= | sed 's| run --listen .*||')
+  [ -x "$node" ] || die "stage $STAGE's node is not running: make live first"
+  exec cargo run -q -p trade --example bot -- "$node" "$dir" bo
+  ;;
 down)
+  pkill -f "examples/bot .* $dir bo" || :
   "$KIT" down "$STAGE" --root "$QA"
   exit
   ;;
 *)
-  sed -n 2,15p live/live.sh
+  sed -n 2,17p live/live.sh
   exit 2
   ;;
 esac

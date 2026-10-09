@@ -196,6 +196,15 @@ There is no runner that keeps one view alive without a node. What there is:
    The stage's node keeps running until `make live-down QA=/path/to/qa`
    stops it.
 
+   `make bot QA=/path/to/qa` keeps every market of that stage moving until
+   Ctrl-C (or `make live-down`): `examples/bot.rs`, as wallet `bo`, walks
+   a mid from each market's last price, rests four prices a side about it
+   and moves them as it walks, and takes once in each market a round, so
+   the book refills and the 1m candles form. A submit takes 0.15 to 0.3 s
+   there (the node's CLI starts, opens the key and waits for the op to
+   preconfirm) and the rounds follow each other: about 12 rounds, 350 ops
+   and 14 trades a minute in each market.
+
    The stage's modules is the rev this workspace pins, and its app is
    `APP_REF` (`dev` when not given), which must pin that same rev:
    `make live` stops and names both revs when it does not.

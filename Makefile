@@ -42,7 +42,7 @@ APP_REF ?= dev
 CORE_REF ?=
 LIVE = PROGRAMS="$(PROGRAMS)" QA="$(QA)" KIT="$(KIT)" STAGE="$(STAGE)" APP_REF="$(APP_REF)" CORE_REF="$(CORE_REF)" OUT="$(BUILD_TARGET)/live" RELEASE="$(RELEASE)" MAKE="$(MAKE)" sh live/live.sh
 
-.PHONY: test wasm-programs wasm-describes wasm-views shots live live-down
+.PHONY: test wasm-programs wasm-describes wasm-views shots live live-down bot
 
 ## fmt, clippy and the native tests: each view on a fake host.
 test:
@@ -82,6 +82,10 @@ shots:
 live:
 	@$(LIVE) up
 
-## stops that node.
+## stops that node, and the bot when it runs.
 live-down:
 	@$(LIVE) down
+
+## the market maker on the stage `make live` made, until Ctrl-C.
+bot:
+	@$(LIVE) bot

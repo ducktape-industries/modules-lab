@@ -28,3 +28,8 @@ store = { workspace = true }
 [dev-dependencies]
 # `examples/seed.rs`: the op that gives a wallet its account
 identity = { workspace = true }
+
+# `examples/bot.rs` holds the test of its round: `cargo test` runs it.
+[[example]]
+name = "bot"
+test = true
