@@ -10,7 +10,7 @@ use ducktape_view_guest::{AnyElement, Div, FontWeight, Stateful};
 
 use crate::data::Row;
 use crate::games::{Game, seed};
-use crate::{Arcade, Play, Post};
+use crate::{Arcade, Play, Post, breakout, merge, mines, snake, tetris};
 
 /// The bar over the board, the panel's width and the room around a board.
 const BAR_H: Pixels = px(44.);
@@ -49,6 +49,7 @@ impl Arcade {
             seed: 0,
             paused: false,
             post: Post::Playing,
+            field: None,
         });
         self.board = Loadable::Idle;
         self.read_board(cx);
@@ -105,6 +106,35 @@ impl Arcade {
             return;
         };
         if game.key_down(key) {
+            cx.notify();
+        }
+        self.settle(cx);
+    }
+
+    /// What the bar and the panel leave a board.
+    fn room(&self) -> (f32, f32) {
+        (
+            self.viewport.0 - PANEL_W - 2. * GUTTER,
+            self.viewport.1 - f32::from(BAR_H) - 2. * GUTTER,
+        )
+    }
+
+    /// A press on Minesweeper's field: the left button shows the cell under
+    /// it, the right flags it.
+    fn press(&mut self, event: &MouseDownEvent, right: bool, cx: &mut Context<Self>) {
+        let cell = field(self.room());
+        let Some(play) = self.play.as_mut().filter(|play| !play.paused) else {
+            return;
+        };
+        let (Some((left, top)), Some(Game::Mines(mines))) = (play.field, play.game.ready_mut())
+        else {
+            return;
+        };
+        let at = (
+            ((f32::from(event.position.x) - left) / cell).floor() as i32,
+            ((f32::from(event.position.y) - top) / cell).floor() as i32,
+        );
+        if mines.press(at, right) {
             cx.notify();
         }
         self.settle(cx);
@@ -174,16 +204,27 @@ impl Arcade {
     /// overlay over it while the game is paused or over.
     fn stage(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
         let play = self.play.as_ref().expect("a game is on screen");
-        let room = (
-            self.viewport.0 - PANEL_W - 2. * GUTTER,
-            self.viewport.1 - f32::from(BAR_H) - 2. * GUTTER,
-        );
-        let (drawn, label) = match play.game.ready() {
-            Some(game) => (draw(game, room, theme), label(game, play)),
-            None => (
-                div().into_any_element(),
-                format!("{} board", arcade::GAMES[play.which]),
-            ),
+        let room = self.room();
+        let label = match play.game.ready() {
+            Some(game) => label(game, play),
+            None => format!("{} board", arcade::GAMES[play.which]),
+        };
+        // Minesweeper's field tells where the host laid it, so a press's
+        // place in the window is a cell
+        let mines = matches!(play.game.ready(), Some(Game::Mines(_)));
+        let drawn = match play.game.ready() {
+            Some(Game::Mines(field)) => {
+                let measured = cx.listener(|view: &mut Arcade, bounds: &Bounds<Pixels>, _, _| {
+                    if let Some(play) = &mut view.play {
+                        play.field = Some((bounds.origin.x.into(), bounds.origin.y.into()));
+                    }
+                });
+                sensor("arcade-field", field.draw(self::field(room), theme))
+                    .on_bounds(measured)
+                    .into_any_element()
+            }
+            Some(game) => draw(game, room, theme),
+            None => div().into_any_element(),
         };
         let board = div()
             .id("arcade-board")
@@ -199,6 +240,22 @@ impl Arcade {
                 view.key_down(event, window, cx)
             }))
             .on_key_up(cx.listener(|view, event: &KeyUpEvent, _, _| view.key_up(event)))
+            .when(mines, |board| {
+                board
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, event: &MouseDownEvent, _, cx| {
+                            view.press(event, false, cx)
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|view, event: &MouseDownEvent, _, cx| {
+                            view.press(event, true, cx)
+                        }),
+                    )
+            })
             .child(drawn);
         div()
             .id("arcade-stage")
@@ -375,6 +432,22 @@ impl Arcade {
             )
             .child(fact("Your best", best))
             .children(facts)
+            .children(match game {
+                Some(Game::Tetris(tetris)) => Some(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(design::space::XS)
+                        .child(
+                            div()
+                                .text_size(design::text::CAPTION)
+                                .text_color(theme.muted)
+                                .child("Next"),
+                        )
+                        .child(tetris.draw_next(16., &theme)),
+                ),
+                _ => None,
+            })
             .children(game.map(|game| design::quiet(game.keys(), &theme)))
             .when(still, |panel| panel.child(self.top(&theme)))
     }
@@ -457,9 +530,22 @@ fn posted(post: &Post, best: Option<u64>) -> String {
 /// The game's board, as large as `room` holds it.
 fn draw(game: &Game, room: (f32, f32), theme: &Theme) -> AnyElement {
     match game {
-        Game::Snake(snake) => {
-            let cell = cell(room, (crate::snake::COLS, crate::snake::ROWS));
-            snake.draw(cell, theme).into_any_element()
+        Game::Tetris(tetris) => tetris
+            .draw(cell(room, (tetris::COLS, tetris::ROWS)), theme)
+            .into_any_element(),
+        Game::Snake(snake) => snake
+            .draw(cell(room, (snake::COLS, snake::ROWS)), theme)
+            .into_any_element(),
+        Game::Merge(merge) => {
+            let side = merge::SIDE as f32 + 0.5;
+            let tile = (room.0.min(room.1) / side).floor().clamp(40., 120.);
+            merge.draw(tile, theme).into_any_element()
+        }
+        Game::Mines(mines) => mines.draw(field(room), theme).into_any_element(),
+        Game::Breakout(breakout) => {
+            let (width, height) = (breakout::WIDTH as f32, breakout::HEIGHT as f32);
+            let scale = (room.0 / width).min(room.1 / height).clamp(0.5, 2.);
+            breakout.draw(scale, theme).into_any_element()
         }
     }
 }
@@ -470,6 +556,11 @@ fn cell(room: (f32, f32), (cols, rows): (i32, i32)) -> f32 {
         .min(room.1 / rows as f32)
         .floor()
         .clamp(6., 40.)
+}
+
+/// A Minesweeper cell's pixels in `room`.
+fn field(room: (f32, f32)) -> f32 {
+    cell(room, (mines::COLS, mines::ROWS))
 }
 
 /// What the board says to a screen reader: the game, its score and state.

@@ -5,11 +5,20 @@
 use ducktape_view_guest::prelude::*;
 use gpui::{point, size};
 
-use crate::snake::Snake;
+use crate::breakout::{self, Breakout};
+use crate::merge::{self, Merge};
+use crate::mines::{self, Mines};
+use crate::snake::{self, Snake};
+use crate::tetris::{self, Tetris};
 
-/// A game in play.
+/// A game in play, in [`arcade::GAMES`]' order.
 pub(crate) enum Game {
+    Tetris(Tetris),
     Snake(Snake),
+    Merge(Merge),
+    /// Boxed: its field is three grids of 256 cells.
+    Mines(Box<Mines>),
+    Breakout(Breakout),
 }
 
 /// What a game shows beside its board under its score: a name and a value.
@@ -19,7 +28,11 @@ impl Game {
     /// Game `which` (its place in [`arcade::GAMES`]), dealt from `seed`.
     pub(crate) fn new(which: usize, seed: u64) -> Game {
         match which {
-            _ => Game::Snake(Snake::new(seed)),
+            0 => Game::Tetris(Tetris::new(seed)),
+            1 => Game::Snake(Snake::new(seed)),
+            2 => Game::Merge(Merge::new(seed)),
+            3 => Game::Mines(Box::new(Mines::new(seed))),
+            _ => Game::Breakout(Breakout::new(seed)),
         }
     }
 
@@ -27,21 +40,29 @@ impl Game {
     /// game on a clock reads the key on its next tick instead.
     pub(crate) fn key_down(&mut self, key: &str) -> bool {
         match self {
+            Game::Tetris(game) => game.key(key),
             Game::Snake(game) => game.key(key),
+            Game::Merge(game) => game.key(key),
+            Game::Mines(game) => game.key(key),
+            Game::Breakout(game) => game.key_down(key),
         }
     }
 
-    /// A key came up on the board.
-    pub(crate) fn key_up(&mut self, _key: &str) {
-        match self {
-            Game::Snake(_) => {}
+    /// A key came up on the board: Breakout's paddle stops.
+    pub(crate) fn key_up(&mut self, key: &str) {
+        if let Game::Breakout(game) = self {
+            game.key_up(key);
         }
     }
 
     /// One step of the clock. Whether the board changed.
     pub(crate) fn tick(&mut self) -> bool {
         match self {
+            Game::Tetris(game) => game.tick(),
             Game::Snake(game) => game.tick(),
+            Game::Merge(_) => false,
+            Game::Mines(game) => game.tick(),
+            Game::Breakout(game) => game.tick(),
         }
     }
 
@@ -49,33 +70,53 @@ impl Game {
     /// game that moves only when a key does.
     pub(crate) fn period(&self) -> Option<i64> {
         match self {
+            Game::Tetris(_) => Some(tetris::PERIOD),
             Game::Snake(game) => Some(game.period()),
+            Game::Merge(_) => None,
+            Game::Mines(game) => game.period(),
+            Game::Breakout(_) => Some(breakout::PERIOD),
         }
     }
 
     pub(crate) fn score(&self) -> u64 {
         match self {
+            Game::Tetris(game) => game.score(),
             Game::Snake(game) => game.score(),
+            Game::Merge(game) => game.score(),
+            Game::Mines(game) => game.score(),
+            Game::Breakout(game) => game.score(),
         }
     }
 
     pub(crate) fn over(&self) -> bool {
         match self {
+            Game::Tetris(game) => game.over(),
             Game::Snake(game) => game.over(),
+            Game::Merge(game) => game.over(),
+            Game::Mines(game) => game.over(),
+            Game::Breakout(game) => game.over(),
         }
     }
 
     /// The panel's lines under the score.
     pub(crate) fn facts(&self) -> Vec<Fact> {
         match self {
+            Game::Tetris(game) => game.facts(),
             Game::Snake(game) => game.facts(),
+            Game::Merge(game) => game.facts(),
+            Game::Mines(game) => game.facts(),
+            Game::Breakout(game) => game.facts(),
         }
     }
 
     /// The keys the game takes, as the panel tells them.
     pub(crate) fn keys(&self) -> &'static str {
         match self {
-            Game::Snake(_) => crate::snake::KEYS,
+            Game::Tetris(_) => tetris::KEYS,
+            Game::Snake(_) => snake::KEYS,
+            Game::Merge(_) => merge::KEYS,
+            Game::Mines(_) => mines::KEYS,
+            Game::Breakout(_) => breakout::KEYS,
         }
     }
 }

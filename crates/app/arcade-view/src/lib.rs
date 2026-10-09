@@ -5,8 +5,8 @@
 //! The hub (`hub.rs`) lists the games; a game (`play.rs`) is its board,
 //! a panel of its score, the reader's best and the game's own facts, and,
 //! paused or over, an overlay and the top ten. Each game is one file of
-//! its rules and its board's drawing (`snake.rs`), behind one enum
-//! (`games.rs`). `data.rs` is everything the view follows and asks.
+//! its rules and its board's drawing (`tetris.rs`, `snake.rs`, `merge.rs`
+//! for 2048, `mines.rs`, `breakout.rs`), behind one enum (`games.rs`). `data.rs` is everything the view follows and asks.
 //!
 //! A game runs on the host's clock: `clock.ticks` delivers one item per
 //! redraw however far behind the host is, with no time on it, so a tick
@@ -14,11 +14,15 @@
 //! game; nothing is skipped. The clock is asked for only while a game
 //! runs: the hub, a paused game, an ended one and a game that moves only
 //! on a key ask for none, so an idle Arcade costs nothing.
+mod breakout;
 mod data;
 mod games;
 mod hub;
+mod merge;
+mod mines;
 mod play;
 mod snake;
+mod tetris;
 
 use ducktape_view_guest::prelude::*;
 use gpui::relative;
@@ -63,6 +67,9 @@ pub(crate) struct Play {
     pub(crate) seed: u64,
     pub(crate) paused: bool,
     pub(crate) post: Post,
+    /// Where the host laid Minesweeper's field out, in the window's
+    /// pixels: what a press is measured from.
+    pub(crate) field: Option<(f32, f32)>,
 }
 
 /// What became of an ended game's score.

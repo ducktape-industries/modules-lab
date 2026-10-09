@@ -5,6 +5,7 @@ use crate::snake::Heading;
 fn head(opened: &mut Opened) -> (i32, i32) {
     opened.game(|game| match game {
         Game::Snake(snake) => snake.body[0],
+        _ => panic!("snake is on screen"),
     })
 }
 
@@ -42,6 +43,7 @@ fn crash(opened: &mut Opened) {
             assert_eq!(snake.heading, Heading::Right);
             x
         }
+        _ => panic!("snake is on screen"),
     });
     // the last step is the one into the wall
     opened.tick((crate::snake::COLS - x) as usize);

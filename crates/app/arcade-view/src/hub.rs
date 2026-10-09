@@ -3,7 +3,7 @@
 use ducktape_view_guest::prelude::*;
 use ducktape_view_guest::{Canvas, Div, FontWeight, Stateful};
 
-use crate::{Arcade, snake};
+use crate::{Arcade, breakout, merge, mines, snake, tetris};
 
 /// A card's width and its picture's height.
 const CARD_W: Pixels = px(208.);
@@ -119,6 +119,10 @@ impl Arcade {
 /// Game `which`'s still picture, drawn in its card's 208 x 120 px.
 fn picture(which: usize, theme: &Theme) -> Canvas {
     match which {
-        _ => snake::preview(theme),
+        0 => tetris::preview(theme),
+        1 => snake::preview(theme),
+        2 => merge::preview(theme),
+        3 => mines::preview(theme),
+        _ => breakout::preview(theme),
     }
 }
