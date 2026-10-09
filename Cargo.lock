@@ -97,6 +97,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcade-view"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "arcade",
+ "ducktape-view-guest",
+ "gpui-pre",
+ "program",
+ "serde",
+]
+
+[[package]]
 name = "arg_enum_proc_macro"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

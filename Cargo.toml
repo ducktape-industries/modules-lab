@@ -6,7 +6,7 @@
 
 [workspace]
 resolver = "2"
-members = ["crates/app/trade", "crates/app/trade-view", "crates/app/arcade"]
+members = ["crates/app/trade", "crates/app/trade-view", "crates/app/arcade", "crates/app/arcade-view"]
 
 [workspace.package]
 edition = "2024"
@@ -57,6 +57,8 @@ panic = "abort"
 strip = true
 
 [profile.release.package.trade-view]
+opt-level = 3
+[profile.release.package.arcade-view]
 opt-level = 3
 [profile.release.package.ducktape-view-guest]
 opt-level = 3

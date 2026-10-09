@@ -1,0 +1,22 @@
+[package]
+name = "arcade-view"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+# A Rust-authored view, exported as a dynamically loaded wasm module by
+# `export_view!`; the rlib is what its native tests link.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ducktape-view-guest.workspace = true
+gpui.workspace = true
+serde.workspace = true
+# the program's types, linked with `module` off
+arcade.workspace = true
+# `Reads`: which tables a query reads, asked of each block's change; and
+# `role::Identity`, the program a board's names are asked of
+program.workspace = true
+# identity's questions and answers (`abi::role::identity`)
+abi.workspace = true
