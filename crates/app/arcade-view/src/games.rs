@@ -71,7 +71,7 @@ impl Game {
     pub(crate) fn period(&self) -> Option<i64> {
         match self {
             Game::Tetris(_) => Some(tetris::PERIOD),
-            Game::Snake(game) => Some(game.period()),
+            Game::Snake(game) => game.period(),
             Game::Merge(_) => None,
             Game::Mines(game) => game.period(),
             Game::Breakout(_) => Some(breakout::PERIOD),

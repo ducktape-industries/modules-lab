@@ -78,13 +78,13 @@ impl Piece {
 
     pub(crate) fn color(self, theme: &Theme) -> Hsla {
         match self {
-            Piece::I => theme.agent,
+            Piece::I => theme.foreground,
             Piece::O => theme.warning,
-            Piece::T => theme.foreground,
+            Piece::T => theme.agent,
             Piece::S => theme.success,
             Piece::Z => theme.danger,
             Piece::J => theme.muted,
-            Piece::L => theme.faint,
+            Piece::L => theme.warning.opacity(0.55),
         }
     }
 }
@@ -382,43 +382,42 @@ fn piece(shown: Piece, cell: f32, theme: &Theme) -> Canvas {
     drawn
 }
 
-/// The hub's picture of the game: a well's last rows and a piece falling.
+/// The hub's picture of the game: a well's last rows and a piece falling,
+/// a letter a piece, in the middle of its 208 x 120 px.
 pub(crate) fn preview(theme: &Theme) -> Canvas {
-    let cell = 12.;
-    let settled: [(i32, i32, Piece); 14] = [
-        (4, 9, Piece::J),
-        (5, 9, Piece::J),
-        (6, 9, Piece::J),
-        (6, 8, Piece::J),
-        (7, 9, Piece::S),
-        (8, 9, Piece::S),
-        (8, 8, Piece::S),
-        (9, 8, Piece::S),
-        (10, 9, Piece::I),
-        (11, 9, Piece::I),
-        (12, 9, Piece::I),
-        (13, 9, Piece::I),
-        (12, 8, Piece::O),
-        (13, 8, Piece::O),
+    const PICTURE: [&str; 9] = [
+        "...TTT....",
+        "....T.....",
+        "..........",
+        "........OO",
+        "I.......OO",
+        "I.L..SS.ZZ",
+        "I.L.SSJZZ.",
+        "ILL.JJJ.SS",
+        "IZZ..LJSS.",
     ];
+    let (cell, left, top) = (11., 49., 11.);
     let mut drawn = canvas().size_full();
-    for (x, y, shown) in settled {
-        let at = square(
-            x as f32 * cell + 1.,
-            y as f32 * cell - 6.,
-            cell - 2.,
-            cell - 2.,
-        );
-        drawn = drawn.rect(at, shown.color(theme));
-    }
-    for (x, y) in Piece::T.cells(1) {
-        let at = square(
-            (x + 7) as f32 * cell + 1.,
-            (y + 2) as f32 * cell - 6.,
-            cell - 2.,
-            cell - 2.,
-        );
-        drawn = drawn.rect(at, Piece::T.color(theme));
+    for (y, row) in PICTURE.iter().enumerate() {
+        for (x, letter) in row.chars().enumerate() {
+            let shown = match letter {
+                'I' => Piece::I,
+                'O' => Piece::O,
+                'T' => Piece::T,
+                'S' => Piece::S,
+                'Z' => Piece::Z,
+                'J' => Piece::J,
+                'L' => Piece::L,
+                _ => continue,
+            };
+            let at = square(
+                left + x as f32 * cell + 1.,
+                top + y as f32 * cell + 1.,
+                cell - 2.,
+                cell - 2.,
+            );
+            drawn = drawn.rect(at, shown.color(theme));
+        }
     }
     drawn
 }

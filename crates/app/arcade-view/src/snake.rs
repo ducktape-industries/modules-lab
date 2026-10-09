@@ -1,9 +1,9 @@
 //! Snake: steer a snake to the food on a walled field. Each food makes it
 //! a cell longer and is worth 10; running into a wall or into itself ends
-//! the game. A tick is one step, so its period is the snake's speed: it
-//! starts at 160 ms a step and quickens 10 ms for every five foods, to
-//! 70 ms. A turn is read on the next step; two turns may wait, so a quick
-//! U-turn is not lost.
+//! the game. The snake waits for the first arrow; from then a tick is one
+//! step, so the clock's period is the snake's speed: 160 ms a step,
+//! quicker by 10 ms for every five foods, down to 70 ms. A turn is read on
+//! the next step; two turns may wait, so a quick U-turn is not lost.
 use std::collections::VecDeque;
 
 use ducktape_view_guest::Canvas;
@@ -14,7 +14,7 @@ use crate::games::{Fact, Rng, square};
 
 pub(crate) const COLS: i32 = 24;
 pub(crate) const ROWS: i32 = 16;
-pub(crate) const KEYS: &str = "Arrows steer";
+pub(crate) const KEYS: &str = "Arrows steer; the first one starts";
 
 /// The turns that may wait for a step.
 const WAITING: usize = 2;
@@ -54,6 +54,8 @@ pub(crate) struct Snake {
     turns: VecDeque<Heading>,
     pub(crate) food: Option<(i32, i32)>,
     eaten: u64,
+    /// Whether an arrow has set it going.
+    started: bool,
     over: bool,
     rng: Rng,
 }
@@ -68,6 +70,7 @@ impl Snake {
             turns: VecDeque::new(),
             food: None,
             eaten: 0,
+            started: false,
             over: false,
             rng: Rng::new(seed),
         };
@@ -86,6 +89,9 @@ impl Snake {
             _ => return false,
         };
         let last = self.turns.back().copied().unwrap_or(self.heading);
+        if turn != last.back() {
+            self.started = true;
+        }
         if turn != last && turn != last.back() && self.turns.len() < WAITING {
             self.turns.push_back(turn);
         }
@@ -133,8 +139,11 @@ impl Snake {
         cells.filter(|cell| !self.body.contains(cell)).nth(pick)
     }
 
-    pub(crate) fn period(&self) -> i64 {
-        (160 - 10 * (self.eaten / 5) as i64).max(70)
+    /// A step's length once an arrow has set the snake going; no clock
+    /// before.
+    pub(crate) fn period(&self) -> Option<i64> {
+        self.started
+            .then(|| (160 - 10 * (self.eaten / 5) as i64).max(70))
     }
 
     pub(crate) fn score(&self) -> u64 {
@@ -175,28 +184,33 @@ impl Snake {
     }
 }
 
-/// The hub's picture of the game: a snake turning toward its food.
+/// The hub's picture of the game: a snake turning toward its food, in the
+/// middle of its 208 x 120 px.
 pub(crate) fn preview(theme: &Theme) -> Canvas {
-    let cell = 12.;
+    let (cell, left, top) = (12., 48., 18.);
     let body = [
+        (0, 5),
+        (1, 5),
+        (2, 5),
         (3, 5),
-        (4, 5),
-        (5, 5),
-        (6, 5),
-        (6, 4),
+        (3, 4),
+        (3, 3),
+        (4, 3),
+        (5, 3),
         (6, 3),
-        (7, 3),
-        (8, 3),
-        (9, 3),
     ];
     let mut drawn = canvas().size_full();
     for (x, y) in body {
-        drawn = drawn.rect(
-            square(x as f32 * cell + 1., y as f32 * cell + 1., 10., 10.),
-            theme.foreground,
+        let at = square(
+            left + x as f32 * cell + 1.,
+            top + y as f32 * cell - 18.,
+            cell - 2.,
+            cell - 2.,
         );
+        drawn = drawn.rect(at, theme.foreground);
     }
-    drawn.circle(point(px(12.5 * cell), px(3.5 * cell)), px(4.), theme.danger)
+    let food = point(px(left + 9.5 * cell), px(top + 3.5 * cell - 18.));
+    drawn.circle(food, px(4.), theme.danger)
 }
 
 #[cfg(test)]
@@ -279,13 +293,17 @@ mod tests {
     }
 
     #[test]
-    fn it_quickens_every_five_foods_to_seventy_ms() {
+    fn it_starts_on_an_arrow_and_quickens_every_five_foods_to_seventy_ms() {
         let mut snake = laid(&[(5, 5)], Heading::Right);
-        assert_eq!(snake.period(), 160);
+        assert_eq!(snake.period(), None, "it waits for an arrow");
+        snake.key("left");
+        assert_eq!(snake.period(), None, "straight back does not start it");
+        snake.key("right");
+        assert_eq!(snake.period(), Some(160));
         snake.eaten = 5;
-        assert_eq!(snake.period(), 150);
+        assert_eq!(snake.period(), Some(150));
         snake.eaten = 500;
-        assert_eq!(snake.period(), 70);
+        assert_eq!(snake.period(), Some(70));
     }
 
     #[test]

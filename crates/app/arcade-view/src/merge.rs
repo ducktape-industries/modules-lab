@@ -203,13 +203,23 @@ fn shade(value: u32, theme: &Theme) -> (Hsla, Hsla) {
     }
 }
 
-/// The hub's picture of the game: a corner of a board under way.
+/// The hub's picture of the game: a board under way, in the middle of its
+/// 208 x 120 px.
 pub(crate) fn preview(theme: &Theme) -> Canvas {
-    let values = [[2, 4, 0, 0], [8, 16, 4, 0], [32, 64, 8, 2]];
-    let mut drawn = canvas().size_full();
+    let values = [[0, 2, 0, 0], [2, 4, 8, 0], [4, 16, 32, 2], [8, 64, 128, 4]];
+    let (tile, gap, left, top) = (22., 4., 50., 6.);
+    let side = 4. * tile + 5. * gap;
+    let mut drawn = canvas()
+        .size_full()
+        .rect(square(left, top, side, side), theme.border);
     for (y, row) in values.iter().enumerate() {
         for (x, value) in row.iter().enumerate() {
-            let at = square(48. + x as f32 * 28., 16. + y as f32 * 28., 24., 24.);
+            let at = square(
+                left + gap + x as f32 * (tile + gap),
+                top + gap + y as f32 * (tile + gap),
+                tile,
+                tile,
+            );
             drawn = drawn.rect(at, shade(*value, theme).0);
         }
     }

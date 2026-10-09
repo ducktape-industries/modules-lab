@@ -222,7 +222,7 @@ impl Mines {
             .left_0()
             .w(px(width))
             .h(px(height))
-            .rect(square(0., 0., width, height), theme.border);
+            .rect(square(0., 0., width, height), theme.border_strong);
         let mut counts = Vec::new();
         for (x, y) in cells() {
             let (left, top) = (x as f32 * cell, y as f32 * cell);
@@ -233,7 +233,7 @@ impl Mines {
             );
             let mine = self.mine[y as usize][x as usize];
             drawn = match mark {
-                Mark::Hidden => drawn.rect(inner, theme.surface_raised),
+                Mark::Hidden => drawn.rect(inner, theme.border),
                 Mark::Flagged => {
                     let pole = left + cell * 0.4;
                     drawn

@@ -121,8 +121,9 @@ same game, and every rule is tested with a seed.
 The SDK's clock (`clock.ticks`) gives one item per redraw however far
 behind the host is, with no time on it: a tick is a step, and a host that
 falls behind slows a game rather than skipping it. Tetris and Breakout
-tick every 16 ms and count ticks for gravity and the ball; Snake's tick is
-its step, 160 ms quickening to 70; Minesweeper's clock counts seconds from
+tick every 16 ms and count ticks for gravity and the ball; Snake waits for
+the first arrow, then its tick is its step, 160 ms quickening to 70;
+Minesweeper's clock counts seconds from
 the first reveal; 2048 asks for none. The clock is asked for only while a
 game runs: the hub, a paused game and an ended one ask for nothing, and a
 game pauses when the view leaves the screen. A key is read on the game's
@@ -298,6 +299,36 @@ renders its whole tree whatever changed. trade-view renders more than the
 spike did on every tick: expect its numbers higher. What the GPU takes to
 paint the quads is not in these numbers: the box that ran them paints in
 software.
+
+### arcade-view
+
+arcade-view in the app at da74b24c on stage `arcade` (a release build,
+`DUCKTAPE_PERF=1`, read at the test door's `/perf`), on a Ryzen 9 5950X
+under Xvfb, which paints in software, with the box's load at about 20. Each
+game played by key presses (or clicks) for about 8 s after a `/perf` reset.
+A tick is one call into the view: a clock item, a key or a reply. p50, with
+p95 in brackets. Host is the host's work on a frame the view rendered:
+replace, render, layout, prepaint and paint added up (stage by stage, so
+the p95 is an upper bound).
+
+| Game | clock | ticks in 8 s | renders | fuel a tick | wasm tick | decode + merge | host | frame |
+|---|---|---|---|---|---|---|---|---|
+| Tetris | 16 ms | 553 | 39 | 11k (361k) | 0.04 ms (0.16) | 0.01 ms (0.08) | 0.56 ms (1.09) | 9 B (572 B) |
+| Snake | 160 ms | 74 | 50 | 292k (295k) | 0.13 ms (0.18) | 0.05 ms (0.08) | 0.42 ms (0.59) | 301 B (301 B) |
+| 2048 | none | 56 | 26 | 13k (490k) | 0.05 ms (0.22) | 0.01 ms (0.14) | 0.66 ms (0.88) | 9 B (530 B) |
+| Minesweeper | 1 s | 14 | 14 | 705k (1.9M) | 0.22 ms (0.40) | 0.09 ms (0.25) | 0.95 ms (1.15) | 28 B (16.9 kB) |
+| Breakout | 16 ms | 532 | 385 | 675k (684k) | 0.16 ms (0.26) | 0.05 ms (0.09) | 0.43 ms (0.64) | 4.8 kB (4.9 kB) |
+
+A tick whose game did not move renders nothing and sends 9 B: most of
+Tetris's, which falls a row every 48 ticks at level 0. Breakout renders on
+every tick its ball moves, so its row is the one that has to fit a frame:
+about 1 ms of the view's and the host's work at p95, against 16 ms. The
+16 ms clock gave Breakout 51 to 61 ticks a second here, not 62.5 (the clock
+gives one item a redraw, and Xvfb's software paint sets the redraws), so the
+ball ran a little slower than it would at 60 Hz; the period stays 16 ms.
+What the GPU takes to paint is not in these numbers. A paused game and the
+hub ticked 0 times in 3 s. The app's limit is 250M fuel a tick; the most a
+tick took was Minesweeper's flood at 2M. `arcade_view.wasm` is 0.9 MB.
 
 ## What the SDK does not give a trading view yet
 

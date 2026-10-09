@@ -264,11 +264,13 @@ fn without_an_account_the_hub_says_scores_stay_here_and_reads_no_bests() {
 }
 
 #[test]
-fn a_card_deals_its_game_onto_a_focused_board_and_asks_for_the_clock() {
+fn a_card_deals_its_game_onto_a_focused_board_and_its_first_arrow_asks_for_the_clock() {
     let mut opened = seated();
     opened.start(SNAKE);
     assert_eq!(opened.cx.host().requests::<HostId>(), ["arcade"]);
     assert_eq!(opened.focused().as_deref(), Some("arcade-board"));
+    assert!(opened.clocks().is_empty(), "the snake waits for an arrow");
+    opened.key("right");
     assert_eq!(opened.clocks(), [160]);
     assert!(opened.ticks.subscribed());
     shows(
@@ -284,6 +286,7 @@ fn a_card_deals_its_game_onto_a_focused_board_and_asks_for_the_clock() {
 fn a_pause_drops_the_clock_and_shows_the_top_ten_and_going_on_asks_again() {
     let mut opened = seated();
     opened.start(SNAKE);
+    opened.key("right");
     opened.key("p");
     assert!(!opened.ticks.subscribed(), "paused: no clock");
     shows(&opened.cx, &["Paused", "Resume", "Top 10", "ada", "420"]);
@@ -305,6 +308,7 @@ fn a_pause_drops_the_clock_and_shows_the_top_ten_and_going_on_asks_again() {
 fn off_screen_a_game_pauses_and_stays_paused() {
     let mut opened = seated();
     opened.start(SNAKE);
+    opened.key("right");
     opened.visible.send(false);
     opened.cx.run_until_parked();
     assert!(!opened.ticks.subscribed());

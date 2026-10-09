@@ -34,8 +34,10 @@ fn unbeaten() -> Opened {
     opened(world, Some(READER))
 }
 
-/// Runs the snake right into the wall, past the food put in its way.
+/// Sets the snake going and runs it right into the wall, past the food put
+/// in its way.
 fn crash(opened: &mut Opened) {
+    opened.key("right");
     let x = opened.game(|game| match game {
         Game::Snake(snake) => {
             let (x, y) = snake.body[0];
@@ -74,11 +76,13 @@ fn an_ended_game_posts_its_score_once_and_drops_the_clock() {
     assert_eq!(opened.ops().len(), 1);
     opened.visible.send(true);
     opened.cx.run_until_parked();
-    // Enter plays again: a new deal, a new clock
+    // Enter plays again: a new deal, waiting for its first arrow
     opened.key("enter");
     assert_eq!(opened.cx.host().requests::<HostId>().len(), 2);
-    assert!(opened.ticks.subscribed());
     assert_eq!(opened.post(), Post::Playing);
+    assert!(!opened.ticks.subscribed());
+    opened.key("up");
+    assert!(opened.ticks.subscribed());
 }
 
 #[test]
