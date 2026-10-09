@@ -535,7 +535,7 @@ impl Trade {
             "trade-spans",
             "Candle span",
             theme,
-            self.chart.span,
+            Some(self.chart.span),
             SPANS
                 .iter()
                 .map(|span| (span.name.into(), span.name.into())),
@@ -572,7 +572,7 @@ impl Trade {
             "trade-style",
             "Chart style",
             theme,
-            usize::from(chart.line),
+            Some(usize::from(chart.line)),
             [
                 ("Candles".into(), "Candles".into()),
                 ("Line".into(), "Line".into()),
