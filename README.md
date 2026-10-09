@@ -193,13 +193,24 @@ Zoomed out to the whole week: 673 candles, 1.4 px each, 509 nodes, 3.7 MB.
 The frame holds no element for a candle, so a slot the pointer enters costs
 about the same at 123 candles and at 673: 1.9 ms and 2.4 ms for the five
 samples together. It sends the candle's line, the readout and the time
-under it, and none of the canvas; a move inside one slot is a tick that
-changes nothing, with no patch and no render. What still grows with the
+under it, and none of the canvas. What still grows with the
 candles is the view's own tick, which works the whole plot out and builds
 every canvas command again on each render to find them unchanged, and a
 wheel notch, which sends the canvas again. A row of the book under the
 pointer is marked by the host with no tick; the line on a candle is the
 view's, and moves on its tick.
+
+The crosshair's line across the prices and the price at it follow the
+pointer row by row, so a move to another row is a tick of the view where
+before a move inside one slot changed nothing (a tick of 10.8k fuel, no
+render). Measured at app da74b24c on the same week, window and span, with
+the pointer moved down one slot, two pixels a move (p50 of each of two
+runs): at 123 candles 4.5M fuel, a 1.0-1.3 ms wasm tick, 0.6-1.1 ms host
+render and a 0.25 kB frame; at 673 candles 6.4M fuel, 1.3-1.7 ms, 0.8-1.1
+ms and 0.07-0.10 kB. A move into another slot costs what it did (4.5M and
+6.4M fuel, 0.42 kB). The app now also samples gpui's layout, prepaint and
+paint of the view: 6-11 ms more a render on that box, loaded by other
+builds, and the larger part of a move.
 
 These five samples stop at the element build: gpui's layout and paint of
 the view are in none of them. Measured apart, with samples added to the app
