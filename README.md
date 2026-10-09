@@ -9,6 +9,8 @@ moves over as it is.
 |---|---|
 | `crates/app/trade` | spot markets for practice funds: the program, its types on the wire and its tables |
 | `crates/app/trade-view` | its view: a trading terminal on the view SDK as it is |
+| `crates/app/arcade` | the high scores of five classic games: the program |
+| `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper and Breakout, and the boards |
 
 The SDK is modules `dev` at the rev the app pins (`Cargo.toml`, `sdk-line`).
 The app refuses a view built against another wire, so the pin moves when the
@@ -84,6 +86,48 @@ program's blocks, and a block reads again only what it wrote to
 again. The view asks for no clock: the chart ends at the newest candle the
 program holds, so a market nobody trades in is not drawn up to now.
 
+## arcade
+
+The program keeps scores and nothing else. An account posts the score a
+game of its ended on (`Op::Score { game, score }`); the program keeps the
+account's best of each game, never lowering it, and ranks every account's
+best on the game's board. `Query::Top` answers a game's board, highest
+first, at most 50 rows; `Query::Bests` an account's best of every game. A
+key that holds no account posts nothing.
+
+**Nothing checks a score.** The games run in the view, on the reader's
+machine, and the view says what the score was: anyone can post any number.
+The boards are practice, a place to compare, not proof of anything.
+
+## arcade-view
+
+A hub of five cards, each a button with the game's name, a line of what it
+is, a still picture and the reader's best; pressed, the game starts with
+its board taking the keys. A game is its board, a panel with the score,
+the reader's best and the game's own facts (Tetris's level, lines and next
+piece; Snake's length; 2048's best tile; Minesweeper's mines left and
+time; Breakout's lives and wall), and a pause. Paused or over, an overlay
+lies on the board and the panel shows the game's top ten, each account by
+the name identity gives it, by its number where it has none. An ended
+game's score is posted once when an account is seated and the score beats
+the reader's best (the program would write nothing for one that does not);
+without an account the games play and the score stays on the screen.
+
+Each game is one file of its rules and its drawing: `tetris.rs`,
+`snake.rs`, `merge.rs` (2048), `mines.rs`, `breakout.rs`. A game is dealt
+from the id the host mints for it (`host.id`), so the same id deals the
+same game, and every rule is tested with a seed.
+
+The SDK's clock (`clock.ticks`) gives one item per redraw however far
+behind the host is, with no time on it: a tick is a step, and a host that
+falls behind slows a game rather than skipping it. Tetris and Breakout
+tick every 16 ms and count ticks for gravity and the ball; Snake's tick is
+its step, 160 ms quickening to 70; Minesweeper's clock counts seconds from
+the first reveal; 2048 asks for none. The clock is asked for only while a
+game runs: the hub, a paused game and an ended one ask for nothing, and a
+game pauses when the view leaves the screen. A key is read on the game's
+next tick.
+
 ## Loop
 
 ```sh
@@ -92,7 +136,7 @@ make wasm-programs    # each program for wasm32
 make wasm-describes   # each program's describe module, ABI-checked
 make wasm-views       # each view's wasm, optimized and ABI-checked by modules' own gate
 make shots APP=/path/to/app   # the view's frames, painted by the app's real renderer
-make live QA=/path/to/qa      # the module in the real app, on a stage of qa's kit ("A view on its own", 3)
+make live QA=/path/to/qa      # the modules in the real app, on a stage of qa's kit ("A view on its own", 3)
 ```
 
 `make wasm-views` needs Binaryen `wasm-opt` 132 and `wasm-tools`, as modules
@@ -120,8 +164,8 @@ There is no runner that keeps one view alive without a node. What there is:
    of the width, 165 px over the bottom; `trade-hover` is a pane sized so
    that point is on a candle, and its frame holds the line the view draws
    on that candle.
-3. **Live, in the app.** The view is served with its program, so it needs
-   a network founded with `trade`: a stage of qa's `kit`. With a qa
+3. **Live, in the app.** A view is served with its program, so it needs
+   a network founded with it: a stage of qa's `kit`. With a qa
    checkout, and `core`, `app` and `modules` checked out beside it as qa's
    README says:
 
@@ -129,16 +173,16 @@ There is no runner that keeps one view alive without a node. What there is:
    make live QA=/path/to/qa
    ```
 
-   It builds the program, its describe module and the view, packs those
-   two into `trade.wasm` with qa's `view-pack`, and founds stage `lab`
-   (`STAGE=`) with it: kit's own founding with `live/founding.toml` after
-   it, the week of history as the program's params. Then it seeds the
+   It builds every program, its describe module and its view, packs those
+   two into `<program>.wasm` with qa's `view-pack`, and founds stage `lab`
+   (`STAGE=`) with them: kit's own founding with `live/founding.toml` after
+   it, the week of history as trade's params. Then it seeds the
    stage with the ops `examples/seed.rs` writes. Wallet `dev`, the one the
    app opens with, gets an account and its funds; a second wallet, `bo`,
    rests 36 orders around BTC/USD's last price; two market orders of
    `dev`'s trade against them. It ends with the command that opens the app
    on the stage, a `kit app` with the lab's root: the wallet's password is
-   `ducktape`, and Trade is on the rail. `live/live.sh` is all of it. Run
+   `ducktape`, and Trade and Arcade are on the rail. `live/live.sh` is all of it. Run
    again, it founds a fresh network on the same stage.
 
    The stage's node keeps running until `make live-down QA=/path/to/qa`
