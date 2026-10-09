@@ -2,7 +2,7 @@
 # output under $(BUILD_TARGET); none is committed.
 CARGO ?= cargo
 WASM_OPT ?= wasm-opt
-PROGRAMS := trade
+PROGRAMS := trade arcade
 VIEWS := trade-view
 
 BUILD_TARGET := $(abspath $(or $(CARGO_TARGET_DIR),target))
@@ -40,7 +40,7 @@ KIT ?=
 STAGE ?= lab
 APP_REF ?= dev
 CORE_REF ?=
-LIVE = QA="$(QA)" KIT="$(KIT)" STAGE="$(STAGE)" APP_REF="$(APP_REF)" CORE_REF="$(CORE_REF)" OUT="$(BUILD_TARGET)/live" RELEASE="$(RELEASE)" MAKE="$(MAKE)" sh live/live.sh
+LIVE = PROGRAMS="$(PROGRAMS)" QA="$(QA)" KIT="$(KIT)" STAGE="$(STAGE)" APP_REF="$(APP_REF)" CORE_REF="$(CORE_REF)" OUT="$(BUILD_TARGET)/live" RELEASE="$(RELEASE)" MAKE="$(MAKE)" sh live/live.sh
 
 .PHONY: test wasm-programs wasm-describes wasm-views shots live live-down
 
@@ -75,10 +75,10 @@ shots:
 	$(CARGO) run -q -p trade-view --example frames -- shots/fixtures
 	CARGO_TARGET_DIR=$(abspath $(APP_TARGET)) $(APP)/dev/screens/chat-screens.sh shots/fixtures shots
 
-## the trade module in the real app: builds and packs it, founds stage
-## $(STAGE) of qa's kit with it and a week of history, seeds two accounts, a
-## book and two orders that trade, and prints the command that opens the
-## app on it. The stage's node runs until `make live-down`.
+## every module here in the real app: builds and packs each, founds stage
+## $(STAGE) of qa's kit with them (trade with a week of history), seeds two
+## accounts, a book and two orders that trade, and prints the command that
+## opens the app on it. The stage's node runs until `make live-down`.
 live:
 	@$(LIVE) up
 

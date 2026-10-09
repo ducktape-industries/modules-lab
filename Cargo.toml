@@ -6,7 +6,7 @@
 
 [workspace]
 resolver = "2"
-members = ["crates/app/trade", "crates/app/trade-view"]
+members = ["crates/app/trade", "crates/app/trade-view", "crates/app/arcade"]
 
 [workspace.package]
 edition = "2024"
@@ -34,6 +34,7 @@ gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpu
 
 # ---- here
 trade = { path = "crates/app/trade" }
+arcade = { path = "crates/app/arcade" }
 
 # ---- external
 borsh = { version = "1", default-features = false, features = ["derive", "std"] }
