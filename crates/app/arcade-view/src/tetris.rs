@@ -5,8 +5,10 @@
 //! level sets how many ticks a row of fall takes, 48 at level 0 down to
 //! one from level 29. The tick is 16 ms, a frame: the pieces come from a
 //! shuffled bag of the seven, each once a bag. A key is read on the next
-//! tick; a turn that hits a wall or a block tries one and two cells either
-//! side before it gives up.
+//! tick. The rest is the Tetris Guideline's: a turn that does not fit
+//! tries SRS's kicks, the I its own; a piece that lands locks after half a
+//! second, which a move or a turn on the ground starts again, 15 times a
+//! piece at most (the 16th locks it); a hard drop locks at once.
 use std::collections::VecDeque;
 
 use ducktape_view_guest::Canvas;
@@ -27,8 +29,26 @@ const GRAVITY: [u32; 29] = [
 const CLEARED: [u64; 5] = [0, 40, 100, 300, 1200];
 /// The keys that may wait for a tick.
 const WAITING: usize = 8;
-/// Where a turn that does not fit tries it, sideways.
-const KICKS: [i32; 5] = [0, -1, 1, -2, 2];
+/// SRS's kicks for a clockwise turn out of each of the four states, as the
+/// Guideline writes them (x right, y up); a turn back out of state s + 1
+/// tries the same, negated. The first that fits is the turn.
+const KICKS: [[(i32, i32); 5]; 4] = [
+    [(0, 0), (-1, 0), (-1, 1), (0, -2), (-1, -2)],
+    [(0, 0), (1, 0), (1, -1), (0, 2), (1, 2)],
+    [(0, 0), (1, 0), (1, 1), (0, -2), (1, -2)],
+    [(0, 0), (-1, 0), (-1, -1), (0, 2), (-1, 2)],
+];
+/// The same for the I.
+const I_KICKS: [[(i32, i32); 5]; 4] = [
+    [(0, 0), (-2, 0), (1, 0), (-2, -1), (1, 2)],
+    [(0, 0), (-1, 0), (2, 0), (-1, 2), (2, -1)],
+    [(0, 0), (2, 0), (-1, 0), (2, 1), (-1, -2)],
+    [(0, 0), (1, 0), (-2, 0), (1, -2), (-2, 1)],
+];
+/// How long a landed piece lies before it locks: half a second of ticks.
+const LOCK_DELAY: u32 = (500 / PERIOD) as u32;
+/// How many times a move or a turn on the ground starts the delay again.
+const RESETS: u32 = 15;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Piece {
@@ -112,6 +132,10 @@ pub(crate) struct Tetris {
     moves: VecDeque<Move>,
     /// Ticks since the piece last fell a row.
     fell: u32,
+    /// Ticks the piece has lain on the floor or a block.
+    rest: u32,
+    /// How often a move or a turn on the ground started `rest` again.
+    resets: u32,
     pub(crate) lines: u64,
     pub(crate) level: u64,
     score: u64,
@@ -130,6 +154,8 @@ impl Tetris {
             rng: Rng::new(seed),
             moves: VecDeque::new(),
             fell: 0,
+            rest: 0,
+            resets: 0,
             lines: 0,
             level: 0,
             score: 0,
@@ -161,6 +187,8 @@ impl Tetris {
         self.turn = 0;
         self.at = (3, 0);
         self.fell = 0;
+        self.rest = 0;
+        self.resets = 0;
         self.over = !self.fits(self.piece, self.turn, self.at);
     }
 
@@ -198,19 +226,35 @@ impl Tetris {
         fits
     }
 
-    /// Turns the piece `by` quarters clockwise, sideways as far as two
-    /// cells where it does not fit in place.
-    fn rotate(&mut self, by: u8) -> bool {
-        let turn = (self.turn + by) % 4;
+    /// Whether the piece lies on the floor or a block.
+    fn landed(&self) -> bool {
+        !self.fits(self.piece, self.turn, (self.at.0, self.at.1 + 1))
+    }
+
+    /// Turns the piece a quarter clockwise, or back, at the first of its
+    /// kicks where it fits.
+    fn rotate(&mut self, back: bool) -> bool {
+        let table = match self.piece {
+            Piece::I => I_KICKS,
+            _ => KICKS,
+        };
+        let (turn, kicks) = match back {
+            false => ((self.turn + 1) % 4, table[self.turn as usize]),
+            true => {
+                let turn = (self.turn + 3) % 4;
+                (turn, table[turn as usize].map(|(x, y)| (-x, -y)))
+            }
+        };
         let (x, y) = self.at;
-        let Some(kick) = KICKS
+        let Some(at) = kicks
             .into_iter()
-            .find(|kick| self.fits(self.piece, turn, (x + kick, y)))
+            .map(|(dx, dy)| (x + dx, y - dy))
+            .find(|at| self.fits(self.piece, turn, *at))
         else {
             return false;
         };
         self.turn = turn;
-        self.at = (x + kick, y);
+        self.at = at;
         true
     }
 
@@ -237,28 +281,39 @@ impl Tetris {
     }
 
     fn apply(&mut self, held: Move) -> bool {
-        match held {
+        let landed = self.landed();
+        let moved = match held {
             Move::Left => self.shift(-1, 0),
             Move::Right => self.shift(1, 0),
-            Move::Turn => self.rotate(1),
-            Move::TurnBack => self.rotate(3),
+            Move::Turn => self.rotate(false),
+            Move::TurnBack => self.rotate(true),
             Move::Down => {
-                if self.shift(0, 1) {
+                let fell = self.shift(0, 1);
+                if fell {
                     self.score += 1;
                     self.fell = 0;
-                } else {
-                    self.lock();
                 }
-                true
+                return fell;
             }
             Move::Drop => {
                 let rows = self.landing() - self.at.1;
                 self.at.1 += rows;
                 self.score += 2 * rows as u64;
                 self.lock();
-                true
+                return true;
+            }
+        };
+        // a move on the ground starts the lock delay again, 15 times a
+        // piece; the 16th locks it where it lies
+        if moved && landed {
+            if self.resets < RESETS {
+                self.resets += 1;
+                self.rest = 0;
+            } else if self.landed() {
+                self.lock();
             }
         }
+        moved
     }
 
     /// A key waits for the next tick.
@@ -278,7 +333,8 @@ impl Tetris {
         false
     }
 
-    /// One frame: the keys that waited, then gravity's count.
+    /// One frame: the keys that waited, then gravity's count, or the lock
+    /// delay's on the ground.
     pub(crate) fn tick(&mut self) -> bool {
         let mut moved = false;
         while let Some(held) = self.moves.pop_front() {
@@ -290,13 +346,19 @@ impl Tetris {
         if self.over {
             return moved;
         }
-        self.fell += 1;
-        if self.fell >= self.gravity() {
-            self.fell = 0;
-            if !self.shift(0, 1) {
+        if self.landed() {
+            self.rest += 1;
+            if self.rest >= LOCK_DELAY {
                 self.lock();
+                moved = true;
             }
-            moved = true;
+        } else {
+            self.fell += 1;
+            if self.fell >= self.gravity() {
+                self.fell = 0;
+                self.at.1 += 1;
+                moved = true;
+            }
         }
         moved
     }
@@ -455,6 +517,49 @@ mod tests {
     }
 
     #[test]
+    fn a_piece_lying_flat_on_the_floor_turns_upright_either_way() {
+        let mut stuck = Vec::new();
+        for shown in [Piece::T, Piece::S, Piece::Z, Piece::J, Piece::L] {
+            for key in ["up", "z"] {
+                let mut tetris = with(shown);
+                // flat, its lower row on the floor
+                tetris.at = (3, ROWS - 2);
+                tetris.key(key);
+                tetris.tick();
+                let rows = tetris.falling().map(|(_, y)| y);
+                let upright = tetris.turn == if key == "up" { 1 } else { 3 }
+                    && rows.iter().min() == Some(&(ROWS - 3))
+                    && rows.iter().max() == Some(&(ROWS - 1));
+                if !upright {
+                    stuck.push(format!("{shown:?} {key}"));
+                }
+            }
+        }
+        assert!(stuck.is_empty(), "not upright on the floor: {stuck:?}");
+    }
+
+    #[test]
+    fn an_i_lying_flat_on_the_floor_against_a_wall_turns_upright_on_it() {
+        let mut tetris = with(Piece::I);
+        tetris.at = (COLS - 4, ROWS - 2);
+        tetris.key("up");
+        tetris.tick();
+        assert_eq!(tetris.turn, 1);
+        let mut cells = tetris.falling().to_vec();
+        cells.sort();
+        assert_eq!(
+            cells,
+            [
+                (COLS - 1, ROWS - 4),
+                (COLS - 1, ROWS - 3),
+                (COLS - 1, ROWS - 2),
+                (COLS - 1, ROWS - 1)
+            ],
+            "upright in the last column, on the floor"
+        );
+    }
+
+    #[test]
     fn a_turn_with_no_room_on_either_side_stays_put() {
         let mut tetris = with(Piece::I);
         tetris.turn = 1;
@@ -546,15 +651,65 @@ mod tests {
     }
 
     #[test]
-    fn a_soft_drop_scores_a_cell_and_locks_on_the_floor() {
+    fn a_soft_drop_scores_a_cell_and_on_the_floor_leaves_the_piece_to_its_delay() {
         let mut tetris = with(Piece::O);
         tetris.at = (3, ROWS - 3);
         tetris.key("down");
         tetris.tick();
         assert_eq!((tetris.at.1, tetris.score()), (ROWS - 2, 1));
         tetris.key("down");
-        tetris.tick();
+        assert!(!tetris.tick(), "on the floor a soft drop does nothing");
+        assert_eq!(tetris.score(), 1);
+        for _ in 2..LOCK_DELAY {
+            tetris.tick();
+        }
         assert!(tetris.well[ROWS as usize - 1][4].is_some(), "locked");
+        assert_eq!(tetris.at, (3, 0), "the next piece at the top");
+    }
+
+    #[test]
+    fn a_landed_piece_locks_after_half_a_second_of_ticks() {
+        assert_eq!(LOCK_DELAY, 31);
+        let mut tetris = with(Piece::T);
+        tetris.at = (3, ROWS - 2);
+        for _ in 1..LOCK_DELAY {
+            assert!(!tetris.tick(), "it lies there, not locked yet");
+        }
+        assert!(tetris.tick());
+        assert!(tetris.well[ROWS as usize - 1][4].is_some(), "locked");
+        assert_eq!(tetris.at, (3, 0), "the next piece at the top");
+    }
+
+    #[test]
+    fn a_move_on_the_ground_starts_the_delay_again_15_times_and_the_16th_locks() {
+        let mut tetris = with(Piece::O);
+        tetris.at = (3, ROWS - 2);
+        for step in 1..=RESETS {
+            // all but the last tick of a delay, then a step aside
+            for _ in 2..LOCK_DELAY {
+                tetris.tick();
+            }
+            tetris.key(if step % 2 == 1 { "left" } else { "right" });
+            tetris.tick();
+            assert!(
+                tetris.well.iter().flatten().all(Option::is_none),
+                "move {step} keeps it up"
+            );
+        }
+        tetris.key("left");
+        tetris.tick();
+        assert!(
+            tetris.well[ROWS as usize - 1].iter().any(Option::is_some),
+            "the 16th locks it"
+        );
+    }
+
+    #[test]
+    fn a_hard_drop_locks_at_once() {
+        let mut tetris = with(Piece::O);
+        tetris.key("space");
+        tetris.tick();
+        assert!(tetris.well[ROWS as usize - 1][4].is_some());
         assert_eq!(tetris.at, (3, 0), "the next piece at the top");
     }
 

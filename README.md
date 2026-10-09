@@ -116,7 +116,11 @@ without an account the games play and the score stays on the screen.
 Each game is one file of its rules and its drawing: `tetris.rs`,
 `snake.rs`, `merge.rs` (2048), `mines.rs`, `breakout.rs`. A game is dealt
 from the id the host mints for it (`host.id`), so the same id deals the
-same game, and every rule is tested with a seed.
+same game, and every rule is tested with a seed. Tetris takes from the
+Tetris Guideline what the NES lacks: SRS's turns and kick tables (the I
+has its own), a landed piece that locks after half a second (31 ticks), a
+move or a turn on the ground that starts that half second again, 15 times
+a piece at most (the 16th locks it), and a hard drop that locks at once.
 
 The SDK's clock (`clock.ticks`) gives one item per redraw however far
 behind the host is, with no time on it: a tick is a step, and a host that
