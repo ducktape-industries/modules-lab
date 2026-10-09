@@ -1,13 +1,13 @@
 #!/bin/sh
-# The trade module in the real app, from a clone. `make live` and `make live-down`
+# The workspace's modules in the real app, from a clone. `make live` and `make live-down`
 # run this, and the Makefile passes every variable it reads.
 #
-#   live.sh up     builds the program, its describe module and the view, packs them into
-#                  one trade.wasm, founds stage $STAGE of qa's kit with it and a week of
-#                  every market's minutes, and seeds it: two accounts with their funds,
-#                  36 orders of one resting around BTC/USD's last price, two market
-#                  orders of the other's that trade. Prints the command that opens the
-#                  app on it. Run again, it founds a fresh network on the same stage.
+#   live.sh up     builds each program, its describe module and its view, packs them into
+#                  one <program>.wasm, founds stage $STAGE of qa's kit with them (trade
+#                  with a week of every market's minutes), and seeds trade: two accounts
+#                  with their funds, 36 orders of one resting around BTC/USD's last price,
+#                  two market orders of the other's that trade. Prints the command that
+#                  opens the app on it. Run again, it founds a fresh network on the stage.
 #   live.sh down   stops the stage's node, which runs until then
 #
 # qa is not edited. kit founds from the founding.toml of its root, so the root is the
@@ -79,10 +79,14 @@ cargo run -q -p trade --example seed -- "$OUT/trade.params" "$OUT/seed"
 # none, so a stage made anew at other refs is packed again here.
 "$KIT" build "$STAGE" --root "$OUT"
 
-# trade.wasm as a founding takes it: the view, then the describe module, packed in.
+# Each program as a founding takes it: its view (<program>-view), then its describe
+# module, packed in.
 pack() { cargo run -q -p view-pack --manifest-path "$QA/Cargo.toml" -- "$@"; }
-pack "$RELEASE/trade.wasm" "$RELEASE/trade_view.wasm" "$dir/programs/trade.wasm"
-pack --describe "$dir/programs/trade.wasm" "$RELEASE/trade.describe.wasm" "$dir/programs/trade.wasm"
+for program in $PROGRAMS; do
+  name=$(echo "$program" | tr - _)
+  pack "$RELEASE/$name.wasm" "$RELEASE/${name}_view.wasm" "$dir/programs/$name.wasm"
+  pack --describe "$dir/programs/$name.wasm" "$RELEASE/$name.describe.wasm" "$dir/programs/$name.wasm"
+done
 cp "$OUT/trade.params" "$dir/programs/trade.params"
 
 "$KIT" up "$STAGE" --root "$OUT"
@@ -116,11 +120,11 @@ for op in "$OUT"/seed/take-*.bin; do submit dev trade "${op##*/}"; done
 
 cat <<EOF
 
-trade is live on stage $STAGE: wallet dev has an account, its funds and two orders that
-traded, and wallet bo's orders rest on both sides of BTC/USD.
+$PROGRAMS live on stage $STAGE: wallet dev has an account, its funds and two orders
+that traded, and wallet bo's orders rest on both sides of BTC/USD.
 
   open the app    $KIT app $STAGE --root $OUT
-                  (the wallet's password is $(cat "$dir/password"); Trade is on the rail)
+                  (the wallet's password is $(cat "$dir/password"); each view is on the rail)
   stop the node   make live-down QA=$QA STAGE=$STAGE
                   (it runs until then)
 EOF

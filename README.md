@@ -9,6 +9,8 @@ moves over as it is.
 |---|---|
 | `crates/app/trade` | spot markets for practice funds: the program, its types on the wire and its tables |
 | `crates/app/trade-view` | its view: a trading terminal on the view SDK as it is |
+| `crates/app/arcade` | the high scores of five classic games: the program |
+| `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper and Breakout, and the boards |
 
 The SDK is modules `dev` at the rev the app pins (`Cargo.toml`, `sdk-line`).
 The app refuses a view built against another wire, so the pin moves when the
@@ -84,6 +86,54 @@ program's blocks, and a block reads again only what it wrote to
 again. The view asks for no clock: the chart ends at the newest candle the
 program holds, so a market nobody trades in is not drawn up to now.
 
+## arcade
+
+The program keeps scores and nothing else. An account posts the score a
+game of its ended on (`Op::Score { game, score }`); the program keeps the
+account's best of each game, never lowering it, and ranks every account's
+best on the game's board. `Query::Top` answers a game's board, highest
+first, at most 50 rows; `Query::Bests` an account's best of every game. A
+key that holds no account posts nothing.
+
+**Nothing checks a score.** The games run in the view, on the reader's
+machine, and the view says what the score was: anyone can post any number.
+The boards are practice, a place to compare, not proof of anything.
+
+## arcade-view
+
+A hub of five cards, each a button with the game's name, a line of what it
+is, a still picture and the reader's best; pressed, the game starts with
+its board taking the keys. A game is its board, a panel with the score,
+the reader's best and the game's own facts (Tetris's level, lines and next
+piece; Snake's length; 2048's best tile; Minesweeper's mines left and
+time; Breakout's lives and wall), and a pause. Paused or over, an overlay
+lies on the board and the panel shows the game's top ten, each account by
+the name identity gives it, by its number where it has none. An ended
+game's score is sent once when an account is seated, whatever it is: the
+program keeps the best, and the line under the score says what the node
+answered, sent or refused and why. Without an account the games play and
+the score stays on the screen.
+
+Each game is one file of its rules and its drawing: `tetris.rs`,
+`snake.rs`, `merge.rs` (2048), `mines.rs`, `breakout.rs`. A game is dealt
+from the id the host mints for it (`host.id`), so the same id deals the
+same game, and every rule is tested with a seed. Tetris takes from the
+Tetris Guideline what the NES lacks: SRS's turns and kick tables (the I
+has its own), a landed piece that locks after half a second (31 ticks), a
+move or a turn on the ground that starts that half second again, 15 times
+a piece at most (the 16th locks it), and a hard drop that locks at once.
+
+The SDK's clock (`clock.ticks`) gives one item per redraw however far
+behind the host is, with no time on it: a tick is a step, and a host that
+falls behind slows a game rather than skipping it. Tetris and Breakout
+tick every 16 ms and count ticks for gravity and the ball; Snake waits for
+the first arrow, then its tick is its step, 160 ms quickening to 70;
+Minesweeper's clock counts seconds from
+the first reveal; 2048 asks for none. The clock is asked for only while a
+game runs: the hub, a paused game and an ended one ask for nothing, and a
+game pauses when the view leaves the screen. Tetris, Snake and Breakout
+read a key on their next tick; 2048 and Minesweeper act on it at once.
+
 ## Loop
 
 ```sh
@@ -92,7 +142,7 @@ make wasm-programs    # each program for wasm32
 make wasm-describes   # each program's describe module, ABI-checked
 make wasm-views       # each view's wasm, optimized and ABI-checked by modules' own gate
 make shots APP=/path/to/app   # the view's frames, painted by the app's real renderer
-make live QA=/path/to/qa      # the module in the real app, on a stage of qa's kit ("A view on its own", 3)
+make live QA=/path/to/qa      # the modules in the real app, on a stage of qa's kit ("A view on its own", 3)
 ```
 
 `make wasm-views` needs Binaryen `wasm-opt` 132 and `wasm-tools`, as modules
@@ -120,8 +170,8 @@ There is no runner that keeps one view alive without a node. What there is:
    of the width, 165 px over the bottom; `trade-hover` is a pane sized so
    that point is on a candle, and its frame holds the line the view draws
    on that candle.
-3. **Live, in the app.** The view is served with its program, so it needs
-   a network founded with `trade`: a stage of qa's `kit`. With a qa
+3. **Live, in the app.** A view is served with its program, so it needs
+   a network founded with it: a stage of qa's `kit`. With a qa
    checkout, and `core`, `app` and `modules` checked out beside it as qa's
    README says:
 
@@ -129,16 +179,16 @@ There is no runner that keeps one view alive without a node. What there is:
    make live QA=/path/to/qa
    ```
 
-   It builds the program, its describe module and the view, packs those
-   two into `trade.wasm` with qa's `view-pack`, and founds stage `lab`
-   (`STAGE=`) with it: kit's own founding with `live/founding.toml` after
-   it, the week of history as the program's params. Then it seeds the
+   It builds every program, its describe module and its view, packs those
+   two into `<program>.wasm` with qa's `view-pack`, and founds stage `lab`
+   (`STAGE=`) with them: kit's own founding with `live/founding.toml` after
+   it, the week of history as trade's params. Then it seeds the
    stage with the ops `examples/seed.rs` writes. Wallet `dev`, the one the
    app opens with, gets an account and its funds; a second wallet, `bo`,
    rests 36 orders around BTC/USD's last price; two market orders of
    `dev`'s trade against them. It ends with the command that opens the app
    on the stage, a `kit app` with the lab's root: the wallet's password is
-   `ducktape`, and Trade is on the rail. `live/live.sh` is all of it. Run
+   `ducktape`, and Trade and Arcade are on the rail. `live/live.sh` is all of it. Run
    again, it founds a fresh network on the same stage.
 
    The stage's node keeps running until `make live-down QA=/path/to/qa`
@@ -254,6 +304,35 @@ renders its whole tree whatever changed. trade-view renders more than the
 spike did on every tick: expect its numbers higher. What the GPU takes to
 paint the quads is not in these numbers: the box that ran them paints in
 software.
+
+### arcade-view
+
+arcade-view in the app at da74b24c on stage `arcade` (a release build,
+`DUCKTAPE_PERF=1`, read at the test door's `/perf`), on a Ryzen 9 5950X
+under Xvfb, which paints in software, with the box's load at about 20. Each
+game played by key presses (or clicks) for about 8 s after a `/perf` reset.
+A tick is one call into the view: a clock item, a key or a reply. p50, with
+p95 in brackets. Host is the host's work on a frame the view rendered:
+replace, render, layout, prepaint and paint added up (stage by stage, so
+the p95 is an upper bound).
+
+| Game | clock | ticks in 8 s | renders | fuel a tick | wasm tick | decode + merge | host | frame |
+|---|---|---|---|---|---|---|---|---|
+| Tetris | 16 ms | 553 | 39 | 11k (361k) | 0.04 ms (0.16) | 0.01 ms (0.08) | 0.56 ms (1.09) | 9 B (572 B) |
+| Snake | 160 ms | 74 | 50 | 292k (295k) | 0.13 ms (0.18) | 0.05 ms (0.08) | 0.42 ms (0.59) | 301 B (301 B) |
+| 2048 | none | 56 | 26 | 13k (490k) | 0.05 ms (0.22) | 0.01 ms (0.14) | 0.66 ms (0.88) | 9 B (530 B) |
+| Minesweeper | 1 s | 14 | 14 | 705k (1.9M) | 0.22 ms (0.40) | 0.09 ms (0.25) | 0.95 ms (1.15) | 28 B (16.9 kB) |
+| Breakout | 16 ms | 532 | 385 | 675k (684k) | 0.16 ms (0.26) | 0.05 ms (0.09) | 0.43 ms (0.64) | 4.8 kB (4.9 kB) |
+
+A tick whose game did not move renders nothing and sends 9 B: most of
+Tetris's, which falls a row every 48 ticks at level 0. Breakout renders on
+every tick its ball moves, so its row is the one that has to fit a frame:
+about 1 ms of the view's and the host's work at p95, against 16 ms, so
+the period stays 16 ms. The ticks column counts keys and replies as well as
+clock items, so it is not a frame rate; whether the clock holds 60 a second
+on a real display, and what the GPU takes to paint, is not in these numbers. A paused game and the
+hub ticked 0 times in 3 s. The app's limit is 250M fuel a tick; the most a
+tick took was Minesweeper's flood at 2M. `arcade_view.wasm` is 0.9 MB.
 
 ## What the SDK does not give a trading view yet
 
