@@ -21,7 +21,10 @@ impl Module for Arcade {
         // a score is an account's: a key that holds none posts nothing
         let account = ctx.sender_account()?;
         match op {
-            Op::Score { game, score: posted } => score(ctx, account, game, posted),
+            Op::Score {
+                game,
+                score: posted,
+            } => score(ctx, account, game, posted),
         }
     }
 
