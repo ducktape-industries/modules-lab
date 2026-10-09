@@ -126,8 +126,8 @@ the first arrow, then its tick is its step, 160 ms quickening to 70;
 Minesweeper's clock counts seconds from
 the first reveal; 2048 asks for none. The clock is asked for only while a
 game runs: the hub, a paused game and an ended one ask for nothing, and a
-game pauses when the view leaves the screen. A key is read on the game's
-next tick.
+game pauses when the view leaves the screen. Tetris, Snake and Breakout
+read a key on their next tick; 2048 and Minesweeper act on it at once.
 
 ## Loop
 
