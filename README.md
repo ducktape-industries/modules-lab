@@ -322,11 +322,10 @@ the p95 is an upper bound).
 A tick whose game did not move renders nothing and sends 9 B: most of
 Tetris's, which falls a row every 48 ticks at level 0. Breakout renders on
 every tick its ball moves, so its row is the one that has to fit a frame:
-about 1 ms of the view's and the host's work at p95, against 16 ms. The
-16 ms clock gave Breakout 51 to 61 ticks a second here, not 62.5 (the clock
-gives one item a redraw, and Xvfb's software paint sets the redraws), so the
-ball ran a little slower than it would at 60 Hz; the period stays 16 ms.
-What the GPU takes to paint is not in these numbers. A paused game and the
+about 1 ms of the view's and the host's work at p95, against 16 ms, so
+the period stays 16 ms. The ticks column counts keys and replies as well as
+clock items, so it is not a frame rate; whether the clock holds 60 a second
+on a real display, and what the GPU takes to paint, is not in these numbers. A paused game and the
 hub ticked 0 times in 3 s. The app's limit is 250M fuel a tick; the most a
 tick took was Minesweeper's flood at 2M. `arcade_view.wasm` is 0.9 MB.
 
