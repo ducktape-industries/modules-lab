@@ -67,10 +67,13 @@ fn an_ended_game_posts_its_score_once_and_drops_the_clock() {
         &opened.cx,
         &["Game over", "Posted to the board.", "Play again", "Top 10"],
     );
-    // a block after it posts nothing more
+    // a block after it, or the view leaving the screen, posts nothing more
     opened.changes.send(None);
+    opened.visible.send(false);
     opened.cx.run_until_parked();
     assert_eq!(opened.ops().len(), 1);
+    opened.visible.send(true);
+    opened.cx.run_until_parked();
     // Enter plays again: a new deal, a new clock
     opened.key("enter");
     assert_eq!(opened.cx.host().requests::<HostId>().len(), 2);
