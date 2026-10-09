@@ -60,8 +60,10 @@ Everything a spot terminal shows, on the program's rows:
   it itself: one `canvas()` of quads and lines the host paints in order,
   the labels as elements laid over it. Its `sensor` tells where the host
   laid the chart out, so one listener on the plot turns the pointer's
-  position into the candle under it: that candle's line, its time and the
-  readout are three elements, and the frame holds none per candle.
+  position into the candle under it and the price at its row: that
+  candle's line, its time, the readout, the crosshair's line across the
+  prices and the price at it on the axis are elements, and the frame holds
+  none per candle.
 - **The book and the tape** (`src/book.rs`): fifteen prices a side where
   they fit, each with what rests at it and the side's running total, in
   price steps of 1, 10 or 100 ticks. A press on a row puts its price in the
@@ -241,13 +243,24 @@ Zoomed out to the whole week: 673 candles, 1.4 px each, 509 nodes, 3.7 MB.
 The frame holds no element for a candle, so a slot the pointer enters costs
 about the same at 123 candles and at 673: 1.9 ms and 2.4 ms for the five
 samples together. It sends the candle's line, the readout and the time
-under it, and none of the canvas; a move inside one slot is a tick that
-changes nothing, with no patch and no render. What still grows with the
+under it, and none of the canvas. What still grows with the
 candles is the view's own tick, which works the whole plot out and builds
 every canvas command again on each render to find them unchanged, and a
 wheel notch, which sends the canvas again. A row of the book under the
 pointer is marked by the host with no tick; the line on a candle is the
 view's, and moves on its tick.
+
+The crosshair's line across the prices and the price at it follow the
+pointer row by row, so a move to another row is a tick of the view where
+before a move inside one slot changed nothing (a tick of 10.8k fuel, no
+render). Measured at app da74b24c on the same week, window and span, with
+the pointer moved down one slot, two pixels a move (p50 of each of two
+runs): at 123 candles 4.5M fuel, a 1.0-1.3 ms wasm tick, 0.6-1.1 ms host
+render and a 0.25 kB frame; at 673 candles 6.4M fuel, 1.3-1.7 ms, 0.8-1.1
+ms and 0.07-0.10 kB. A move into another slot costs what it did (4.5M and
+6.4M fuel, 0.42 kB). The app now also samples gpui's layout, prepaint and
+paint of the view: 6-11 ms more a render on that box, loaded by other
+builds, and the larger part of a move.
 
 These five samples stop at the element build: gpui's layout and paint of
 the view are in none of them. Measured apart, with samples added to the app
@@ -339,11 +352,11 @@ tick took was Minesweeper's flood at 2M. `arcade_view.wasm` is 0.9 MB.
 - **A mark that follows the pointer with no tick.** The view knows where
   the pointer is on its chart: the chart's `sensor` tells its bounds in the
   window's pixels (`on_bounds`), the pixels a mouse event's position is in,
-  and one listener finds the candle under it. What it draws there it draws
-  on its own tick: the line on the hovered candle takes a tick for each slot
-  the pointer enters, where a hover style is the host's alone and takes
-  none. A horizontal line at the pointer and the price read off it are not
-  drawn yet; they wait for nothing of the SDK's.
+  and one listener finds the candle and the price under it. What it draws
+  there it draws on its own tick: the line on the hovered candle takes a
+  tick for each slot the pointer enters, and the crosshair's line across
+  the prices with the price at it a tick for each row, where a hover style
+  is the host's alone and takes none.
 - **More than quads and lines on the canvas.** The builder has `rect`,
   `circle` and `line`. The wire carries paths, dashes, clips and transforms,
   which an area series, dashed order lines and an indicator pane need.
