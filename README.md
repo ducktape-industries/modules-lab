@@ -203,8 +203,8 @@ There is no runner that keeps one view alive without a node. What there is:
    cancelled by id, so the book is never empty), and takes once in each
    market a round, so the 1m candles form. A submit takes 0.1 to 0.3 s
    there (the node's CLI starts, opens the key and waits for the op to
-   preconfirm) and the rounds follow each other: about 9 rounds, 450 ops
-   and 10 to 13 trades a minute in each market.
+   preconfirm) and the rounds follow each other: about 9 rounds and 450
+   ops a minute in all, and 10 to 13 trades a minute in each market.
 
    The stage's modules is the rev this workspace pins, and its app is
    `APP_REF` (`dev` when not given), which must pin that same rev:
