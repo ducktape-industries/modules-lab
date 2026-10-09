@@ -58,8 +58,10 @@ Everything a spot terminal shows, on the program's rows:
   it itself: one `canvas()` of quads and lines the host paints in order,
   the labels as elements laid over it. Its `sensor` tells where the host
   laid the chart out, so one listener on the plot turns the pointer's
-  position into the candle under it: that candle's line, its time and the
-  readout are three elements, and the frame holds none per candle.
+  position into the candle under it and the price at its row: that
+  candle's line, its time, the readout, the crosshair's line across the
+  prices and the price at it on the axis are elements, and the frame holds
+  none per candle.
 - **The book and the tape** (`src/book.rs`): fifteen prices a side where
   they fit, each with what rests at it and the side's running total, in
   price steps of 1, 10 or 100 ticks. A press on a row puts its price in the
@@ -260,11 +262,11 @@ software.
 - **A mark that follows the pointer with no tick.** The view knows where
   the pointer is on its chart: the chart's `sensor` tells its bounds in the
   window's pixels (`on_bounds`), the pixels a mouse event's position is in,
-  and one listener finds the candle under it. What it draws there it draws
-  on its own tick: the line on the hovered candle takes a tick for each slot
-  the pointer enters, where a hover style is the host's alone and takes
-  none. A horizontal line at the pointer and the price read off it are not
-  drawn yet; they wait for nothing of the SDK's.
+  and one listener finds the candle and the price under it. What it draws
+  there it draws on its own tick: the line on the hovered candle takes a
+  tick for each slot the pointer enters, and the crosshair's line across
+  the prices with the price at it a tick for each row, where a hover style
+  is the host's alone and takes none.
 - **More than quads and lines on the canvas.** The builder has `rect`,
   `circle` and `line`. The wire carries paths, dashes, clips and transforms,
   which an area series, dashed order lines and an indicator pane need.

@@ -8,9 +8,11 @@
 //! nothing traded in has no row and is drawn flat at the close before it.
 //! The chart's sensor tells where the host laid it out, so a pointer's
 //! position in the window is a place on the plot: one listener finds the
-//! candle under it. That candle's line, its time and the readout are
-//! elements, drawn again when the pointer enters another slot; a move
-//! inside one slot draws nothing, and the canvas is never sent for a hover.
+//! candle under it and the row it is in. That candle's line, its time, the
+//! readout, and the crosshair's line across the prices with the price at it
+//! are elements, drawn again when the pointer enters another slot or
+//! another row; a move that changes neither draws nothing, and the canvas
+//! is never sent for a hover.
 use std::collections::BTreeMap;
 
 use ducktape_view_guest::prelude::*;
@@ -196,6 +198,12 @@ impl Plot {
         HEADROOM + share as f32 * (self.prices - HEADROOM - FOOTROOM)
     }
 
+    /// The price drawn at `y`: [`Plot::y`] the other way.
+    fn price(&self, y: f32) -> f64 {
+        let share = f64::from(y - HEADROOM) / f64::from(self.prices - HEADROOM - FOOTROOM);
+        self.high - share * (self.high - self.low)
+    }
+
     /// The left edge of a slot: the last one ends at the plot's edge.
     fn x(&self, slot: usize) -> f32 {
         self.width - (self.slots.len() - slot) as f32 * self.step
@@ -276,13 +284,37 @@ impl Chart {
         drawn.then(|| (bucket - first) as usize)
     }
 
+    /// The price pane's height: the plot's, less the volume pane under it.
+    fn prices(&self) -> f32 {
+        let height = self.size.1 - TIMES;
+        match self.volume {
+            true => height - (height * VOLUME).min(VOLUME_MOST).floor(),
+            false => height,
+        }
+    }
+
+    /// The row of pixels the crosshair's line is in, from the plot's top:
+    /// the pointer's, while it is over the price pane. Over the volume pane
+    /// or an axis there is none.
+    fn crosshair(&self) -> Option<f32> {
+        let at = self.pointer? - self.origin;
+        let (x, y) = (f32::from(at.x), f32::from(at.y));
+        let over = (0. ..self.size.0 - PRICES).contains(&x) && (0. ..self.prices()).contains(&y);
+        over.then(|| y.floor())
+    }
+
+    /// What the pointer draws: the candle under it and the crosshair's row.
+    fn pointed(&self) -> (Option<usize>, Option<f32>) {
+        (self.hovered(), self.crosshair())
+    }
+
     /// Puts the pointer at `at`, in the window's pixels, or takes it off
-    /// the plot, and says whether another candle is under it now: a move
-    /// inside one slot draws nothing.
+    /// the plot, and says whether it draws anything else now: a move that
+    /// stays in one slot and one row draws nothing.
     fn hover(&mut self, at: Option<Point<Pixels>>) -> bool {
-        let before = self.hovered();
+        let before = self.pointed();
         self.pointer = at;
-        before != self.hovered()
+        before != self.pointed()
     }
 
     /// `None` until the host has measured a chart with room for a plot and
@@ -346,14 +378,10 @@ impl Chart {
             let room = tick as f64 * 5.;
             (low, high) = ((low - room).max(0.), high + room);
         }
-        let volume = match self.volume {
-            true => (height * VOLUME).min(VOLUME_MOST).floor(),
-            false => 0.,
-        };
         Some(Plot {
             width,
             height,
-            prices: height - volume,
+            prices: self.prices(),
             step: self.candle,
             first,
             slots,
@@ -484,14 +512,14 @@ impl Trade {
             _ => div().size_full().into_any_element(),
         };
         // The chart is drawn to its size and the pointer is placed by its
-        // origin: a chart that only moved is drawn again when another
-        // candle is under the pointer for it, and not otherwise.
+        // origin: a chart that only moved is drawn again when the pointer
+        // draws something else on it, and not otherwise.
         let measured = cx.listener(|view: &mut Trade, bounds: &Bounds<Pixels>, _, cx| {
             let chart = &mut view.chart;
             let size = (bounds.size.width.into(), bounds.size.height.into());
-            let hovered = chart.hovered();
+            let pointed = chart.pointed();
             chart.origin = bounds.origin;
-            if std::mem::replace(&mut chart.size, size) != size || hovered != chart.hovered() {
+            if std::mem::replace(&mut chart.size, size) != size || pointed != chart.pointed() {
                 cx.notify();
             }
         });
@@ -586,9 +614,9 @@ impl Trade {
         }
     }
 
-    /// The plot: the canvas, the line on the candle under the pointer, and
-    /// laid over them a price beside each rule, the orders and the last
-    /// price on their lines, the times and the readout.
+    /// The plot: the canvas, the crosshair's lines, and laid over them a
+    /// price beside each rule, the orders and the last price on their
+    /// lines, the times, the readout and the price at the pointer.
     fn plotted(
         &self,
         plot: &Plot,
@@ -638,14 +666,22 @@ impl Trade {
         let rules: Vec<(u64, f32)> = rules
             .filter_map(|rule| Some((rule, plot.line(rule)?)))
             .collect();
-        // a tag covers a rule's price that is under it
-        let clear = |y: &f32| tagged.iter().all(|tag| (tag - y).abs() > TAG_H - 4.);
+        let crosshair = self.chart.crosshair();
+        // a tag covers a rule's price that is under it, the pointer's too
+        let clear = |y: &f32| {
+            let mut tags = tagged.iter().chain(&crosshair);
+            tags.all(|tag| (tag - y).abs() > TAG_H - 4.)
+        };
         let places = format::decimals(step).min(format::decimals(market.tick));
         let prices = rules.iter().filter(|(_, y)| clear(y)).map(|(rule, y)| {
             label(format::fixed(*rule, places))
                 .left(px(plot.width + 8.))
                 .top(px(y - 7.))
         });
+        // The rule prices in a layer of their own, as the times are: the
+        // pointer's tag takes the one under it away and puts it back, and
+        // the plot's other children keep their places for it.
+        let prices = div().absolute().inset_0().children(prices);
         let order_tags = tags.iter().flat_map(|(y, side, left, limit)| {
             let color = sided(*side, &theme);
             let word = match side {
@@ -780,6 +816,27 @@ impl Trade {
             Some(slot) => line.left(px(plot.middle(slot))).bg(theme.muted),
             None => line,
         };
+        // The crosshair's other line, across the prices at the pointer's
+        // row, and the price there on the axis, over every other tag: both
+        // kept in the tree, drawn or not, as the candle's line is. The
+        // price is the market's tick nearest the row's, as the rules are
+        // ticks.
+        let across = div().absolute().left_0().w(px(plot.width)).h(px(1.));
+        let across = match crosshair {
+            Some(y) => across.top(px(y)).bg(theme.muted),
+            None => across,
+        };
+        let pointed = match crosshair {
+            Some(y) => {
+                let ticks = (plot.price(y) / market.tick as f64).round().max(0.);
+                tag(ticks as u64 * market.tick, y)
+                    .border_color(theme.foreground)
+                    .bg(theme.foreground)
+                    .text_color(theme.background)
+                    .into_any_element()
+            }
+            None => div().into_any_element(),
+        };
         let named = format!(
             "{} {} candles, {} on screen, last {}",
             market.name,
@@ -815,7 +872,7 @@ impl Trade {
                 }),
             )
             // The one listener that hears the pointer: a drag pans, and the
-            // candle under the pointer is the one told.
+            // candle under the pointer is the one told, at its row's price.
             .on_mouse_move(
                 cx.listener(|view: &mut Trade, event: &MouseMoveEvent, _, cx| {
                     view.drag(event, cx);
@@ -839,11 +896,13 @@ impl Trade {
             )
             .child(self.drawn(plot, &rules, &orders, last, &theme))
             .child(line)
-            .children(prices)
+            .child(across)
+            .child(prices)
             .children(order_tags)
             .children(last_tag)
             .child(times)
             .children(readout)
+            .child(pointed)
     }
 }
 

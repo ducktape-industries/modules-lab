@@ -74,6 +74,40 @@ fn line(cx: &TestAppContext) -> Option<gpui::Length> {
     style.background.as_ref().and(style.inset.left)
 }
 
+/// Where the crosshair's line across the prices is drawn, from the plot's
+/// top: `None` while the pointer is over no price.
+fn across(cx: &TestAppContext) -> Option<gpui::Length> {
+    let across = &cx.node("trade-plot").children()[2];
+    let style = &cx.styles()[across.style().expect("the line's style")];
+    style.background.as_ref().and(style.inset.top)
+}
+
+/// The price told on the axis at the pointer, and its tag's top: the
+/// plot's last child, over every other tag.
+fn told(cx: &TestAppContext) -> Option<(String, Option<gpui::Length>)> {
+    let tag = cx.node("trade-plot").children().last().expect("a child");
+    let Node::Text(text) = tag.children().first()? else {
+        return None;
+    };
+    let style = &cx.styles()[tag.style().expect("the tag's style")];
+    Some((text.content.clone(), style.inset.top))
+}
+
+/// Three hours from 90.0 to 125.0 on the wide board, and nothing else on
+/// the chart: no average has the closes it needs. The 344 px of prices
+/// between the 20 px over 125.0 and the 36 under 90.0 put a price on a row
+/// exactly.
+fn three_hours() -> Opened {
+    let mut world = sample::empty();
+    let rows = vec![
+        sample::hour(4, 1000, 1100, 900, 1050, 3),
+        sample::hour(3, 1050, 1200, 1000, 1180, 2),
+        sample::hour(0, 1180, 1250, 1170, 1210, 4),
+    ];
+    world.candles.insert((0, 3), rows);
+    opened(world, WIDE, Some(READER))
+}
+
 /// Every text laid over the plot.
 fn labels(cx: &TestAppContext) -> Vec<String> {
     fn collect(node: &Node, out: &mut Vec<String>) {
@@ -191,14 +225,7 @@ fn the_switches_take_the_averages_the_volume_and_the_candles_off() {
 /// before it, with no volume, and nothing is drawn before the first trade.
 #[test]
 fn a_bucket_with_no_trade_is_drawn_flat_at_the_close_before() {
-    let mut world = sample::empty();
-    let rows = vec![
-        sample::hour(4, 1000, 1100, 900, 1050, 3),
-        sample::hour(3, 1050, 1200, 1000, 1180, 2),
-        sample::hour(0, 1180, 1250, 1170, 1210, 4),
-    ];
-    world.candles.insert((0, 3), rows);
-    let (mut cx, ..) = opened(world, WIDE, Some(READER));
+    let (mut cx, ..) = three_hours();
     assert_eq!(slots(&cx), 5, "from the first trade to the newest");
     let newest = readout(&cx);
     over(&mut cx, 82);
@@ -257,12 +284,14 @@ fn the_candle_under_the_pointer_is_told_and_the_newest_when_none_is() {
     assert_eq!((line(&cx), readout(&cx)), (None, newest));
 }
 
-/// One listener on the plot finds the candle under the pointer, from where
-/// the host says the chart is. A slot the pointer enters costs the view its
-/// line, the readout and the time under the candle, and none of the canvas;
-/// a move inside one slot costs it nothing.
+/// One listener on the plot finds the candle under the pointer and its
+/// row, from where the host says the chart is. The pointer coming onto the
+/// plot costs the view the candle's line, the readout, the time under the
+/// candle and the crosshair's line and price, and none of the canvas; a
+/// move to another row the crosshair alone; a move inside one slot and one
+/// row nothing.
 #[test]
-fn a_hover_sends_the_line_and_the_readout_and_none_of_the_chart() {
+fn a_hover_sends_the_lines_and_the_readout_and_none_of_the_chart() {
     let (mut cx, ..) = wide();
     let whole = cx.frame_bytes();
     let drawn = canvas(&cx).to_vec();
@@ -271,12 +300,12 @@ fn a_hover_sends_the_line_and_the_readout_and_none_of_the_chart() {
     let sent: usize = cx.reports().iter().map(|tick| tick.bytes).sum();
     assert_eq!(canvas(&cx), drawn, "the canvas is as it was");
     assert!(
-        sent < 512,
+        sent < 1024,
         "{sent} B crossed for a hover, of a {whole} B frame"
     );
     assert_eq!(cx.renders(), renders + 1);
-    // the slot's first pixel, its last, and another height in it
-    for inside in [(456., 200.), (463.9, 200.), (460., 20.)] {
+    // the slot's first pixel and its last, in the pointer's row
+    for inside in [(456., 200.), (463.9, 200.9)] {
         sample::point(&mut cx, WIDE, inside);
         let ticks = cx.reports().iter();
         assert_eq!(ticks.map(|tick| tick.patches).sum::<usize>(), 0);
@@ -284,29 +313,111 @@ fn a_hover_sends_the_line_and_the_readout_and_none_of_the_chart() {
     assert_eq!(
         cx.renders(),
         renders + 1,
-        "a move inside one slot draws nothing"
+        "a move inside one slot and one row draws nothing"
     );
-    sample::point(&mut cx, WIDE, (464., 200.));
-    assert_eq!(cx.renders(), renders + 2, "the next slot's first pixel");
+    // every other row of the slot: the crosshair's line and price, and a
+    // rule's price where the tag comes onto it or leaves it
+    let told = readout(&cx);
+    for row in 1..390 {
+        sample::point(&mut cx, WIDE, (460., row as f32 + 0.5));
+        let sent: usize = cx.reports().iter().map(|tick| tick.bytes).sum();
+        let patches = cx.last_frame().patches.len();
+        assert!(
+            sent < 320 && patches <= 4,
+            "row {row}: {sent} B in {patches} patches"
+        );
+    }
+    assert_eq!(cx.renders(), renders + 390);
+    assert_eq!(readout(&cx), told, "the same candle");
+    sample::point(&mut cx, WIDE, (464., 389.5));
+    assert_eq!(cx.renders(), renders + 391, "the next slot's first pixel");
     assert_eq!(line(&cx), Some(px(468.).into()));
 }
 
 /// Across the whole plot every slot the pointer enters is a small patch,
-/// where an axis label gives way to the candle's time and comes back too:
-/// the time axis is a layer of its own, so the plot's other children keep
-/// their places and none is sent again for a label that came or went.
+/// on a row of its own each time, where an axis label gives way to the
+/// candle's time or to the pointer's price and comes back too: each axis
+/// is a layer of its own, so the plot's other children keep their places
+/// and none is sent again for a label that came or went.
 #[test]
 fn a_sweep_across_the_plot_is_small_patches_all_the_way() {
     let (mut cx, ..) = wide();
-    for slot in 0..88 {
-        over(&mut cx, slot);
+    // the pointer comes onto the plot
+    over(&mut cx, 0);
+    for slot in 1..88 {
+        let at = (slot as f32 * 8. + 4., 20. + slot as f32 * 4.);
+        sample::point(&mut cx, WIDE, at);
         let sent: usize = cx.reports().iter().map(|tick| tick.bytes).sum();
         let patches = cx.last_frame().patches.len();
         assert!(
-            sent < 512 && patches <= 16,
+            sent < 768 && patches <= 16,
             "slot {slot}: {sent} B in {patches} patches"
         );
     }
+}
+
+/// The crosshair: a line across the prices at the pointer's row, and the
+/// price there on the axis, the market's tick nearest it, as the rules are
+/// ticks. It follows the pointer row by row, and its tag is over the last
+/// price's where they meet.
+#[test]
+fn the_crosshair_is_at_the_pointers_price() {
+    let (mut cx, ..) = three_hours();
+    assert_eq!((across(&cx), told(&cx)), (None, None));
+    // half way down the 344 px from 125.0 to 90.0
+    sample::point(&mut cx, WIDE, (300., 192.));
+    assert_eq!(across(&cx), Some(px(192.).into()));
+    assert_eq!(told(&cx), Some(("107.5".into(), Some(px(183.).into()))));
+    // the highest price on screen, 8.14 under it (116.86), one row over the
+    // lowest (90.10), and in the readout's strip over the highest (126.53)
+    let rows = [
+        (20., "125.0"),
+        (100., "116.9"),
+        (363., "90.1"),
+        (5., "126.5"),
+    ];
+    for (y, price) in rows {
+        sample::point(&mut cx, WIDE, (300., y + 0.5));
+        let tag = Some(px(y - 9.).into());
+        assert_eq!(across(&cx), Some(px(y).into()), "row {y}");
+        assert_eq!(told(&cx), Some((price.into(), tag)), "row {y}");
+    }
+    // on the last price's row (121.0, its line at 59): both tags say it,
+    // and the pointer's is the plot's last child, drawn over the other
+    sample::point(&mut cx, WIDE, (300., 59.));
+    assert_eq!(told(&cx).map(|(price, _)| price).as_deref(), Some("121.0"));
+    let tags = labels(&cx).into_iter().filter(|text| text == "121.0");
+    assert!(tags.count() >= 2, "{:?}", labels(&cx));
+}
+
+/// There is a price under the pointer over the price pane alone: over the
+/// volume pane, either axis or off the plot there is no line across and no
+/// tag, while the candle's own line stays wherever there is a candle. With
+/// the volume off, the prices take the whole plot.
+#[test]
+fn the_crosshair_is_over_the_prices_alone_and_leaves_with_the_pointer() {
+    let (mut cx, ..) = three_hours();
+    let mut at = |x: f32, y: f32| {
+        sample::point(&mut cx, WIDE, (x, y));
+        (
+            line(&cx).is_some(),
+            across(&cx).is_some(),
+            told(&cx).is_some(),
+        )
+    };
+    // the newest candle's slot: the price pane's last row, the volume
+    // pane's first, the time axis
+    assert_eq!(at(700., 399.), (true, true, true));
+    assert_eq!(at(700., 400.), (true, false, false));
+    assert_eq!(at(700., 495.), (false, false, false));
+    // the price axis, and the prices left of the first candle
+    assert_eq!(at(720., 192.), (false, false, false));
+    assert_eq!(at(300., 192.), (false, true, true));
+    cx.simulate_hover("trade-plot", false);
+    assert_eq!((line(&cx), across(&cx), told(&cx)), (None, None, None));
+    cx.simulate_click("trade-volume");
+    sample::point(&mut cx, WIDE, (700., 450.));
+    assert_eq!(across(&cx), Some(px(450.).into()), "no volume pane");
 }
 
 /// The wheel zooms about the pointer: the candle under it stays under it,
