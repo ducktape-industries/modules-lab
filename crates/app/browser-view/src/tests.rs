@@ -62,6 +62,11 @@ fn an_address_without_a_scheme_opens_over_https() {
         address("http://localhost:8000/a").as_deref(),
         Some("http://localhost:8000/a")
     );
+    // a `://` past the start is no scheme
+    assert_eq!(
+        address("example.com/?next=https://example.org").as_deref(),
+        Some("https://example.com/?next=https://example.org")
+    );
     assert_eq!(address("   "), None);
     // through the bar: with no tab open, Enter opens the first on it
     let Opened { mut cx, .. } = opened();

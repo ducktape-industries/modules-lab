@@ -75,14 +75,22 @@ impl View for Browser {
     }
 }
 
-/// What the address bar opens for `typed`: as typed when it names a scheme
-/// (`https://…`, `http://localhost…`; the host refuses any other), else
-/// `https://` in front of it. Nothing for a blank bar.
+/// What the address bar opens for `typed`: as typed when it starts with a
+/// scheme (`https://…`, `http://localhost…`; the host refuses any other),
+/// else `https://` in front of it. Nothing for a blank bar.
 pub fn address(typed: &str) -> Option<String> {
     let typed = typed.trim();
+    // a scheme is a letter, then letters, digits, `+`, `-` or `.`: a `://`
+    // further on (`a.com/?next=https://b`) is not one
+    let schemed = typed.split_once("://").is_some_and(|(scheme, _)| {
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
+    });
     match typed {
         "" => None,
-        typed if typed.contains("://") => Some(typed.to_owned()),
+        typed if schemed => Some(typed.to_owned()),
         typed => Some(format!("https://{typed}")),
     }
 }
