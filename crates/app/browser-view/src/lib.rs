@@ -302,7 +302,6 @@ impl Browser {
                         view.navigate(WebHandle::back, cx)
                     }),
                 )
-                .kind(design::Kind::Quiet)
                 .enabled(can(|state| state.can_go_back)),
             )
             .child(
@@ -314,7 +313,6 @@ impl Browser {
                         view.navigate(WebHandle::forward, cx)
                     }),
                 )
-                .kind(design::Kind::Quiet)
                 .enabled(can(|state| state.can_go_forward)),
             )
             .child(
@@ -326,7 +324,6 @@ impl Browser {
                         view.navigate(reload, cx)
                     }),
                 )
-                .kind(design::Kind::Quiet)
                 .enabled(self.tab().is_some()),
             )
             .child(
