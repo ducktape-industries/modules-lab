@@ -168,8 +168,14 @@ fn tabs_keep_their_pages_when_switched_and_closed() {
             ..WebState::default()
         },
     );
-    // a hidden tab's page still names its tab
+    // a hidden tab's page still names its tab, and moves neither the bar
+    // nor the window's title
     assert!(cx.has_text("Example"));
+    assert_eq!(opened.view.read(|view| view.address.text()), crate::HOME);
+    assert_eq!(
+        cx.host().requests::<HostTitle>().last().map(String::as_str),
+        Some(crate::HOME)
+    );
     cx.simulate_click("browser-tab-1");
     assert!(!hidden(cx, "page-1") && hidden(cx, "page-3"));
     assert_eq!(
@@ -184,6 +190,14 @@ fn tabs_keep_their_pages_when_switched_and_closed() {
     assert!(cx.find("page-3").is_some());
     assert_eq!(opened.tabs(), [1, 3]);
     // the tab after the closed one is on screen
+    assert!(hidden(&opened.cx, "page-1") && !hidden(&opened.cx, "page-3"));
+    // a new tab takes a fresh id: a closed tab's key never names another
+    // page, so the host never hands the new tab an old one
+    opened.cx.simulate_click("browser-new-tab");
+    assert_eq!(opened.tabs(), [1, 3, 4]);
+    assert_eq!(piece(&opened.cx, "page-4").0, crate::HOME);
+    // closing the rightmost tab puts the one before it on screen
+    opened.cx.simulate_click("browser-close-tab");
     assert!(hidden(&opened.cx, "page-1") && !hidden(&opened.cx, "page-3"));
     // the last tab closed: no page, and the bar opens the next
     opened.cx.simulate_click("browser-close-tab");
