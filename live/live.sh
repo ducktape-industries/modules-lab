@@ -72,10 +72,11 @@ set -- new "$STAGE" --root "$QA" --modules "$modules"
 [ -z "$CORE_REF" ] || set -- "$@" --core "$CORE_REF"
 "$KIT" "$@"
 
-# The app refuses a view built on another SDK line: its checkout must pin the same rev.
-app=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["app"]["path"])' "$dir/stage.json")
-pinned=$(pin "$app/Cargo.toml")
-[ "$pinned" = "$modules" ] || die "the app at ${APP_REF:-its working checkout} pins modules ${pinned:-none}
+# The app refuses a view built on another SDK line: its commit must pin the same rev. kit
+# pins each repo as a commit of its clone in .local/repos.
+app=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["app"]["commit"])' "$dir/stage.json")
+pinned=$(git -C "$QA/.local/repos/app" show "$app:Cargo.toml" | pin /dev/stdin)
+[ "$pinned" = "$modules" ] || die "the app at ${APP_REF:-main} pins modules ${pinned:-none}
 and this workspace pins modules $modules.
 The app refuses a view built on another SDK line: pass APP_REF=<a ref of the app that pins $modules>."
 
