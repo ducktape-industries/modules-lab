@@ -22,7 +22,7 @@
 //! leaves the others' pages where they are.
 use ducktape_view_guest::prelude::*;
 use ducktape_view_guest::wire::{ElementIdWire, WidgetCommand};
-use ducktape_view_guest::{Div, Stateful, Svg};
+use ducktape_view_guest::{Div, FontWeight, Stateful, Svg};
 use serde::{Deserialize, Serialize};
 
 /// What the new-tab button opens.
@@ -31,8 +31,13 @@ pub const HOME: &str = "https://www.wikipedia.org/";
 /// The address field's id, at rest (a button) and typing (the field).
 const ADDRESS: &str = "browser-address";
 
-/// The address field's widest, as Safari's.
-const FIELD_WIDTH: Pixels = px(640.);
+/// The address field's widest.
+const FIELD_WIDTH: Pixels = px(560.);
+
+/// The tab bar's height, the toolbar's hairline over it included, and a
+/// tab title's inset each side, clear of its close button.
+const TAB_BAR: Pixels = px(31.);
+const TAB_INSET: Pixels = px(30.);
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Browser {
@@ -277,8 +282,8 @@ fn glyph(path: &'static str, size: Pixels) -> Svg {
 }
 
 /// A glyph button of the toolbar, `design::icon_button` at the control's
-/// height with a soft fill on hover; one that cannot act is faint, says
-/// so, and answers nothing.
+/// size, in ink, with a soft fill on hover; one that cannot act is faint,
+/// says so, and answers nothing.
 fn glyph_button(
     id: &'static str,
     icon: &'static str,
@@ -288,9 +293,10 @@ fn glyph_button(
     click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
     let theme = *theme;
-    let icon = glyph(icon, px(18.));
+    let icon = glyph(icon, px(16.));
     let button = match enabled {
         true => design::icon_button(id, icon, name, &theme, click)
+            .text_color(theme.foreground)
             .hover(move |style| style.text_color(theme.foreground).bg(theme.surface_raised)),
         false => div()
             .id(id)
@@ -317,24 +323,18 @@ impl Render for Browser {
             .bg(theme.background)
             .text_color(theme.foreground)
             .text_size(design::text::BODY)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .bg(theme.surface)
-                    .child(self.toolbar(cx, &theme))
-                    .map(|chrome| match self.tabs.len() > 1 {
-                        true => chrome.child(self.tab_bar(cx, &theme)),
-                        // the hairline the tab bar draws otherwise
-                        false => chrome.border_b_1().border_color(theme.border),
-                    }),
-            )
+            .child(self.toolbar(cx, &theme))
+            .when(self.tabs.len() > 1, |browser| {
+                browser.child(self.tab_bar(cx, &theme))
+            })
             .child(self.pages(cx, &theme))
     }
 }
 
 impl Browser {
-    /// Back and forward, the address field centred, new tab.
+    /// Back and forward, the address field centred, new tab, on the
+    /// window's ground with a hairline under it (the tab bar's, when it
+    /// shows).
     fn toolbar(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
         let can = |pick: fn(&WebState) -> bool| self.tab().is_some_and(|tab| pick(&tab.state));
         // the field is centred in the bar: the two sides grow alike from
@@ -342,19 +342,20 @@ impl Browser {
         let side = || {
             div()
                 .flex_1()
-                .min_w(design::size::CONTROL * 2. + design::space::XXS)
+                .min_w(design::size::CONTROL * 2.)
                 .flex()
                 .items_center()
-                .gap(design::space::XXS)
         };
         div()
             .id("browser-toolbar")
             .w_full()
             .flex()
             .items_center()
-            .gap(design::space::SM)
-            .px(design::space::LG)
-            .py(design::space::LG)
+            .gap(design::space::LG)
+            .p(design::space::SM)
+            .when(self.tabs.len() < 2, |bar| {
+                bar.border_b_1().border_color(theme.border)
+            })
             .child(
                 side()
                     .child(glyph_button(
@@ -379,20 +380,26 @@ impl Browser {
                     )),
             )
             .child(self.field(cx, theme))
-            .child(side().justify_end().child(glyph_button(
-                "browser-new-tab",
-                "icons/plus.svg",
-                "New tab",
-                true,
-                theme,
-                cx.listener(|view: &mut Browser, _: &ClickEvent, _, cx| {
-                    view.open(HOME.to_owned(), cx)
-                }),
-            )))
+            .child(
+                side().justify_end().child(
+                    glyph_button(
+                        "browser-new-tab",
+                        "icons/plus.svg",
+                        "New tab",
+                        true,
+                        theme,
+                        cx.listener(|view: &mut Browser, _: &ClickEvent, _, cx| {
+                            view.open(HOME.to_owned(), cx)
+                        }),
+                    )
+                    .text_color(theme.muted),
+                ),
+            )
     }
 
     /// The address field: at rest the host, centred, with reload or stop
-    /// at its right end; typing, the whole address.
+    /// at its right end; typing, the whole address on the window's ground,
+    /// in the host's ink focus ring.
     fn field(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
         let theme = *theme;
         let field = div()
@@ -400,8 +407,7 @@ impl Browser {
             .flex_basis(FIELD_WIDTH)
             .min_w_0()
             .h(design::size::CONTROL)
-            .relative()
-            .bg(theme.surface_raised);
+            .relative();
         let tab = match self.tab() {
             Some(tab) if !self.editing => tab,
             // typing: the field itself, Enter opens, Escape or a press
@@ -426,9 +432,9 @@ impl Browser {
                         Input::new(ADDRESS, &self.address, "Address")
                             .size_full()
                             .px(design::space::MD)
-                            .bg(theme.surface_raised)
+                            .bg(theme.background)
                             .border_1()
-                            .border_color(theme.surface_raised)
+                            .border_color(theme.background)
                             .text_size(design::text::BODY)
                             .placeholder("Type an address")
                             .on_submit(
@@ -438,9 +444,9 @@ impl Browser {
             }
         };
         let state = &tab.state;
-        let (reload, icon, name): (fn(&WebHandle), _, _) = match state.loading {
-            true => (WebHandle::stop, "icons/x.svg", "Stop"),
-            false => (WebHandle::reload, "icons/rotate-cw.svg", "Reload"),
+        let (reload, icon, size, name): (fn(&WebHandle), _, _, _) = match state.loading {
+            true => (WebHandle::stop, "icons/x.svg", px(13.), "Stop"),
+            false => (WebHandle::reload, "icons/rotate-cw.svg", px(14.), "Reload"),
         };
         let (host, locked) = host_shown(&state.url);
         // the host is centred in the whole field, clear of reload on the
@@ -481,11 +487,12 @@ impl Browser {
                     .child(host),
             );
         field
+            .bg(theme.surface_raised)
             .child(shown)
             .child(
                 design::icon_button(
                     "browser-reload",
-                    glyph(icon, px(14.)),
+                    glyph(icon, size),
                     name,
                     &theme,
                     cx.listener(move |view: &mut Browser, _: &ClickEvent, _, cx| {
@@ -493,8 +500,9 @@ impl Browser {
                     }),
                 )
                 .absolute()
-                .top(px(2.))
-                .right(px(2.))
+                .top_0()
+                .right_0()
+                .size(design::size::CONTROL)
                 // its press is not the field's under it
                 .consumes_click(),
             )
@@ -507,15 +515,22 @@ impl Browser {
                         .left_0()
                         .right_0()
                         .h(px(2.))
-                        .bg(theme.accent),
+                        .bg(theme.foreground),
                 )
             })
     }
 
     /// The tabs, sharing the bar's width; each closes from a button at its
-    /// left, shown on hover and on the chosen one.
+    /// left, shown on hover and on the chosen one. The chosen tab is the
+    /// window's ground and runs into the page; the others sit on the bar
+    /// over its hairline.
     fn tab_bar(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
         let theme = *theme;
+        // a hovered tab: one step lighter than the bar
+        let lighter = Hsla {
+            l: theme.surface.l + 0.023,
+            ..theme.surface
+        };
         let tabs = self.tabs.iter().enumerate().map(|(index, tab)| {
             let active = index == self.active;
             let group = format!("browser-tab-group-{}", tab.id);
@@ -525,12 +540,13 @@ impl Browser {
                 .flex()
                 .items_center()
                 .justify_center()
-                .px(design::size::CONTROL)
+                .px(TAB_INSET)
                 .text_size(design::text::SECONDARY)
-                .text_color(if active {
-                    theme.foreground
-                } else {
-                    theme.muted
+                .map(|title| match active {
+                    true => title
+                        .text_color(theme.foreground)
+                        .font_weight(FontWeight::MEDIUM),
+                    false => title.text_color(theme.muted),
                 })
                 .hover(move |style| style.text_color(theme.foreground))
                 .aria_selected(active)
@@ -556,19 +572,20 @@ impl Browser {
                 .min_w_0()
                 .h_full()
                 .relative()
-                .bg(if active {
-                    theme.background
-                } else {
-                    theme.surface_raised
+                .map(|slot| match active {
+                    true => slot.bg(theme.background),
+                    false => slot
+                        .bg(theme.surface)
+                        .hover(move |style| style.bg(lighter))
+                        .border_b_1(),
                 })
-                .when(index > 0, |slot| {
-                    slot.border_l_1().border_color(theme.border)
-                })
+                .border_color(theme.border)
+                .when(index > 0, |slot| slot.border_l_1())
                 .child(design::item(title, Role::Tab, active))
                 .child(
                     design::icon_button(
                         format!("browser-close-tab-{}", tab.id),
-                        glyph("icons/x.svg", px(12.)),
+                        glyph("icons/x.svg", px(11.)),
                         "Close tab",
                         &theme,
                         cx.listener(move |view: &mut Browser, _: &ClickEvent, _, cx| {
@@ -576,9 +593,10 @@ impl Browser {
                         }),
                     )
                     .absolute()
-                    .top(px(2.))
-                    .left(px(2.))
-                    .hover(move |style| style.text_color(theme.foreground).bg(theme.surface_raised))
+                    // its glyph centred 15 px in, as an 18 px box 6 px from
+                    // the edge would put it; the press target stays 24
+                    .top(px(3.))
+                    .left(px(3.))
                     // its press is the button's, not the tab's under it,
                     // and its Enter not the tab list's around it
                     .consumes_click()
@@ -600,11 +618,13 @@ impl Browser {
             )
             .build()
             .w_full()
-            .h(design::size::CONTROL)
+            .h(TAB_BAR)
             .flex()
-            // hairlines round the bar, which the focus ring inks: the ring's
-            // own inset shadow is under the tabs' fills
-            .border_1()
+            // the toolbar's hairline above, and the window's edges: lines
+            // the focus ring inks, its own inset shadow being under the
+            // tabs' fills (the line under the bar is the tabs')
+            .border_t_1()
+            .border_x_1()
             .border_color(theme.border)
             .children(tabs)
     }
@@ -630,17 +650,26 @@ impl Browser {
             .min_h_0()
             .relative()
             .children(pages)
+            // no page: a quiet note, a little above the middle
             .when(self.tabs.is_empty(), |pages| {
-                pages.flex().items_center().justify_center().child(
-                    design::empty_state(
-                        "browser-empty",
-                        "No page open",
-                        "Type an address above and press Enter.",
-                        theme,
-                    )
+                pages
+                    .flex()
+                    .flex_col()
                     .items_center()
-                    .text_center(),
-                )
+                    .justify_center()
+                    .gap(design::space::XS)
+                    .pb(design::space::XL * 2.)
+                    .child(
+                        div()
+                            .text_size(design::text::TITLE)
+                            .font_weight(FontWeight::MEDIUM)
+                            .child("No page open"),
+                    )
+                    .child(
+                        div()
+                            .text_color(theme.muted)
+                            .child("Type an address above and press Enter."),
+                    )
             })
     }
 }
