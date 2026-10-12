@@ -2,11 +2,11 @@
 //! would and reads what the host would get. Every frame it sends is held
 //! to the host's sanitizer and accessibility audit.
 use ducktape_view_guest::Entity;
-use ducktape_view_guest::methods::{HostRoute, HostTitle};
+use ducktape_view_guest::methods::{HostRoute, HostTitle, HostWidget};
 use ducktape_view_guest::testing::{StreamSender, TestAppContext};
-use ducktape_view_guest::wire::{Node, WebCommand, WebState};
+use ducktape_view_guest::wire::{Node, WebCommand, WebState, WidgetCommand};
 
-use crate::{Browser, address};
+use crate::{Browser, address, host};
 
 struct Opened {
     cx: TestAppContext,
@@ -22,8 +22,12 @@ fn opened() -> Opened {
     Opened { cx, view, routes }
 }
 
-/// Types `typed` into the address bar and presses Enter.
+/// Presses the address field at rest, if it is, then types `typed` and
+/// presses Enter.
 fn enter(cx: &mut TestAppContext, typed: &str) {
+    if !matches!(cx.node("browser-address"), Node::Field { .. }) {
+        cx.simulate_click("browser-address");
+    }
     cx.simulate_input("browser-address", typed);
     cx.simulate_submit("browser-address");
 }
@@ -42,6 +46,21 @@ fn hidden(cx: &TestAppContext, key: &str) -> bool {
 
 fn disabled(cx: &TestAppContext, key: &str) -> bool {
     cx.interactivity(key).aria.disabled == Some(true)
+}
+
+/// What assistive technology reads of `key`: its name and its value.
+fn aria(cx: &TestAppContext, key: &str) -> (String, String) {
+    let aria = &cx.interactivity(key).aria;
+    let text = |text: &Option<_>| text.as_ref().map_or(String::new(), ToString::to_string);
+    (text(&aria.label), text(&aria.value))
+}
+
+fn titled(url: &str, title: &str) -> WebState {
+    WebState {
+        url: url.into(),
+        title: title.into(),
+        ..WebState::default()
+    }
 }
 
 impl Opened {
@@ -68,17 +87,62 @@ fn an_address_without_a_scheme_opens_over_https() {
         Some("https://example.com/?next=https://example.org")
     );
     assert_eq!(address("   "), None);
-    // through the bar: with no tab open, Enter opens the first on it
+    // through the field: with no tab open it is typing already, and
+    // Enter opens the first tab on it
     let Opened { mut cx, .. } = opened();
     assert!(cx.find("page-1").is_none());
+    assert!(matches!(cx.node("browser-address"), Node::Field { .. }));
     enter(&mut cx, "example.com/a");
     assert_eq!(piece(&cx, "page-1").0, "https://example.com/a");
-    assert_eq!(cx.host().requests::<HostTitle>(), ["https://example.com/a"]);
+    // an untitled page is named by its host
+    assert_eq!(cx.host().requests::<HostTitle>(), ["example.com"]);
+}
+
+#[test]
+fn the_field_at_rest_shows_the_host_and_pressed_the_whole_address() {
+    assert_eq!(host("https://www.google.com/search?q=1"), "google.com");
+    assert_eq!(host("http://localhost:8000/a"), "localhost:8000");
+    assert_eq!(host("https://example.org#top"), "example.org");
+    let Opened { mut cx, view, .. } = opened();
+    enter(&mut cx, "https://www.example.com/a/b");
+    // at rest: the host, a lock for https, and the address for AT
+    assert!(cx.has_text("example.com"));
+    assert!(!cx.has_text("https://www.example.com/a/b"));
+    assert_eq!(
+        aria(&cx, "browser-address"),
+        ("Address".into(), "https://www.example.com/a/b".into())
+    );
+    // pressed: the whole address, given the keyboard and selected
+    cx.simulate_click("browser-address");
+    assert!(matches!(cx.node("browser-address"), Node::Field { .. }));
+    assert_eq!(
+        view.read(|view| view.address.text()),
+        "https://www.example.com/a/b"
+    );
+    let asked = cx.host().requests::<HostWidget>();
+    assert!(
+        matches!(
+            asked.as_slice(),
+            [
+                ..,
+                WidgetCommand::Focus { .. },
+                WidgetCommand::SelectAll { .. }
+            ]
+        ),
+        "{asked:?}"
+    );
+    // Escape drops what was typed and puts the host back
+    cx.simulate_input("browser-address", "somewhere.else");
+    cx.simulate_focus("browser-address");
+    cx.simulate_key_down("browser-address", "escape");
+    assert!(!matches!(cx.node("browser-address"), Node::Field { .. }));
+    assert!(cx.has_text("example.com"));
+    assert!(piece(&cx, "page-1").1.is_empty());
 }
 
 #[test]
 fn enter_on_an_open_page_sends_it_one_load() {
-    let Opened { mut cx, view, .. } = opened();
+    let Opened { mut cx, .. } = opened();
     enter(&mut cx, "https://example.com/");
     enter(&mut cx, "wikipedia.org");
     let (first, commands) = piece(&cx, "page-1");
@@ -88,60 +152,57 @@ fn enter_on_an_open_page_sends_it_one_load() {
     cx.simulate_web_state(
         "page-1",
         WebState {
-            url: "https://www.wikipedia.org/".into(),
-            title: "Wikipedia".into(),
             loading: true,
-            ..WebState::default()
+            ..titled("https://www.wikipedia.org/", "Wikipedia")
         },
     );
     assert!(piece(&cx, "page-1").1.is_empty());
-    // the bar says where the page went
-    assert_eq!(
-        view.read(|view| view.address.text()),
-        "https://www.wikipedia.org/"
-    );
-    assert!(cx.has_text("Loading…"));
-    assert!(cx.has_text("Stop"));
+    // the field says where the page went; while it loads, reload is stop
+    // and a line runs along the field
+    assert!(cx.has_text("wikipedia.org"));
+    assert!(cx.find("browser-loading").is_some());
+    assert_eq!(aria(&cx, "browser-reload").0, "Stop");
     cx.simulate_click("browser-reload");
     assert_eq!(piece(&cx, "page-1").1, [WebCommand::Stop]);
+    cx.simulate_web_state("page-1", titled("https://www.wikipedia.org/", "Wikipedia"));
+    assert!(cx.find("browser-loading").is_none());
+    assert_eq!(aria(&cx, "browser-reload").0, "Reload");
+    cx.simulate_click("browser-reload");
+    assert_eq!(piece(&cx, "page-1").1, [WebCommand::Reload]);
 }
 
 #[test]
 fn back_and_forward_follow_what_the_page_says() {
-    let Opened { mut cx, view, .. } = opened();
-    // nothing open: nothing to go back to or reload
+    let Opened { mut cx, .. } = opened();
+    // nothing open: nothing to go back to
     assert!(disabled(&cx, "browser-back"));
-    assert!(disabled(&cx, "browser-reload"));
+    assert!(disabled(&cx, "browser-forward"));
+    assert!(cx.find("browser-reload").is_none());
     enter(&mut cx, "example.com");
     assert!(disabled(&cx, "browser-back"));
     assert!(disabled(&cx, "browser-forward"));
-    assert!(!disabled(&cx, "browser-reload"));
     cx.simulate_web_state(
         "page-1",
         WebState {
-            url: "https://example.com/next".into(),
-            title: "Next".into(),
             can_go_back: true,
-            ..WebState::default()
+            ..titled("https://example.com/next", "Next")
         },
     );
     assert!(!disabled(&cx, "browser-back"));
     assert!(disabled(&cx, "browser-forward"));
-    // a link followed in the page moves the address bar and the tab's name
-    assert!(cx.has_text("Next"));
+    // a link followed in the page moves the field and the window's title
+    assert_eq!(aria(&cx, "browser-address").1, "https://example.com/next");
     assert_eq!(
-        view.read(|view| view.address.text()),
-        "https://example.com/next"
+        cx.host().requests::<HostTitle>().last().map(String::as_str),
+        Some("Next")
     );
     cx.simulate_click("browser-back");
     assert_eq!(piece(&cx, "page-1").1, [WebCommand::Back]);
     cx.simulate_web_state(
         "page-1",
         WebState {
-            url: "https://example.com/".into(),
-            title: "Example".into(),
             can_go_forward: true,
-            ..WebState::default()
+            ..titled("https://example.com/", "Example")
         },
     );
     assert!(disabled(&cx, "browser-back"));
@@ -154,27 +215,26 @@ fn back_and_forward_follow_what_the_page_says() {
 fn tabs_keep_their_pages_when_switched_and_closed() {
     let mut opened = opened();
     enter(&mut opened.cx, "example.com");
+    // one tab: no tab bar, as Safari
+    assert!(opened.cx.find("browser-tabs").is_none());
     opened.cx.simulate_click("browser-new-tab");
     opened.cx.simulate_click("browser-new-tab");
     let cx = &mut opened.cx;
+    assert!(cx.find("browser-tabs").is_some());
     // three pieces, the newest on screen, the others kept but hidden
     assert_eq!(piece(cx, "page-2").0, crate::HOME);
     assert!(hidden(cx, "page-1") && hidden(cx, "page-2") && !hidden(cx, "page-3"));
-    cx.simulate_web_state(
-        "page-1",
-        WebState {
-            url: "https://example.com/".into(),
-            title: "Example".into(),
-            ..WebState::default()
-        },
-    );
-    // a hidden tab's page still names its tab, and moves neither the bar
+    // the chosen tab's close button shows; the others' on hover
+    assert!(!hidden(cx, "browser-close-tab-3"));
+    assert!(hidden(cx, "browser-close-tab-1") && hidden(cx, "browser-close-tab-2"));
+    cx.simulate_web_state("page-1", titled("https://example.com/", "Example"));
+    // a hidden tab's page still names its tab, and moves neither the field
     // nor the window's title
     assert!(cx.has_text("Example"));
-    assert_eq!(opened.view.read(|view| view.address.text()), crate::HOME);
+    assert_eq!(aria(cx, "browser-address").1, crate::HOME);
     assert_eq!(
         cx.host().requests::<HostTitle>().last().map(String::as_str),
-        Some(crate::HOME)
+        Some("wikipedia.org")
     );
     cx.simulate_click("browser-tab-1");
     assert!(!hidden(cx, "page-1") && hidden(cx, "page-3"));
@@ -182,9 +242,12 @@ fn tabs_keep_their_pages_when_switched_and_closed() {
         cx.host().requests::<HostTitle>().last().map(String::as_str),
         Some("Example")
     );
+    // the arrows pick the tabs
+    cx.simulate_focus("browser-tabs");
+    cx.simulate_key_down("browser-tabs", "right");
+    assert!(!hidden(cx, "page-2") && hidden(cx, "page-1"));
     // closing the middle tab closes its page alone
-    cx.simulate_click("browser-tab-2");
-    cx.simulate_click("browser-close-tab");
+    cx.simulate_click("browser-close-tab-2");
     assert!(cx.find("page-2").is_none());
     assert_eq!(piece(cx, "page-1").0, "https://example.com");
     assert!(cx.find("page-3").is_some());
@@ -197,13 +260,14 @@ fn tabs_keep_their_pages_when_switched_and_closed() {
     assert_eq!(opened.tabs(), [1, 3, 4]);
     assert_eq!(piece(&opened.cx, "page-4").0, crate::HOME);
     // closing the rightmost tab puts the one before it on screen
-    opened.cx.simulate_click("browser-close-tab");
+    opened.cx.simulate_click("browser-close-tab-4");
     assert!(hidden(&opened.cx, "page-1") && !hidden(&opened.cx, "page-3"));
-    // the last tab closed: no page, and the bar opens the next
-    opened.cx.simulate_click("browser-close-tab");
-    opened.cx.simulate_click("browser-close-tab");
-    assert!(opened.tabs().is_empty());
-    assert!(opened.cx.has_text("No page open"));
+    // a tab that is not the chosen one closes too, the chosen one stays
+    opened.cx.simulate_click("browser-close-tab-1");
+    assert_eq!(opened.tabs(), [3]);
+    assert!(!hidden(&opened.cx, "page-3"));
+    // one tab left: the bar goes
+    assert!(opened.cx.find("browser-tabs").is_none());
 }
 
 #[test]
@@ -217,4 +281,17 @@ fn a_link_the_app_hands_over_opens_in_a_new_tab() {
     assert_eq!(piece(cx, "page-2").0, "https://example.org/wiki?q=1");
     assert!(hidden(cx, "page-1") && !hidden(cx, "page-2"));
     assert_eq!(piece(cx, "page-1").0, "https://example.com");
+}
+
+#[test]
+fn no_page_open_is_a_quiet_start() {
+    let Opened { cx, .. } = opened();
+    assert!(cx.has_text("No page open"));
+    // the field holds the keyboard from the start
+    assert!(
+        cx.host()
+            .requests::<HostWidget>()
+            .iter()
+            .any(|asked| matches!(asked, WidgetCommand::Focus { .. }))
+    );
 }
