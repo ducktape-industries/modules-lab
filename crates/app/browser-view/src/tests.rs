@@ -222,11 +222,15 @@ fn enter_on_an_open_page_sends_it_one_load() {
     // and a line runs along the field
     assert!(cx.has_text("wikipedia.org"));
     assert!(cx.find("browser-loading").is_some());
-    assert_eq!(aria(&cx, "browser-reload").0, "Stop");
-    cx.simulate_click("browser-reload");
+    assert_eq!(aria(&cx, "browser-stop").0, "Stop");
+    assert!(cx.find("browser-reload").is_none());
+    cx.simulate_click("browser-stop");
     assert_eq!(piece(&cx, "page-1").1, [WebCommand::Stop]);
     cx.simulate_web_state("page-1", titled("https://www.wikipedia.org/", "Wikipedia"));
     assert!(cx.find("browser-loading").is_none());
+    // stop and reload are two elements: a stop press that arrives after the
+    // load ended finds no stop, and never reloads
+    assert!(cx.find("browser-stop").is_none());
     assert_eq!(aria(&cx, "browser-reload").0, "Reload");
     cx.simulate_click("browser-reload");
     assert_eq!(piece(&cx, "page-1").1, [WebCommand::Reload]);
@@ -270,6 +274,24 @@ fn back_and_forward_follow_what_the_page_says() {
     assert!(!disabled(&cx, "browser-forward"));
     cx.simulate_click("browser-forward");
     assert_eq!(piece(&cx, "page-1").1, [WebCommand::Forward]);
+}
+
+#[test]
+fn an_arrow_on_a_close_button_moves_the_tabs_and_the_keys_stay_seen() {
+    let mut opened = opened();
+    enter(&mut opened.cx, "example.com");
+    opened.cx.simulate_click("browser-new-tab");
+    let cx = &mut opened.cx;
+    // the chosen tab's close button holds the keys
+    cx.simulate_focus("browser-close-tab-2");
+    cx.simulate_key_down("browser-close-tab-2", "left");
+    assert!(!hidden(cx, "page-1") && hidden(cx, "page-2"));
+    // that button is hidden now; the keys are on the tab list, not on it
+    assert!(hidden(cx, "browser-close-tab-2"));
+    assert_eq!(cx.focused().and_then(Node::key), Some("browser-tabs"));
+    // the arrows go round: left from the first tab picks the last
+    cx.simulate_key_down("browser-tabs", "left");
+    assert!(!hidden(cx, "page-2") && hidden(cx, "page-1"));
 }
 
 #[test]

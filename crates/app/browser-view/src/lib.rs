@@ -444,9 +444,24 @@ impl Browser {
             }
         };
         let state = &tab.state;
-        let (reload, icon, size, name): (fn(&WebHandle), _, _, _) = match state.loading {
-            true => (WebHandle::stop, "icons/x.svg", px(13.), "Stop"),
-            false => (WebHandle::reload, "icons/rotate-cw.svg", px(14.), "Reload"),
+        // Stop and Reload are two elements, not one that changes its press:
+        // a press routed a frame late reaches the one that was pressed, or
+        // nothing once it is gone, never the other
+        let (reload, id, icon, size, name): (fn(&WebHandle), _, _, _, _) = match state.loading {
+            true => (
+                WebHandle::stop,
+                "browser-stop",
+                "icons/x.svg",
+                px(13.),
+                "Stop",
+            ),
+            false => (
+                WebHandle::reload,
+                "browser-reload",
+                "icons/rotate-cw.svg",
+                px(14.),
+                "Reload",
+            ),
         };
         let (host, locked) = host_shown(&state.url);
         // the host is centred in the whole field, clear of reload on the
@@ -491,7 +506,7 @@ impl Browser {
             .child(shown)
             .child(
                 design::icon_button(
-                    "browser-reload",
+                    id,
                     glyph(icon, size),
                     name,
                     &theme,
@@ -612,7 +627,15 @@ impl Browser {
         design::composite("browser-tabs", Role::TabList, "Tabs")
             .orientation(design::Orientation::Horizontal)
             .active(self.active, self.tabs.len())
-            .on_move(cx.processor(|view: &mut Browser, index: usize, _, cx| view.select(index, cx)))
+            .wrap()
+            // an arrow pressed on a close button moves the tab list: the
+            // keys go back to the list, as that button may now be hidden
+            .on_move(
+                cx.processor(|view: &mut Browser, index: usize, window, cx| {
+                    view.select(index, cx);
+                    window.focus("browser-tabs");
+                }),
+            )
             .on_press(
                 cx.processor(|view: &mut Browser, index: usize, _, cx| view.select(index, cx)),
             )
