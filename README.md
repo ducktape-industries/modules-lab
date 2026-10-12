@@ -142,11 +142,15 @@ read a key on their next tick; 2048 and Minesweeper act on it at once.
 A view alone, no program. Its manifest declares `web`, which lets it
 place the SDK's `web` piece (a page the app's browser engine draws) and
 makes it the view the app hands `https://` links to (`host.route`), and
-`host` for that route and the window's title. Tabs on top (each named by
-its page's title, a new-tab and a close-tab button), then back, forward,
-reload (stop while a page loads) and the address: Enter loads it, and an
-address without `://` gets `https://` in front. A link the app hands over
-opens in a new tab. Every tab's piece stays in the tree, keyed by the
+`host` for that route and the window's title. Laid out as Safari's
+"Separate" tabs in the product's square material: one toolbar (back and
+forward, the address field centred, a new-tab button), then the tab bar
+from two tabs up (each tab named by its page's title, a close button on
+hover), then the page. At rest the field shows the page's host as the URL
+standard reads it, a lock for https, and reload, or stop while the page
+loads; pressed, it is the whole address to type over. Enter loads it, and
+an address gets `https://` in front unless it starts with a scheme and
+`://`. A link the app hands over opens in a new tab. Every tab's piece stays in the tree, keyed by the
 tab's id, the inactive ones stacked under the active one and invisible, so
 a page lives until its tab is closed. Nothing is saved: a restored view
 starts with no tab.

@@ -442,6 +442,7 @@ dependencies = [
  "ducktape-view-guest",
  "gpui-pre",
  "serde",
+ "url",
 ]
 
 [[package]]
