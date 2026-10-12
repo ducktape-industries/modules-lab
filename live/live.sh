@@ -116,7 +116,7 @@ as() {
 submit() {
   answer=$(as "$1" submit "$2" "$OUT/seed/$3")
   case $answer in
-  applied*) ;;
+  "preconfirmed applied"*) ;;
   *) die "$1's $3 was not applied: $answer" ;;
   esac
 }
