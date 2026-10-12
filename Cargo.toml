@@ -13,24 +13,24 @@ edition = "2024"
 version = "0.1.0"
 
 [workspace.dependencies]
-# ---- sdk-line: modules dev @ d9a82cbf (modules#285 host.title, WIRE_ID 5565eec2; the fork at da49e2b0, taffy 0.14.0), the rev the app pins. The app refuses
+# ---- sdk-line: modules @ 95b592eb (modules#309: 47cf81bc with the fork at ba6f1037, Hangul over ibus; WIRE_ID c4e0e61f), the rev the app pins. The app refuses
 # a view built against another wire, so this moves when the app's pin moves.
-ducktape-view-guest = { git = "https://github.com/ducktape-industries/modules", rev = "d9a82cbfd990f1d1184845aa5d4652d2226e850e" }
+ducktape-view-guest = { git = "https://github.com/ducktape-industries/modules", rev = "95b592ebd3b2e9418427f25d48b1647d29893e4b" }
 # What a program is written against: the kernel ABI (a copy of core's, never
 # to drift from it), the guest and its mock host, the query derive, the
 # tables, and the describe module.
-abi = { git = "https://github.com/ducktape-industries/modules", rev = "d9a82cbfd990f1d1184845aa5d4652d2226e850e" }
-guest = { git = "https://github.com/ducktape-industries/modules", rev = "d9a82cbfd990f1d1184845aa5d4652d2226e850e" }
-program = { git = "https://github.com/ducktape-industries/modules", rev = "d9a82cbfd990f1d1184845aa5d4652d2226e850e" }
-store = { git = "https://github.com/ducktape-industries/modules", rev = "d9a82cbfd990f1d1184845aa5d4652d2226e850e" }
-describe = { git = "https://github.com/ducktape-industries/modules", rev = "d9a82cbfd990f1d1184845aa5d4652d2226e850e" }
+abi = { git = "https://github.com/ducktape-industries/modules", rev = "95b592ebd3b2e9418427f25d48b1647d29893e4b" }
+guest = { git = "https://github.com/ducktape-industries/modules", rev = "95b592ebd3b2e9418427f25d48b1647d29893e4b" }
+program = { git = "https://github.com/ducktape-industries/modules", rev = "95b592ebd3b2e9418427f25d48b1647d29893e4b" }
+store = { git = "https://github.com/ducktape-industries/modules", rev = "95b592ebd3b2e9418427f25d48b1647d29893e4b" }
+describe = { git = "https://github.com/ducktape-industries/modules", rev = "95b592ebd3b2e9418427f25d48b1647d29893e4b" }
 # The op that gives a key its account: what a live stage's seed sends first
 # (`crates/app/trade/examples/seed.rs`). No program or view here links it.
-identity = { git = "https://github.com/ducktape-industries/modules", rev = "d9a82cbfd990f1d1184845aa5d4652d2226e850e" }
+identity = { git = "https://github.com/ducktape-industries/modules", rev = "95b592ebd3b2e9418427f25d48b1647d29893e4b" }
 # `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
 # the SDK does not re-export.
 # The rev is the one modules names.
-gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpui-pre", rev = "da49e2b089cb5bf8f36fef940cf5c0b94df92138", default-features = false }
+gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpui-pre", rev = "ba6f1037c5a10894deb0659d6f84a13f23d402ae", default-features = false }
 
 # ---- here
 trade = { path = "crates/app/trade" }
@@ -71,6 +71,6 @@ opt-level = 3
 # logging crates. A dependency's `[patch]` does not reach its dependents, so
 # they are repeated here, at the same rev.
 [patch.crates-io]
-rmp-serde = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "da49e2b089cb5bf8f36fef940cf5c0b94df92138" }
-gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "da49e2b089cb5bf8f36fef940cf5c0b94df92138" }
-gpui-pre-zlog = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "da49e2b089cb5bf8f36fef940cf5c0b94df92138" }
+rmp-serde = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "ba6f1037c5a10894deb0659d6f84a13f23d402ae" }
+gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "ba6f1037c5a10894deb0659d6f84a13f23d402ae" }
+gpui-pre-zlog = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "ba6f1037c5a10894deb0659d6f84a13f23d402ae" }
