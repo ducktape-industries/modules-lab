@@ -388,8 +388,10 @@ impl Browser {
                         "New tab",
                         true,
                         theme,
-                        cx.listener(|view: &mut Browser, _: &ClickEvent, _, cx| {
-                            view.open(HOME.to_owned(), cx)
+                        // typing replaces the home page's address at once
+                        cx.listener(|view: &mut Browser, _: &ClickEvent, window, cx| {
+                            view.open(HOME.to_owned(), cx);
+                            view.edit(window, cx);
                         }),
                     )
                     .text_color(theme.muted),

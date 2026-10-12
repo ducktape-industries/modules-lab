@@ -277,6 +277,22 @@ fn back_and_forward_follow_what_the_page_says() {
 }
 
 #[test]
+fn a_new_tab_gives_the_keys_to_its_address() {
+    let Opened { mut cx, .. } = opened();
+    enter(&mut cx, "https://example.com/");
+    cx.simulate_click("browser-new-tab");
+    assert_eq!(cx.focused().and_then(Node::key), Some("browser-address"));
+    // typing goes straight to the new tab's page, not the first one's
+    cx.simulate_input("browser-address", "wikipedia.org");
+    cx.simulate_submit("browser-address");
+    assert_eq!(
+        piece(&cx, "page-2").1,
+        [WebCommand::Load("https://wikipedia.org".into())]
+    );
+    assert!(piece(&cx, "page-1").1.is_empty());
+}
+
+#[test]
 fn an_arrow_on_a_close_button_moves_the_tabs_and_the_keys_stay_seen() {
     let mut opened = opened();
     enter(&mut opened.cx, "example.com");
@@ -303,6 +319,8 @@ fn tabs_keep_their_pages_when_switched_and_closed() {
     opened.cx.simulate_click("browser-new-tab");
     opened.cx.simulate_click("browser-new-tab");
     let cx = &mut opened.cx;
+    // a new tab gives the field the keys; Escape puts it back at rest
+    cx.simulate_key_down("browser-address", "escape");
     assert!(cx.find("browser-tabs").is_some());
     // three pieces, the newest on screen, the others kept but hidden
     assert_eq!(piece(cx, "page-2").0, crate::HOME);

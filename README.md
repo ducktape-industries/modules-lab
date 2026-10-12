@@ -150,9 +150,11 @@ hover), then the page. At rest the field shows the page's host as the URL
 standard reads it, a lock for https, and reload, or stop while the page
 loads; pressed, it is the whole address to type over. Enter loads it, and
 an address gets `https://` in front unless it starts with a scheme and
-`://`. A link the app hands over opens in a new tab. Every tab's piece stays in the tree, keyed by the
-tab's id, the inactive ones stacked under the active one and invisible, so
-a page lives until its tab is closed. Nothing is saved: a restored view
+`://`. The new-tab button opens the home page with the field pressed, so
+what is typed replaces it; a link the app hands over opens in a new tab.
+Every tab's piece stays in the tree, keyed by the tab's id, the inactive
+ones stacked under the active one and invisible, so a page lives until its
+tab is closed. Nothing is saved: a restored view
 starts with no tab.
 
 ```sh
