@@ -11,6 +11,7 @@ moves over as it is.
 | `crates/app/trade-view` | its view: a trading terminal on the view SDK as it is |
 | `crates/app/arcade` | the high scores of five classic games: the program |
 | `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper and Breakout, and the boards |
+| `crates/app/browser-view` | a view alone, no program: web pages in tabs on the SDK's `web` piece |
 
 The SDK is modules `dev` at the rev the app pins (`Cargo.toml`, `sdk-line`).
 The app refuses a view built against another wire, so the pin moves when the
@@ -135,6 +136,27 @@ the first reveal; 2048 asks for none. The clock is asked for only while a
 game runs: the hub, a paused game and an ended one ask for nothing, and a
 game pauses when the view leaves the screen. Tetris, Snake and Breakout
 read a key on their next tick; 2048 and Minesweeper act on it at once.
+
+## browser-view
+
+A view alone, no program. Its manifest declares `web`, which lets it
+place the SDK's `web` piece (a page the app's browser engine draws) and
+makes it the view the app hands `https://` links to (`host.route`), and
+`host` for that route and the window's title. Tabs on top (each named by
+its page's title, a new-tab and a close-tab button), then back, forward,
+reload (stop while a page loads) and the address: Enter loads it, and an
+address without `://` gets `https://` in front. A link the app hands over
+opens in a new tab. Every tab's piece stays in the tree, keyed by the
+tab's id, the inactive ones stacked under the active one and invisible, so
+a page lives until its tab is closed. Nothing is saved: a restored view
+starts with no tab.
+
+```sh
+DUCKTAPE_APP=/path/to/app/target/debug/ducktape-app cargo run -p browser-view --example live
+```
+
+runs it in the real app over a fake node; the app must be built with its
+`web` feature (CEF); without it the piece only says the build has no web view.
 
 ## Loop
 
