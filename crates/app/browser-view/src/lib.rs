@@ -2,11 +2,12 @@
 //! (the SDK's `web` piece, which only a view declaring `Capability::Web`
 //! may place).
 //!
-//! Laid out as Safari's "Separate" tabs: one toolbar, then the tab bar,
-//! then the page. The toolbar holds back and forward, the address field
-//! centred, and a new-tab button. At rest the field shows the page's host
-//! (a lock for `https`) with reload, stop while the page loads, at its
-//! right end, and a line along its bottom while it loads; pressed, it is
+//! Laid out as Safari's "Separate" tabs, in the product's own square
+//! material: one toolbar, then the tab bar, then the page. The toolbar
+//! holds back and forward, the address field centred, and a new-tab
+//! button. At rest the field shows the page's host (`host_shown`; a lock
+//! for `https`) with reload, stop while the page loads, at its right end,
+//! and a line along its bottom while it loads; pressed, it is
 //! the whole address, selected, to type over. Enter opens what it says: a
 //! bare word, or anything without `://`, gets `https://` in front; Escape
 //! or a press outside puts the host back. The tab bar shows from two tabs
@@ -29,11 +30,6 @@ pub const HOME: &str = "https://www.wikipedia.org/";
 
 /// The address field's id, at rest (a button) and typing (the field).
 const ADDRESS: &str = "browser-address";
-
-/// The address field's and the glyph buttons' corners. Safari's, where the
-/// product's controls are square (`design::radius::CONTROL`): the owner
-/// asked for a Safari-like browser.
-const ROUND: Pixels = px(8.);
 
 /// The address field's widest, as Safari's.
 const FIELD_WIDTH: Pixels = px(640.);
@@ -121,12 +117,36 @@ pub fn address(typed: &str) -> Option<String> {
     }
 }
 
-/// What the address field shows of `url` at rest: its host, `www.`
-/// dropped (`https://www.google.com/search?q=1` is `google.com`).
-pub fn host(url: &str) -> &str {
-    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
-    let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
-    host.strip_prefix("www.").unwrap_or(host)
+/// What the address field shows of `url` at rest, and whether it earns the
+/// lock. The host alone, as the URL standard reads it (the page's engine
+/// reads it so too): never what comes before an `@`, a port the scheme
+/// does not imply kept (`localhost:8000`), `www.` dropped where a dot stays
+/// (`https://www.google.com/a?q=1` is `google.com`), an international name
+/// in its `xn--` form. An address with a user name or password in it, or one
+/// with no host or none the standard reads, shows whole and unlocked: a
+/// clean-looking host is never made of it. The field cuts what it shows
+/// from the start, so the right of a host, the name it is registered
+/// under, stays in view.
+pub fn host_shown(url: &str) -> (String, bool) {
+    let whole = (url.to_owned(), false);
+    let Ok(parsed) = url::Url::parse(url) else {
+        return whole;
+    };
+    let Some(host) = parsed.host_str() else {
+        return whole;
+    };
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return whole;
+    }
+    let host = match host.strip_prefix("www.") {
+        Some(rest) if rest.contains('.') => rest,
+        _ => host,
+    };
+    let shown = match parsed.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_owned(),
+    };
+    (shown, parsed.scheme() == "https")
 }
 
 /// Gives the keyboard to the address field with its text selected, so what
@@ -245,7 +265,7 @@ impl Browser {
 /// A tab's name: its page's title, else its host.
 fn label(state: &WebState) -> String {
     match state.title.trim() {
-        "" => host(&state.url).to_owned(),
+        "" => host_shown(&state.url).0,
         title => title.to_owned(),
     }
 }
@@ -283,7 +303,7 @@ fn glyph_button(
             .aria_disabled(true)
             .child(icon),
     };
-    button.size(design::size::CONTROL).rounded(ROUND)
+    button.size(design::size::CONTROL)
 }
 
 impl Render for Browser {
@@ -381,7 +401,6 @@ impl Browser {
             .min_w_0()
             .h(design::size::CONTROL)
             .relative()
-            .rounded(ROUND)
             .bg(theme.surface_raised);
         let tab = match self.tab() {
             Some(tab) if !self.editing => tab,
@@ -407,7 +426,6 @@ impl Browser {
                         Input::new(ADDRESS, &self.address, "Address")
                             .size_full()
                             .px(design::space::MD)
-                            .rounded(ROUND)
                             .bg(theme.surface_raised)
                             .border_1()
                             .border_color(theme.surface_raised)
@@ -424,6 +442,7 @@ impl Browser {
             true => (WebHandle::stop, "icons/x.svg", "Stop"),
             false => (WebHandle::reload, "icons/rotate-cw.svg", "Reload"),
         };
+        let (host, locked) = host_shown(&state.url);
         // the host is centred in the whole field, clear of reload on the
         // right and as clear on the left
         let shown = div()
@@ -435,7 +454,6 @@ impl Browser {
             .items_center()
             .justify_center()
             .gap(design::space::XXS)
-            .rounded(ROUND)
             .cursor_text()
             .role(Role::Button)
             .aria_label("Address")
@@ -444,14 +462,23 @@ impl Browser {
             .on_click(
                 cx.listener(|view: &mut Browser, _: &ClickEvent, window, cx| view.edit(window, cx)),
             )
-            .when(state.url.starts_with("https://"), |shown| {
-                shown.child(glyph("icons/lock.svg", px(11.)).text_color(theme.muted))
+            .when(locked, |shown| {
+                shown.child(
+                    glyph("icons/lock.svg", px(11.))
+                        .id("browser-lock")
+                        .text_color(theme.muted),
+                )
             })
+            // cut from the start: the name a host is registered under is
+            // its right end, and stays in view
             .child(
                 div()
+                    .id("browser-host")
                     .min_w_0()
-                    .truncate()
-                    .child(host(&state.url).to_owned()),
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis_start()
+                    .child(host),
             );
         field
             .child(shown)
@@ -468,7 +495,6 @@ impl Browser {
                 .absolute()
                 .top(px(2.))
                 .right(px(2.))
-                .rounded(ROUND)
                 // its press is not the field's under it
                 .consumes_click(),
             )
@@ -478,9 +504,8 @@ impl Browser {
                         .id("browser-loading")
                         .absolute()
                         .bottom_0()
-                        // clear of the round corners, which do not clip it
-                        .left(ROUND)
-                        .right(ROUND)
+                        .left_0()
+                        .right_0()
                         .h(px(2.))
                         .bg(theme.accent),
                 )
@@ -514,7 +539,16 @@ impl Browser {
                         view.select(index, cx)
                     }),
                 )
-                .child(div().min_w_0().truncate().child(label(&tab.state)));
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        // a title is cut at its end, a host at its start
+                        .when(tab.state.title.trim().is_empty(), |host| {
+                            host.text_ellipsis_start()
+                        })
+                        .child(label(&tab.state)),
+                );
             div()
                 .id(format!("browser-tab-slot-{}", tab.id))
                 .group(group.clone())
@@ -544,7 +578,6 @@ impl Browser {
                     .absolute()
                     .top(px(2.))
                     .left(px(2.))
-                    .rounded(ROUND)
                     .hover(move |style| style.text_color(theme.foreground).bg(theme.surface_raised))
                     // its press is the button's, not the tab's under it,
                     // and its Enter not the tab list's around it

@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 ducktape-view-guest.workspace = true
 gpui.workspace = true
 serde.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 # `examples/live.rs`: the view in the real app over the fake node

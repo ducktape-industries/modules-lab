@@ -6,7 +6,7 @@ use ducktape_view_guest::methods::{HostRoute, HostTitle, HostWidget};
 use ducktape_view_guest::testing::{StreamSender, TestAppContext};
 use ducktape_view_guest::wire::{Node, WebCommand, WebState, WidgetCommand};
 
-use crate::{Browser, address, host};
+use crate::{Browser, address, host_shown};
 
 struct Opened {
     cx: TestAppContext,
@@ -100,9 +100,6 @@ fn an_address_without_a_scheme_opens_over_https() {
 
 #[test]
 fn the_field_at_rest_shows_the_host_and_pressed_the_whole_address() {
-    assert_eq!(host("https://www.google.com/search?q=1"), "google.com");
-    assert_eq!(host("http://localhost:8000/a"), "localhost:8000");
-    assert_eq!(host("https://example.org#top"), "example.org");
     let Opened { mut cx, view, .. } = opened();
     enter(&mut cx, "https://www.example.com/a/b");
     // at rest: the host, a lock for https, and the address for AT
@@ -138,6 +135,70 @@ fn the_field_at_rest_shows_the_host_and_pressed_the_whole_address() {
     assert!(!matches!(cx.node("browser-address"), Node::Field { .. }));
     assert!(cx.has_text("example.com"));
     assert!(piece(&cx, "page-1").1.is_empty());
+}
+
+/// The field at rest shows `text` for `url`, `locked` or not.
+fn shows(url: &str, text: &str, locked: bool) {
+    assert_eq!(host_shown(url), (text.to_owned(), locked), "{url}");
+}
+
+#[test]
+fn the_field_shows_the_real_host_or_the_whole_address() {
+    shows("https://www.google.com/search?q=1", "google.com", true);
+    shows("https://example.org#top", "example.org", true);
+    // `www.` goes only where a dot stays
+    shows("https://www.com/", "www.com", true);
+    // a port the scheme does not imply stays; one it does goes
+    shows("http://localhost:8000/a", "localhost:8000", false);
+    shows("https://example.com:443/", "example.com", true);
+    shows("https://example.com:8443/", "example.com:8443", true);
+    shows("http://[::1]:8080/", "[::1]:8080", false);
+    // an international name in its `xn--` form, typed either way
+    shows(
+        "https://xn--bcher-kva.example/",
+        "xn--bcher-kva.example",
+        true,
+    );
+    shows("https://bücher.example/", "xn--bcher-kva.example", true);
+    // a long chain of names stays whole: the field cuts it from the start
+    shows(
+        "https://accounts.google.com.secure.login.evil.example/x",
+        "accounts.google.com.secure.login.evil.example",
+        true,
+    );
+    // what comes before an `@` is a user name, never the host: such an
+    // address shows whole and unlocked
+    shows(
+        "https://google.com@evil.com/",
+        "https://google.com@evil.com/",
+        false,
+    );
+    shows(
+        "https://user:pass@example.com/",
+        "https://user:pass@example.com/",
+        false,
+    );
+    // a backslash ends the host, as the page's engine reads it
+    shows("https://evil.com\\@google.com/", "evil.com", true);
+    // no scheme, no host, or none that reads: whole, unlocked
+    shows("example.com", "example.com", false);
+    shows("about:blank", "about:blank", false);
+    shows("https://exa mple.com/", "https://exa mple.com/", false);
+    shows("", "", false);
+    // through the field: an address with a user name shows whole, cut
+    // from the start, with no lock
+    let mut opened = opened();
+    enter(&mut opened.cx, "https://example.com/");
+    assert!(opened.cx.find("browser-lock").is_some());
+    opened.routes.send("https://google.com@evil.com/".into());
+    opened.cx.run_until_parked();
+    let cx = &opened.cx;
+    assert!(cx.has_text("https://google.com@evil.com/"));
+    assert!(cx.find("browser-lock").is_none());
+    assert!(matches!(
+        cx.style("browser-host").text.text_overflow,
+        Some(gpui::TextOverflow::TruncateStart(_))
+    ));
 }
 
 #[test]
