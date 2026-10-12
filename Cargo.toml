@@ -6,31 +6,31 @@
 
 [workspace]
 resolver = "2"
-members = ["crates/app/trade", "crates/app/trade-view", "crates/app/arcade", "crates/app/arcade-view"]
+members = ["crates/app/trade", "crates/app/trade-view", "crates/app/arcade", "crates/app/arcade-view", "crates/app/browser-view"]
 
 [workspace.package]
 edition = "2024"
 version = "0.1.0"
 
 [workspace.dependencies]
-# ---- sdk-line: modules @ 80ac7464 (modules#318: 6643d804 with the fork at d5b9b817, accesskit 0.25.1; WIRE_ID c4e0e61f), the rev the app pins. The app refuses
+# ---- sdk-line: modules @ 6ca2ca0b (80ac7464 plus the web piece, the fork at 69b0b541; WIRE_ID 970ebc24), the rev the app pins. The app refuses
 # a view built against another wire, so this moves when the app's pin moves.
-ducktape-view-guest = { git = "https://github.com/ducktape-industries/modules", rev = "80ac7464ae1c479dd674ad68623eecf034b3483f" }
+ducktape-view-guest = { git = "https://github.com/ducktape-industries/modules", rev = "6ca2ca0bd93c51d5ede8fe0ac55610122f941f96" }
 # What a program is written against: the kernel ABI (a copy of core's, never
 # to drift from it), the guest and its mock host, the query derive, the
 # tables, and the describe module.
-abi = { git = "https://github.com/ducktape-industries/modules", rev = "80ac7464ae1c479dd674ad68623eecf034b3483f" }
-guest = { git = "https://github.com/ducktape-industries/modules", rev = "80ac7464ae1c479dd674ad68623eecf034b3483f" }
-program = { git = "https://github.com/ducktape-industries/modules", rev = "80ac7464ae1c479dd674ad68623eecf034b3483f" }
-store = { git = "https://github.com/ducktape-industries/modules", rev = "80ac7464ae1c479dd674ad68623eecf034b3483f" }
-describe = { git = "https://github.com/ducktape-industries/modules", rev = "80ac7464ae1c479dd674ad68623eecf034b3483f" }
+abi = { git = "https://github.com/ducktape-industries/modules", rev = "6ca2ca0bd93c51d5ede8fe0ac55610122f941f96" }
+guest = { git = "https://github.com/ducktape-industries/modules", rev = "6ca2ca0bd93c51d5ede8fe0ac55610122f941f96" }
+program = { git = "https://github.com/ducktape-industries/modules", rev = "6ca2ca0bd93c51d5ede8fe0ac55610122f941f96" }
+store = { git = "https://github.com/ducktape-industries/modules", rev = "6ca2ca0bd93c51d5ede8fe0ac55610122f941f96" }
+describe = { git = "https://github.com/ducktape-industries/modules", rev = "6ca2ca0bd93c51d5ede8fe0ac55610122f941f96" }
 # The op that gives a key its account: what a live stage's seed sends first
 # (`crates/app/trade/examples/seed.rs`). No program or view here links it.
-identity = { git = "https://github.com/ducktape-industries/modules", rev = "80ac7464ae1c479dd674ad68623eecf034b3483f" }
+identity = { git = "https://github.com/ducktape-industries/modules", rev = "6ca2ca0bd93c51d5ede8fe0ac55610122f941f96" }
 # `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
 # the SDK does not re-export.
 # The rev is the one modules names.
-gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpui-pre", rev = "d5b9b8176f77343107b719c8b57bbe796c58d5c0", default-features = false }
+gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpui-pre", rev = "69b0b541f7e517f25bd54f9fcf778be4a6b173be", default-features = false }
 
 # ---- here
 trade = { path = "crates/app/trade" }
@@ -40,6 +40,9 @@ arcade = { path = "crates/app/arcade" }
 borsh = { version = "1", default-features = false, features = ["derive", "std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# the address field reads a page's host as its engine does (the URL
+# standard); gpui links it already
+url = "2"
 
 # proc-macro and build-script crates are compiled once and then run for every
 # unit below them — unoptimized they dominate a debug build.
@@ -60,6 +63,8 @@ strip = true
 opt-level = 3
 [profile.release.package.arcade-view]
 opt-level = 3
+[profile.release.package.browser-view]
+opt-level = 3
 [profile.release.package.ducktape-view-guest]
 opt-level = 3
 [profile.release.package.view-wire]
@@ -71,6 +76,6 @@ opt-level = 3
 # logging crates. A dependency's `[patch]` does not reach its dependents, so
 # they are repeated here, at the same rev.
 [patch.crates-io]
-rmp-serde = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "d5b9b8176f77343107b719c8b57bbe796c58d5c0" }
-gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "d5b9b8176f77343107b719c8b57bbe796c58d5c0" }
-gpui-pre-zlog = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "d5b9b8176f77343107b719c8b57bbe796c58d5c0" }
+rmp-serde = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "69b0b541f7e517f25bd54f9fcf778be4a6b173be" }
+gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "69b0b541f7e517f25bd54f9fcf778be4a6b173be" }
+gpui-pre-zlog = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "69b0b541f7e517f25bd54f9fcf778be4a6b173be" }
