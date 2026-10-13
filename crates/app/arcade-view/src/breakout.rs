@@ -76,6 +76,8 @@ const PACE_MOST: i32 = 7 * SUB;
 /// ball and never speeds it.
 pub(crate) const UP: i32 = 16;
 const LEAN: i32 = 20;
+/// The least lean steel leaves a ball.
+const SLANT: i32 = 4;
 
 /// One broken brick in `DROP` drops a capsule, and these are the odds of
 /// what it holds: each item as often as it is here.
@@ -461,13 +463,20 @@ impl Breakout {
 
     /// A ball struck a brick: it counts toward the speed-ups. Steel turns
     /// it a sixteenth askew, a way the dice pick, so a ball shut in by
-    /// steel finds its way out rather than going round the same path.
+    /// steel finds its way out rather than going round the same path, and
+    /// leaves it a lean of `SLANT` at least, so a ball bouncing between
+    /// steel and the top wall moves along rather than up and down one
+    /// column.
     fn bounce(&mut self, ball: &mut Ball, (row, col): (usize, usize)) {
         self.hits += 1;
         self.top = self.top.min(row);
         if self.bricks[row][col] == STEEL {
             let askew = if self.rng.below(2) == 0 { -1 } else { 1 };
-            ball.way.0 = (ball.way.0 + askew).clamp(-LEAN, LEAN);
+            let lean = (ball.way.0 + askew).clamp(-LEAN, LEAN);
+            ball.way.0 = match lean.signum() {
+                0 => askew * SLANT,
+                way => way * lean.abs().max(SLANT),
+            };
         }
         self.strike((row, col));
     }
@@ -998,7 +1007,7 @@ mod tests {
     }
 
     #[test]
-    fn steel_turns_the_ball_a_sixteenth_askew_scores_nothing_and_stands() {
+    fn steel_turns_the_ball_a_sixteenth_askew_or_to_a_slant_scores_nothing_and_stands() {
         let mut breakout = under_the_sixth((6, -UP));
         lone(&mut breakout, (7, 5), STEEL);
         breakout.tick();
@@ -1006,6 +1015,12 @@ mod tests {
         assert_eq!(breakout.score(), 0);
         let way = breakout.balls[0].way;
         assert!(way.1 > 0 && (way.0 - 6).abs() == 1, "{way:?}");
+        // a ball that meets it straight goes off at a slant
+        let mut breakout = under_the_sixth((0, -UP));
+        lone(&mut breakout, (7, 5), STEEL);
+        breakout.tick();
+        let way = breakout.balls[0].way;
+        assert!(way.1 > 0 && way.0.abs() == SLANT, "{way:?}");
     }
 
     /// The ball strikes a brick of the wall's row `row`, one that stands.
@@ -1417,6 +1432,57 @@ mod tests {
                 }
             }
             assert_eq!(breakout.stage, stage + 1, "wall {stage}");
+        }
+    }
+
+    /// Plays wall `stage` to its end with a paddle always under the lowest
+    /// falling ball, meeting it at a place that moves along the paddle: the
+    /// most ticks in a row the balls went without the paddle or breaking a
+    /// brick.
+    fn longest_wait(stage: u32, seed: u64) -> usize {
+        let mut breakout = Breakout::new(seed);
+        breakout.stage = stage;
+        breakout.bricks = stages::wall(stage);
+        let standing = |breakout: &Breakout| {
+            let bricks = breakout.bricks.iter().flatten();
+            bricks.filter(|brick| breakable(**brick)).count()
+        };
+        let (mut left, mut wait, mut longest) = (standing(&breakout), 0, 0);
+        for tick in 0..200_000 {
+            let half = breakout.half();
+            let falling = breakout.balls.iter().filter(|ball| ball.way.1 > 0);
+            if let Some(ball) = falling.max_by_key(|ball| ball.at.1) {
+                let off = tick / 37 % 9 * half / 5 - half * 4 / 5;
+                breakout.paddle = (ball.at.0 / SUB - off).clamp(half, WIDTH - half);
+            }
+            if tick % 30 == 0 {
+                breakout.key_down("space", false);
+            }
+            breakout.lives = LIVES;
+            breakout.tick();
+            if breakout.stage > stage {
+                return longest;
+            }
+            let paddled = breakout.balls.iter().any(|ball| {
+                ball.held.is_some() || ball.way.1 < 0 && ball.at.1 == (PADDLE_Y - RADIUS) * SUB
+            });
+            let now = standing(&breakout);
+            wait = if paddled || now < left { 0 } else { wait + 1 };
+            left = now;
+            longest = longest.max(wait);
+        }
+        panic!("wall {stage} still stands");
+    }
+
+    #[test]
+    fn no_wall_keeps_the_ball_from_the_paddle_and_the_bricks_for_long() {
+        // a few seconds, as the plain rows of the first wall
+        let most = 8 * 1000 / PERIOD as usize;
+        for stage in 0..3 * stages::COUNT {
+            for seed in 0..2 {
+                let wait = longest_wait(stage, u64::from(stage) * 10 + seed);
+                assert!(wait <= most, "wall {stage}, seed {seed}: {wait} ticks");
+            }
         }
     }
 }

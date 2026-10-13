@@ -42,7 +42,8 @@ const STAGES: [[&str; ROWS]; 8] = [
         ".............",
         ".............",
     ],
-    // battlements: steel teeth under the wall, four ways in
+    // battlements: teeth of steel and three hits under the wall, four ways
+    // in; no two steel teeth side by side, so a ball over them falls past
     [
         ".............",
         "2222222222222",
@@ -51,11 +52,11 @@ const STAGES: [[&str; ROWS]; 8] = [
         "1111111111111",
         "1111111111111",
         ".............",
-        "##.##.#.##.##",
+        "3#.#3.3.3#.#3",
         ".............",
         ".............",
     ],
-    // a checkerboard over steel posts
+    // a checkerboard over steel posts, clear of the side walls
     [
         "2.2.2.2.2.2.2",
         ".1.1.1.1.1.1.",
@@ -64,7 +65,7 @@ const STAGES: [[&str; ROWS]; 8] = [
         "2.2.2.2.2.2.2",
         ".1.1.1.1.1.1.",
         ".............",
-        "#...#...#...#",
+        "..#...#...#..",
         ".............",
         ".............",
     ],
@@ -81,42 +82,45 @@ const STAGES: [[&str; ROWS]; 8] = [
         "....11.11....",
         ".............",
     ],
-    // a steel vault, a door under it, a row in front
+    // a steel vault wall to wall, a door under it, a row in front: no way
+    // round it to its roof
     [
         ".............",
-        ".###########.",
-        ".#111111111#.",
-        ".#122222221#.",
-        ".#123333321#.",
-        ".#122222221#.",
-        ".#111111111#.",
-        ".####...####.",
+        "#############",
+        "#.111111111.#",
+        "#.122222221.#",
+        "#.123333321.#",
+        "#.122222221.#",
+        "#.111111111.#",
+        "#####...#####",
         ".............",
         "1111111111111",
     ],
-    // stairs: steel ledges the ball climbs from side to side
+    // stairs: steel ledges the ball climbs from side to side, three
+    // bricks wide, so one over a ledge soon falls past its end
     [
         "3333333333333",
         "2222222222222",
-        "#####........",
+        "###..........",
+        "2222222222222",
         "1111111111111",
+        "..........###",
+        "2222222222222",
         "1111111111111",
-        "........#####",
-        "1111111111111",
-        "1111111111111",
-        "#####........",
+        "###..........",
         ".............",
     ],
-    // a fortress: pockets of three hits in steel, two gates
+    // a fortress: pockets of three hits in steel over a wall of three hits
+    // with two gates; a steel wall there would shut a ball in over it
     [
         "2222222222222",
         "2#3#3#3#3#3#2",
         "2333333333332",
         "2#2#2#2#2#2#2",
-        "1111111111111",
-        "##..#####..##",
+        "2222222222222",
+        "33..33333..33",
         ".............",
-        "1111111111111",
+        "2222222222222",
         ".............",
         ".............",
     ],
