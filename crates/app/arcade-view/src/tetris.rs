@@ -8,7 +8,12 @@
 //! tick. The rest is the Tetris Guideline's: a turn that does not fit
 //! tries SRS's kicks, the I its own; a piece that lands locks after half a
 //! second, which a move or a turn on the ground starts again, 15 times a
-//! piece at most (the 16th locks it); a hard drop locks at once.
+//! piece at most (the 16th locks it); a hard drop locks at once; C puts
+//! the piece in hold and takes the one there, or the next, once a piece.
+//! A held key repeats on the game's own count, never the keyboard's (half
+//! a second before its first repeat): a held arrow slides the piece again
+//! after 160 ms and then a cell every 32 ms, a held ↓ drops a row every
+//! other tick, and a turn, a drop or a hold does not repeat.
 use std::collections::VecDeque;
 
 use ducktape_view_guest::Canvas;
@@ -18,7 +23,8 @@ use crate::games::{Fact, Rng, square};
 
 pub(crate) const COLS: i32 = 10;
 pub(crate) const ROWS: i32 = 20;
-pub(crate) const KEYS: &str = "← → move, ↑ or X turns, Z turns back, ↓ drops a row, Space drops";
+pub(crate) const KEYS: &str =
+    "← → move, ↑ or X turns, Z turns back, ↓ drops a row, Space drops, C holds";
 pub(crate) const PERIOD: i64 = 16;
 
 /// The ticks a row of fall takes at each level; one from level 29 on.
@@ -49,6 +55,12 @@ const I_KICKS: [[(i32, i32); 5]; 4] = [
 const LOCK_DELAY: u32 = (500 / PERIOD) as u32;
 /// How many times a move or a turn on the ground starts the delay again.
 const RESETS: u32 = 15;
+/// The ticks an arrow is held before the piece slides on its own, 160 ms,
+/// and the ticks a cell after that, 32 ms.
+const DAS: u32 = 10;
+const ARR: u32 = 2;
+/// The ticks a row of a held ↓: NES's soft drop.
+const SOFT: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Piece {
@@ -117,6 +129,7 @@ enum Move {
     TurnBack,
     Down,
     Drop,
+    Hold,
 }
 
 pub(crate) struct Tetris {
@@ -127,9 +140,19 @@ pub(crate) struct Tetris {
     /// The top left corner of the falling piece's box.
     pub(crate) at: (i32, i32),
     pub(crate) next: Piece,
+    /// The piece put aside with C.
+    pub(crate) hold: Option<Piece>,
+    /// The piece falling came out of hold: no hold again until it locks.
+    held: bool,
     bag: Vec<Piece>,
     rng: Rng,
     moves: VecDeque<Move>,
+    /// The arrows held to a side, the newest last: the piece slides to it.
+    sides: Vec<Move>,
+    /// Ticks the newest of `sides` has been held.
+    charge: u32,
+    /// Ticks ↓ has been held.
+    soft: Option<u32>,
     /// Ticks since the piece last fell a row.
     fell: u32,
     /// Ticks the piece has lain on the floor or a block.
@@ -150,9 +173,14 @@ impl Tetris {
             turn: 0,
             at: (0, 0),
             next: Piece::I,
+            hold: None,
+            held: false,
             bag: Vec::new(),
             rng: Rng::new(seed),
             moves: VecDeque::new(),
+            sides: Vec::new(),
+            charge: 0,
+            soft: None,
             fell: 0,
             rest: 0,
             resets: 0,
@@ -179,11 +207,18 @@ impl Tetris {
         self.bag.pop().expect("a filled bag")
     }
 
-    /// The next piece at the top of the well; one that does not fit there
-    /// ends the game.
+    /// The next piece at the top of the well.
     fn spawn(&mut self) {
-        self.piece = self.next;
+        let next = self.next;
         self.next = self.draw_bag();
+        self.held = false;
+        self.enter(next);
+    }
+
+    /// `piece` at the top of the well, unturned; one that does not fit
+    /// there ends the game.
+    fn enter(&mut self, piece: Piece) {
+        self.piece = piece;
         self.turn = 0;
         self.at = (3, 0);
         self.fell = 0;
@@ -280,6 +315,19 @@ impl Tetris {
         self.spawn();
     }
 
+    /// Puts the piece in hold and brings in the one there, or the next.
+    fn swap_hold(&mut self) -> bool {
+        if self.held {
+            return false;
+        }
+        match self.hold.replace(self.piece) {
+            Some(held) => self.enter(held),
+            None => self.spawn(),
+        }
+        self.held = true;
+        true
+    }
+
     fn apply(&mut self, held: Move) -> bool {
         let landed = self.landed();
         let moved = match held {
@@ -302,6 +350,7 @@ impl Tetris {
                 self.lock();
                 return true;
             }
+            Move::Hold => return self.swap_hold(),
         };
         // a move on the ground starts the lock delay again, 15 times a
         // piece; the 16th locks it where it lies
@@ -316,21 +365,69 @@ impl Tetris {
         moved
     }
 
-    /// A key waits for the next tick.
-    pub(crate) fn key(&mut self, key: &str) -> bool {
-        let held = match key {
-            "left" | "a" => Move::Left,
-            "right" | "d" => Move::Right,
-            "up" | "x" | "w" => Move::Turn,
-            "z" => Move::TurnBack,
-            "down" | "s" => Move::Down,
-            "space" => Move::Drop,
-            _ => return false,
+    /// A key waits for the next tick; an arrow is held until it comes up.
+    /// The keyboard's own repeat of a held key is not read.
+    pub(crate) fn key_down(&mut self, key: &str, repeat: bool) -> bool {
+        let Some(held) = read(key) else {
+            return false;
         };
+        if repeat {
+            return false;
+        }
+        match held {
+            Move::Left | Move::Right => {
+                self.sides.retain(|side| *side != held);
+                self.sides.push(held);
+                self.charge = 0;
+            }
+            Move::Down => self.soft = Some(0),
+            _ => {}
+        }
         if self.moves.len() < WAITING {
             self.moves.push_back(held);
         }
         false
+    }
+
+    /// An arrow came up: the other side's, if it is still held, slides
+    /// the piece after its own count.
+    pub(crate) fn key_up(&mut self, key: &str) {
+        match read(key) {
+            Some(Move::Down) => self.soft = None,
+            Some(up @ (Move::Left | Move::Right)) => {
+                let newest = self.sides.last().copied();
+                self.sides.retain(|side| *side != up);
+                if self.sides.last().copied() != newest {
+                    self.charge = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// No key is held: a pause or a game off screen hears no key come up.
+    pub(crate) fn let_go(&mut self) {
+        self.sides.clear();
+        self.soft = None;
+    }
+
+    /// The keys held: the newest side arrow slides the piece once DAS
+    /// ticks have passed, then every ARR; ↓ drops a row every SOFT.
+    fn repeat(&mut self) -> bool {
+        let mut moved = false;
+        if let Some(&side) = self.sides.last() {
+            self.charge += 1;
+            if self.charge >= DAS && (self.charge - DAS).is_multiple_of(ARR) {
+                moved |= self.apply(side);
+            }
+        }
+        if let Some(held) = self.soft.map(|held| held + 1) {
+            self.soft = Some(held);
+            if held.is_multiple_of(SOFT) && !self.over {
+                moved |= self.apply(Move::Down);
+            }
+        }
+        moved
     }
 
     /// One frame: the keys that waited, then gravity's count, or the lock
@@ -343,6 +440,10 @@ impl Tetris {
             }
             moved |= self.apply(held);
         }
+        if self.over {
+            return moved;
+        }
+        moved |= self.repeat();
         if self.over {
             return moved;
         }
@@ -421,15 +522,41 @@ impl Tetris {
 
     /// The next piece, in a box of four by two cells of `cell` px.
     pub(crate) fn draw_next(&self, cell: f32, theme: &Theme) -> Canvas {
-        piece(self.next, cell, theme)
-            .w(px(4. * cell))
-            .h(px(2. * cell))
+        piece(Some(self.next), cell, self.next.color(theme))
+    }
+
+    /// The piece in hold, as the next is drawn; faint while the piece
+    /// falling came out of it.
+    pub(crate) fn draw_hold(&self, cell: f32, theme: &Theme) -> Canvas {
+        let color = self
+            .hold
+            .filter(|_| !self.held)
+            .map_or(theme.border_strong, |held| held.color(theme));
+        piece(self.hold, cell, color)
     }
 }
 
-/// `shown` unturned, `cell` px a cell, from the top left corner.
-fn piece(shown: Piece, cell: f32, theme: &Theme) -> Canvas {
-    let mut drawn = canvas();
+/// The key's move, if it is one.
+fn read(key: &str) -> Option<Move> {
+    Some(match key {
+        "left" | "a" => Move::Left,
+        "right" | "d" => Move::Right,
+        "up" | "x" | "w" => Move::Turn,
+        "z" => Move::TurnBack,
+        "down" | "s" => Move::Down,
+        "space" => Move::Drop,
+        "c" => Move::Hold,
+        _ => return None,
+    })
+}
+
+/// `shown` unturned in `color`, `cell` px a cell, in a box of four by two
+/// cells; none is the empty box.
+fn piece(shown: Option<Piece>, cell: f32, color: Hsla) -> Canvas {
+    let mut drawn = canvas().w(px(4. * cell)).h(px(2. * cell));
+    let Some(shown) = shown else {
+        return drawn;
+    };
     // the I lies in its box's second row: drawn a row up
     let up = i32::from(shown == Piece::I);
     for (x, y) in shown.cells(0) {
@@ -439,7 +566,7 @@ fn piece(shown: Piece, cell: f32, theme: &Theme) -> Canvas {
             cell - 2.,
             cell - 2.,
         );
-        drawn = drawn.rect(at, shown.color(theme));
+        drawn = drawn.rect(at, color);
     }
     drawn
 }
@@ -488,6 +615,14 @@ pub(crate) fn preview(theme: &Theme) -> Canvas {
 mod tests {
     use super::*;
 
+    impl Tetris {
+        /// `key` goes down and up before the next tick.
+        fn tap(&mut self, key: &str) {
+            self.key_down(key, false);
+            self.key_up(key);
+        }
+    }
+
     /// A game with the well cleared and `piece` at the top.
     fn with(piece: Piece) -> Tetris {
         let mut tetris = Tetris::new(1);
@@ -504,7 +639,7 @@ mod tests {
         tetris.turn = 1;
         tetris.at = (COLS - 3, 5);
         assert_eq!(tetris.falling().map(|(x, _)| x), [COLS - 1; 4]);
-        tetris.key("up");
+        tetris.tap("up");
         assert!(tetris.tick());
         assert_eq!(tetris.turn, 2);
         let mut columns = tetris.falling().map(|(x, _)| x);
@@ -524,7 +659,7 @@ mod tests {
                 let mut tetris = with(shown);
                 // flat, its lower row on the floor
                 tetris.at = (3, ROWS - 2);
-                tetris.key(key);
+                tetris.tap(key);
                 tetris.tick();
                 let rows = tetris.falling().map(|(_, y)| y);
                 let upright = tetris.turn == if key == "up" { 1 } else { 3 }
@@ -542,7 +677,7 @@ mod tests {
     fn an_i_lying_flat_on_the_floor_against_a_wall_turns_upright_on_it() {
         let mut tetris = with(Piece::I);
         tetris.at = (COLS - 4, ROWS - 2);
-        tetris.key("up");
+        tetris.tap("up");
         tetris.tick();
         assert_eq!(tetris.turn, 1);
         let mut cells = tetris.falling().to_vec();
@@ -569,7 +704,7 @@ mod tests {
             tetris.well[y][3] = Some(Piece::O);
             tetris.well[y][5] = Some(Piece::O);
         }
-        tetris.key("up");
+        tetris.tap("up");
         tetris.tick();
         assert_eq!(tetris.turn, 1);
         assert_eq!(tetris.at, (2, 5));
@@ -616,7 +751,7 @@ mod tests {
         }
         tetris.well[ROWS as usize - 2][9] = Some(Piece::Z);
         tetris.at = (0, 3);
-        tetris.key("space");
+        tetris.tap("space");
         tetris.tick();
         // the drop's 15 rows at 2 and one row at level 0
         assert_eq!(tetris.score(), 2 * 15 + 40);
@@ -643,7 +778,7 @@ mod tests {
         // upright in the first column
         tetris.turn = 1;
         tetris.at = (-2, 0);
-        tetris.key("space");
+        tetris.tap("space");
         tetris.tick();
         assert_eq!(tetris.score(), 2 * 16 + 1200);
         assert_eq!((tetris.lines, tetris.level), (12, 1));
@@ -654,10 +789,10 @@ mod tests {
     fn a_soft_drop_scores_a_cell_and_on_the_floor_leaves_the_piece_to_its_delay() {
         let mut tetris = with(Piece::O);
         tetris.at = (3, ROWS - 3);
-        tetris.key("down");
+        tetris.tap("down");
         tetris.tick();
         assert_eq!((tetris.at.1, tetris.score()), (ROWS - 2, 1));
-        tetris.key("down");
+        tetris.tap("down");
         assert!(!tetris.tick(), "on the floor a soft drop does nothing");
         assert_eq!(tetris.score(), 1);
         for _ in 2..LOCK_DELAY {
@@ -689,14 +824,14 @@ mod tests {
             for _ in 2..LOCK_DELAY {
                 tetris.tick();
             }
-            tetris.key(if step % 2 == 1 { "left" } else { "right" });
+            tetris.tap(if step % 2 == 1 { "left" } else { "right" });
             tetris.tick();
             assert!(
                 tetris.well.iter().flatten().all(Option::is_none),
                 "move {step} keeps it up"
             );
         }
-        tetris.key("left");
+        tetris.tap("left");
         tetris.tick();
         assert!(
             tetris.well[ROWS as usize - 1].iter().any(Option::is_some),
@@ -707,7 +842,7 @@ mod tests {
     #[test]
     fn a_hard_drop_locks_at_once() {
         let mut tetris = with(Piece::O);
-        tetris.key("space");
+        tetris.tap("space");
         tetris.tick();
         assert!(tetris.well[ROWS as usize - 1][4].is_some());
         assert_eq!(tetris.at, (3, 0), "the next piece at the top");
@@ -723,11 +858,123 @@ mod tests {
             }
         }
         tetris.at = (7, 0);
-        tetris.key("space");
+        tetris.tap("space");
         tetris.tick();
         assert!(tetris.well[ROWS as usize - 1][8].is_some(), "the O settled");
         assert!(tetris.over());
         assert!(!tetris.tick(), "an ended game does not move");
+    }
+
+    #[test]
+    fn a_held_arrow_slides_the_piece_after_das_ticks_then_a_cell_every_arr() {
+        let mut tetris = with(Piece::T);
+        tetris.at = (5, 0);
+        tetris.key_down("left", false);
+        let mut columns = Vec::new();
+        for _ in 0..DAS + 2 * ARR {
+            tetris.tick();
+            columns.push(tetris.at.0);
+        }
+        let mut slid = vec![4; DAS as usize - 1];
+        slid.extend([3, 3, 2, 2, 1]);
+        assert_eq!(columns, slid, "once at once, again at DAS, then every ARR");
+        tetris.key_up("left");
+        for _ in 0..DAS {
+            tetris.tick();
+        }
+        assert_eq!(tetris.at.0, 1, "up, it stops");
+    }
+
+    #[test]
+    fn the_keyboards_own_repeat_is_not_read() {
+        let mut tetris = with(Piece::T);
+        tetris.at = (5, 0);
+        for key in ["left", "up", "z", "down", "space", "c"] {
+            tetris.key_down(key, true);
+        }
+        for _ in 0..DAS + ARR {
+            assert!(!tetris.tick());
+        }
+        assert_eq!((tetris.at, tetris.turn, tetris.hold), ((5, 0), 0, None));
+    }
+
+    #[test]
+    fn the_newest_arrow_held_slides_and_up_it_gives_the_other_its_own_count() {
+        let mut tetris = with(Piece::T);
+        tetris.at = (4, 0);
+        tetris.key_down("left", false);
+        tetris.key_down("right", false);
+        for _ in 0..DAS {
+            tetris.tick();
+        }
+        assert_eq!(tetris.at.0, 5, "a cell left, one back, then right's slide");
+        tetris.key_up("right");
+        for _ in 1..DAS {
+            tetris.tick();
+        }
+        assert_eq!(tetris.at.0, 5, "left counts its DAS again");
+        tetris.tick();
+        assert_eq!(tetris.at.0, 4);
+    }
+
+    #[test]
+    fn a_held_down_drops_a_row_every_soft_ticks_and_scores_each() {
+        let mut tetris = with(Piece::O);
+        tetris.key_down("down", false);
+        for _ in 0..5 * SOFT {
+            tetris.tick();
+        }
+        assert_eq!(
+            (tetris.at.1, tetris.score()),
+            (6, 6),
+            "one at once, then five"
+        );
+        tetris.key_up("down");
+        for _ in 0..5 * SOFT {
+            tetris.tick();
+        }
+        assert_eq!(tetris.at.1, 6, "up, it falls by gravity's count alone");
+    }
+
+    #[test]
+    fn letting_go_stops_what_a_held_key_did() {
+        let mut tetris = with(Piece::T);
+        tetris.at = (5, 0);
+        tetris.key_down("left", false);
+        tetris.key_down("down", false);
+        tetris.let_go();
+        for _ in 0..DAS + 2 * ARR {
+            tetris.tick();
+        }
+        assert_eq!(tetris.at, (4, 1), "the presses alone, read on the tick");
+    }
+
+    #[test]
+    fn c_puts_the_piece_in_hold_once_a_piece_and_brings_it_back_unturned_at_the_top() {
+        let mut tetris = with(Piece::T);
+        let next = tetris.next;
+        tetris.turn = 1;
+        tetris.at = (5, 7);
+        tetris.tap("c");
+        assert!(tetris.tick());
+        assert_eq!(
+            (tetris.hold, tetris.piece, tetris.turn, tetris.at),
+            (Some(Piece::T), next, 0, (3, 0)),
+            "an empty hold takes the T and the next comes in"
+        );
+        tetris.tap("c");
+        assert!(!tetris.tick(), "not twice a piece");
+        assert_eq!((tetris.piece, tetris.hold), (next, Some(Piece::T)));
+        tetris.tap("space");
+        tetris.tick();
+        let falling = tetris.piece;
+        tetris.tap("c");
+        tetris.tick();
+        assert_eq!(
+            (tetris.piece, tetris.hold, tetris.at),
+            (Piece::T, Some(falling), (3, 0)),
+            "a new piece holds again and takes the T back"
+        );
     }
 
     #[test]

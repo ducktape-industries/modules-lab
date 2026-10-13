@@ -110,6 +110,9 @@ impl Arcade {
             && !play.paused
         {
             play.paused = true;
+            if let Some(game) = play.game.ready_mut() {
+                game.let_go();
+            }
             cx.notify();
         }
         self.settle(cx);

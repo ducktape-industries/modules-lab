@@ -13,7 +13,8 @@ use crate::tetris::{self, Tetris};
 
 /// A game in play, in [`arcade::GAMES`]' order.
 pub(crate) enum Game {
-    Tetris(Tetris),
+    /// Boxed: its well is 200 cells.
+    Tetris(Box<Tetris>),
     Snake(Snake),
     Merge(Merge),
     /// Boxed: its field is three grids of 256 cells.
@@ -28,7 +29,7 @@ impl Game {
     /// Game `which` (its place in [`arcade::GAMES`]), dealt from `seed`.
     pub(crate) fn new(which: usize, seed: u64) -> Game {
         match which {
-            0 => Game::Tetris(Tetris::new(seed)),
+            0 => Game::Tetris(Box::new(Tetris::new(seed))),
             1 => Game::Snake(Snake::new(seed)),
             2 => Game::Merge(Merge::new(seed)),
             3 => Game::Mines(Box::new(Mines::new(seed))),
@@ -36,11 +37,12 @@ impl Game {
         }
     }
 
-    /// A key went down on the board. Whether the board changed at once: a
-    /// game on a clock reads the key on its next tick instead.
-    pub(crate) fn key_down(&mut self, key: &str) -> bool {
+    /// A key went down on the board, or the keyboard repeats one held.
+    /// Whether the board changed at once: a game on a clock reads the key
+    /// on its next tick instead.
+    pub(crate) fn key_down(&mut self, key: &str, repeat: bool) -> bool {
         match self {
-            Game::Tetris(game) => game.key(key),
+            Game::Tetris(game) => game.key_down(key, repeat),
             Game::Snake(game) => game.key(key),
             Game::Merge(game) => game.key(key),
             Game::Mines(game) => game.key(key),
@@ -48,10 +50,26 @@ impl Game {
         }
     }
 
-    /// A key came up on the board: Breakout's paddle stops.
+    /// A key came up on the board: Breakout's paddle stops, and a Tetris
+    /// piece stops sliding or dropping.
     pub(crate) fn key_up(&mut self, key: &str) {
-        if let Game::Breakout(game) = self {
-            game.key_up(key);
+        match self {
+            Game::Tetris(game) => game.key_up(key),
+            Game::Breakout(game) => game.key_up(key),
+            _ => {}
+        }
+    }
+
+    /// The game pauses or goes off screen: what a key held did stops, as
+    /// its coming up may go elsewhere.
+    pub(crate) fn let_go(&mut self) {
+        match self {
+            Game::Tetris(game) => game.let_go(),
+            Game::Breakout(game) => {
+                game.key_up("left");
+                game.key_up("right");
+            }
+            _ => {}
         }
     }
 
