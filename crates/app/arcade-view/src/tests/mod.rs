@@ -13,7 +13,7 @@ use ducktape_view_guest::methods::{
 };
 use ducktape_view_guest::prelude::Capability;
 use ducktape_view_guest::testing::{StreamSender, TestAppContext};
-use ducktape_view_guest::{Entity, View};
+use ducktape_view_guest::{Entity, View, wire};
 use program::role::Identity;
 
 use crate::games::Game;
@@ -151,6 +151,21 @@ impl Opened {
     /// `keystroke` goes down on the board, which holds the keys.
     pub(crate) fn key(&mut self, keystroke: &str) {
         self.cx.simulate_key_down("arcade-board", keystroke);
+    }
+
+    /// The keyboard repeats `keystroke`, held down on the board.
+    pub(crate) fn held(&mut self, keystroke: &str) {
+        let handler = self.cx.interactivity("arcade-board").on_key_down;
+        let state = gpui::Keystroke::parse(keystroke).expect("a keystroke");
+        self.cx.simulate_event(wire::Event::KeyDown {
+            handler: handler.expect("the board hears keys"),
+            phase: wire::DispatchPhase::Bubble,
+            event: wire::interactivity::KeyDown {
+                state: (&state).into(),
+                repeat: true,
+                prefer_character_input: false,
+            },
+        });
     }
 
     /// `n` ticks of the clock, each run to the end before the next.
@@ -302,6 +317,30 @@ fn a_pause_drops_the_clock_and_shows_the_top_ten_and_going_on_asks_again() {
     opened.cx.simulate_click("arcade-resume");
     opened.cx.run_until_parked();
     assert!(opened.ticks.subscribed());
+}
+
+#[test]
+fn a_held_p_or_escape_pauses_once_and_the_game_stays_on_screen() {
+    let mut opened = seated();
+    opened.start(SNAKE);
+    opened.key("right");
+    opened.key("p");
+    // the keyboard repeats it: the pause stays
+    opened.held("p");
+    assert!(!opened.ticks.subscribed(), "still paused");
+    shows(&opened.cx, &["Paused"]);
+    opened.key("p");
+    assert!(opened.ticks.subscribed());
+    // Escape pauses, and held does not go on to leave the game
+    opened.key("escape");
+    opened.held("escape");
+    opened.held("enter");
+    assert!(
+        opened.view.read(|arcade| arcade.play.is_some()),
+        "on the game"
+    );
+    assert!(!opened.ticks.subscribed(), "still paused");
+    shows(&opened.cx, &["Paused", "Resume"]);
 }
 
 #[test]

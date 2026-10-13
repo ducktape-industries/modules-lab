@@ -95,6 +95,13 @@ impl Arcade {
         };
         let key = event.keystroke.key.as_str();
         let (which, over) = (play.which, play.game.ready().is_some_and(Game::over));
+        // the screen's keys act once a press: the keyboard's repeat of one
+        // held would flip the pause back, leave the game or deal another
+        if event.is_held
+            && (matches!(key, "escape" | "p") || key == "enter" && (over || play.paused))
+        {
+            return;
+        }
         match key {
             "escape" if over || play.paused => return self.back(window, cx),
             "enter" if over => return self.open(which, window, cx),

@@ -149,14 +149,16 @@ impl Mines {
         true
     }
 
-    /// The arrows move the cursor; Space or Enter shows its cell, F flags it.
-    pub(crate) fn key(&mut self, key: &str) -> bool {
+    /// The arrows move the cursor, held ones on the keyboard's repeat;
+    /// Space or Enter shows its cell, F flags it, once a press.
+    pub(crate) fn key(&mut self, key: &str, repeat: bool) -> bool {
         let (x, y) = self.cursor;
         let step = match key {
             "up" | "w" => (0, -1),
             "down" | "s" => (0, 1),
             "left" | "a" => (-1, 0),
             "right" | "d" => (1, 0),
+            _ if repeat => return false,
             "space" | "enter" => return self.reveal(self.cursor),
             "f" => return self.flag(self.cursor),
             _ => return false,
@@ -470,16 +472,32 @@ mod tests {
     fn the_clock_runs_from_the_first_reveal() {
         let mut mines = Mines::new(5);
         assert_eq!(mines.period(), None);
-        mines.key("space");
+        mines.key("space", false);
         assert_eq!(mines.period(), Some(PERIOD));
+    }
+
+    #[test]
+    fn a_held_f_or_space_acts_once_and_a_held_arrow_goes_on() {
+        let mut mines = laid(&["*"]);
+        mines.cursor = (0, 0);
+        assert!(mines.key("f", false));
+        for _ in 0..3 {
+            assert!(!mines.key("f", true), "the keyboard's repeat");
+        }
+        assert_eq!(mines.mark[0][0], Mark::Flagged, "one flag, kept");
+        assert!(mines.key("right", true));
+        assert!(mines.key("right", true));
+        assert_eq!(mines.cursor, (2, 0));
+        assert!(!mines.key("space", true));
+        assert_eq!(mines.mark[0][2], Mark::Hidden);
     }
 
     #[test]
     fn the_arrows_move_the_cursor_inside_the_field() {
         let mut mines = Mines::new(5);
         mines.cursor = (0, 0);
-        assert!(!mines.key("left"));
-        assert!(mines.key("right"));
+        assert!(!mines.key("left", false));
+        assert!(mines.key("right", false));
         assert_eq!(mines.cursor, (1, 0));
         assert!(mines.press((4, 5), true));
         assert_eq!(mines.mark[5][4], Mark::Flagged);
