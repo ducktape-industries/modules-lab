@@ -9,8 +9,8 @@ moves over as it is.
 |---|---|
 | `crates/app/trade` | spot markets for practice funds: the program, its types on the wire and its tables |
 | `crates/app/trade-view` | its view: a trading terminal on the view SDK as it is |
-| `crates/app/arcade` | the high scores of six games, five classics and a dating sim: the program |
-| `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper, Breakout and Claude Love, and the boards |
+| `crates/app/arcade` | the high scores of five classic games: the program |
+| `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper and Breakout, and the boards |
 | `crates/app/browser-view` | a view alone, no program: web pages in tabs on the SDK's `web` piece |
 
 The SDK is modules `dev` at the rev the app pins (`Cargo.toml`, `sdk-line`).
@@ -104,25 +104,23 @@ The boards are practice, a place to compare, not proof of anything.
 
 ## arcade-view
 
-A hub of six cards, each a button with the game's name, a line of what it
+A hub of five cards, each a button with the game's name, a line of what it
 is, a still picture and the reader's best; pressed, the game starts with
 its board taking the keys. A game is its board, a panel with the score,
 the reader's best and the game's own facts (Tetris's level, lines, hold
 and next three pieces; Snake's length; 2048's best tile; Minesweeper's
-mines left and time; Breakout's lives and wall; Claude Love's affection
-and chapter), and a pause. Paused or over, an overlay lies on the board
-and the panel shows the game's top ten, each account by the name identity
-gives it, by its number where it has none. An ended game's score is sent
-once when an account is seated, whatever it is: the program keeps the
-best, and the line under the score says what the node answered, sent or
-refused and why. Without an account the games play and the score stays on
-the screen.
+mines left and time; Breakout's lives and wall), and a pause. Paused or
+over, an overlay lies on the board and the panel shows the game's top ten,
+each account by the name identity gives it, by its number where it has
+none. An ended game's score is sent once when an account is seated,
+whatever it is: the program keeps the best, and the line under the score
+says what the node answered, sent or refused and why. Without an account
+the games play and the score stays on the screen.
 
 Each game is one file of its rules and its drawing: `tetris.rs`,
-`snake.rs`, `merge.rs` (2048), `mines.rs`, `breakout.rs`, and `dating.rs`
-(Claude Love) with its script as data in `dating_script.rs`. A game is
-dealt from the id the host mints for it (`host.id`), so the same id deals
-the same game, and every rule is tested with a seed. Tetris takes from the
+`snake.rs`, `merge.rs` (2048), `mines.rs`, `breakout.rs`. A game is dealt
+from the id the host mints for it (`host.id`), so the same id deals the
+same game, and every rule is tested with a seed. Tetris takes from the
 Tetris Guideline what the NES lacks: SRS's turns and kick tables (the I
 has its own), a landed piece that locks after half a second (31 ticks), a
 move or a turn on the ground that starts that half second again, 15 times
@@ -134,12 +132,10 @@ falls behind slows a game rather than skipping it. Tetris and Breakout
 tick every 16 ms and count ticks for gravity and the ball; Snake waits for
 the first arrow, then its tick is its step, 160 ms quickening to 70;
 Minesweeper's clock counts seconds from
-the first reveal; 2048 asks for none; Claude Love ticks every 30 ms while
-a line of dialogue reveals and asks for none once it is shown. The clock
-is asked for only while a game runs: the hub, a paused game and an ended
-one ask for nothing, and a game pauses when the view leaves the screen.
-Tetris, Snake and Breakout read a key on their next tick; 2048,
-Minesweeper and Claude Love act on it at once.
+the first reveal; 2048 asks for none. The clock is asked for only while a
+game runs: the hub, a paused game and an ended one ask for nothing, and a
+game pauses when the view leaves the screen. Tetris, Snake and Breakout
+read a key on their next tick; 2048 and Minesweeper act on it at once.
 
 ## browser-view
 
