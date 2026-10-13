@@ -1,4 +1,5 @@
-//! The `arcade` module: the shared high scores of five classic games. The
+//! The `arcade` module: the shared high scores of six games, five classics
+//! and a dating sim. The
 //! games themselves run in the view and never touch the chain; an account
 //! posts the score a game ended on, and the program keeps each account's
 //! best of each game and ranks them. Nothing checks a score: the client
@@ -28,7 +29,14 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub const MODULE: &str = "arcade";
 
 /// A game is named on the wire by its place here.
-pub const GAMES: [&str; 5] = ["Tetris", "Snake", "2048", "Minesweeper", "Breakout"];
+pub const GAMES: [&str; 6] = [
+    "Tetris",
+    "Snake",
+    "2048",
+    "Minesweeper",
+    "Breakout",
+    "Claude Love",
+];
 
 /// The most rows one [`Query::Top`] answers.
 pub const MAX_TOP: u32 = 50;
