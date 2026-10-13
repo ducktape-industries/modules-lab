@@ -1,4 +1,4 @@
-//! The six games behind one enum, in [`arcade::GAMES`]' order, and the
+//! The five games behind one enum, in [`arcade::GAMES`]' order, and the
 //! seeded randomness they share. A game is its own rules: it hears keys,
 //! steps on a tick, and says its score and whether it is over. Nothing
 //! here knows the view; the view knows each game's board (`play.rs`).
@@ -6,7 +6,6 @@ use ducktape_view_guest::prelude::*;
 use gpui::{point, size};
 
 use crate::breakout::{self, Breakout};
-use crate::dating::{self, Dating};
 use crate::merge::{self, Merge};
 use crate::mines::{self, Mines};
 use crate::snake::{self, Snake};
@@ -21,7 +20,6 @@ pub(crate) enum Game {
     /// Boxed: its field is three grids of 256 cells.
     Mines(Box<Mines>),
     Breakout(Breakout),
-    Dating(Dating),
 }
 
 /// What a game shows beside its board under its score: a name and a value.
@@ -35,8 +33,7 @@ impl Game {
             1 => Game::Snake(Snake::new(seed)),
             2 => Game::Merge(Merge::new(seed)),
             3 => Game::Mines(Box::new(Mines::new(seed))),
-            4 => Game::Breakout(Breakout::new(seed)),
-            _ => Game::Dating(Dating::new(seed)),
+            _ => Game::Breakout(Breakout::new(seed)),
         }
     }
 
@@ -50,7 +47,6 @@ impl Game {
             Game::Merge(game) => game.key(key),
             Game::Mines(game) => game.key(key, repeat),
             Game::Breakout(game) => game.key_down(key),
-            Game::Dating(game) => game.key_down(key, repeat),
         }
     }
 
@@ -85,12 +81,11 @@ impl Game {
             Game::Merge(_) => false,
             Game::Mines(game) => game.tick(),
             Game::Breakout(game) => game.tick(),
-            Game::Dating(game) => game.tick(),
         }
     }
 
     /// The clock's period while the game runs, in milliseconds: none for a
-    /// game that moves only when a key does, or while one waits on one.
+    /// game that moves only when a key does.
     pub(crate) fn period(&self) -> Option<i64> {
         match self {
             Game::Tetris(_) => Some(tetris::PERIOD),
@@ -98,7 +93,6 @@ impl Game {
             Game::Merge(_) => None,
             Game::Mines(game) => game.period(),
             Game::Breakout(_) => Some(breakout::PERIOD),
-            Game::Dating(game) => game.period(),
         }
     }
 
@@ -109,7 +103,6 @@ impl Game {
             Game::Merge(game) => game.score(),
             Game::Mines(game) => game.score(),
             Game::Breakout(game) => game.score(),
-            Game::Dating(game) => game.score(),
         }
     }
 
@@ -120,7 +113,6 @@ impl Game {
             Game::Merge(game) => game.over(),
             Game::Mines(game) => game.over(),
             Game::Breakout(game) => game.over(),
-            Game::Dating(game) => game.over(),
         }
     }
 
@@ -132,7 +124,6 @@ impl Game {
             Game::Merge(game) => game.facts(),
             Game::Mines(game) => game.facts(),
             Game::Breakout(game) => game.facts(),
-            Game::Dating(game) => game.facts(),
         }
     }
 
@@ -144,7 +135,6 @@ impl Game {
             Game::Merge(_) => merge::KEYS,
             Game::Mines(_) => mines::KEYS,
             Game::Breakout(_) => breakout::KEYS,
-            Game::Dating(_) => dating::KEYS,
         }
     }
 }

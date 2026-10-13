@@ -70,19 +70,19 @@ fn a_higher_score_becomes_the_best_and_one_at_or_under_it_changes_nothing() {
     let mut hall = Hall::default();
     assert_eq!(hall.bests(ADA), [0; GAMES.len()]);
     hall.ok(ADA, TETRIS, 1_200);
-    assert_eq!(hall.bests(ADA), [1_200, 0, 0, 0, 0, 0]);
+    assert_eq!(hall.bests(ADA), [1_200, 0, 0, 0, 0]);
     let kept = hall.store.borrow().state.clone();
     for lower in [1_200, 800, 0] {
         hall.ok(ADA, TETRIS, lower);
         assert_eq!(hall.store.borrow().state, kept, "{lower}: nothing written");
     }
     hall.ok(ADA, TETRIS, 4_000);
-    assert_eq!(hall.bests(ADA), [4_000, 0, 0, 0, 0, 0]);
+    assert_eq!(hall.bests(ADA), [4_000, 0, 0, 0, 0]);
     // the board holds the new best alone: the old row went with it
     assert_eq!(hall.top(TETRIS, MAX_TOP), [(ADA, 4_000)]);
     // a game is its own
     hall.ok(ADA, SNAKE, 90);
-    assert_eq!(hall.bests(ADA), [4_000, 90, 0, 0, 0, 0]);
+    assert_eq!(hall.bests(ADA), [4_000, 90, 0, 0, 0]);
     assert_eq!(hall.bests(BO), [0; GAMES.len()]);
 }
 

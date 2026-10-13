@@ -19,7 +19,6 @@ use program::role::Identity;
 use crate::games::Game;
 use crate::{Arcade, Post};
 
-mod dating;
 mod games;
 mod snake;
 
@@ -30,7 +29,7 @@ pub(crate) const SNAKE: usize = 1;
 
 /// What the program and identity hold, as far as the view asks.
 pub(crate) struct World {
-    pub(crate) boards: [Vec<Entry>; 6],
+    pub(crate) boards: [Vec<Entry>; 5],
     pub(crate) bests: Vec<u64>,
     pub(crate) names: HashMap<u64, String>,
     /// What the program says to the next op in place of taking it.
@@ -42,11 +41,11 @@ impl Default for World {
     /// name for Ada and the reader, none for Bo.
     fn default() -> World {
         let entry = |account, score| Entry { account, score };
-        let mut boards: [Vec<Entry>; 6] = Default::default();
+        let mut boards: [Vec<Entry>; 5] = Default::default();
         boards[SNAKE] = vec![entry(1, 420), entry(2, 300), entry(READER, 120)];
         World {
             boards,
-            bests: vec![0, 120, 0, 0, 0, 0],
+            bests: vec![0, 120, 0, 0, 0],
             names: HashMap::from([(1, "ada".into()), (READER, "reader".into())]),
             refusal: None,
         }
@@ -251,7 +250,6 @@ fn the_hub_shows_every_game_with_the_readers_best_and_asks_for_no_clock() {
             "2048",
             "Minesweeper",
             "Breakout",
-            "Claude Love",
         ],
     );
     shows(cx, &["Your best 120", "No score yet"]);
