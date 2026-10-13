@@ -277,7 +277,7 @@ fn breakouts_paddle_moves_while_an_arrow_is_held_and_space_serves() {
     assert_eq!(opened.clocks(), [crate::breakout::PERIOD]);
     let paddle = |opened: &mut Opened| {
         opened.game(|game| match game {
-            Game::Breakout(breakout) => (breakout.paddle, breakout.serving),
+            Game::Breakout(breakout) => (breakout.paddle, breakout.serving()),
             _ => panic!("breakout is on screen"),
         })
     };
@@ -294,5 +294,5 @@ fn breakouts_paddle_moves_while_an_arrow_is_held_and_space_serves() {
     opened.key("space");
     opened.tick(1);
     assert!(!paddle(&mut opened).1, "served");
-    shows(&opened.cx, &["Lives", "3", "Wall", "1"]);
+    shows(&opened.cx, &["Stage", "1", "Lives", "3"]);
 }
