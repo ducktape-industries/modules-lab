@@ -2,10 +2,12 @@
 //! cell tells how many of its eight neighbours hold a mine; a cell with
 //! none shows its neighbours too, and so on out. The mines are laid at the
 //! first reveal, never on that cell or around it, so the first press always
-//! opens ground. Flag a cell you think holds a mine; showing a mine ends
-//! the game, showing every other cell wins it. The score is a point a cell
-//! shown, and a cleared field adds 1,000 less a point a second. The clock
-//! runs from the first reveal, a tick a second, only to count them.
+//! opens ground. Flag a cell you think holds a mine; a shown count with as
+//! many flags around it shows the rest of its neighbours when it is pressed
+//! again (a chord). Showing a mine ends the game, showing every other cell
+//! wins it. The score is a point a cell shown, and a cleared field adds
+//! 1,000 less a point a second. The clock runs from the first reveal, a
+//! tick a second, only to count them.
 use std::collections::VecDeque;
 
 use ducktape_view_guest::prelude::*;
@@ -85,9 +87,15 @@ impl Mines {
 
     /// Shows `(x, y)`: a mine ends the game; a cell with no mine around it
     /// shows its neighbours, and theirs, out to the cells that count one.
+    /// A shown count chords.
     pub(crate) fn reveal(&mut self, (x, y): (i32, i32)) -> bool {
-        if self.over() || self.mark[y as usize][x as usize] != Mark::Hidden {
+        if self.over() {
             return false;
+        }
+        match self.mark[y as usize][x as usize] {
+            Mark::Hidden => {}
+            Mark::Shown => return self.chord((x, y)),
+            Mark::Flagged => return false,
         }
         if !self.laid {
             self.lay((x, y));
@@ -129,6 +137,30 @@ impl Mines {
         true
     }
 
+    /// A shown count with as many flags around it shows each hidden
+    /// neighbour as a press would: a flag in the wrong place leaves a mine
+    /// among them, and that ends the game. A neighbour an earlier one's
+    /// flood showed is passed over, not chorded in turn: a chord opens
+    /// round the count pressed and nowhere else.
+    fn chord(&mut self, at: (i32, i32)) -> bool {
+        let marked = |mark| {
+            neighbours(at)
+                .filter(|(x, y)| self.mark[*y as usize][*x as usize] == mark)
+                .collect::<Vec<_>>()
+        };
+        let near = usize::from(self.near[at.1 as usize][at.0 as usize]);
+        if marked(Mark::Flagged).len() != near {
+            return false;
+        }
+        let mut shown = false;
+        for (x, y) in marked(Mark::Hidden) {
+            if self.mark[y as usize][x as usize] == Mark::Hidden {
+                shown |= self.reveal((x, y));
+            }
+        }
+        shown
+    }
+
     /// Flags a hidden cell, or takes its flag off.
     pub(crate) fn flag(&mut self, (x, y): (i32, i32)) -> bool {
         if self.over() {
@@ -149,14 +181,16 @@ impl Mines {
         true
     }
 
-    /// The arrows move the cursor; Space or Enter shows its cell, F flags it.
-    pub(crate) fn key(&mut self, key: &str) -> bool {
+    /// The arrows move the cursor, held ones on the keyboard's repeat;
+    /// Space or Enter shows its cell, F flags it, once a press.
+    pub(crate) fn key(&mut self, key: &str, repeat: bool) -> bool {
         let (x, y) = self.cursor;
         let step = match key {
             "up" | "w" => (0, -1),
             "down" | "s" => (0, 1),
             "left" | "a" => (-1, 0),
             "right" | "d" => (1, 0),
+            _ if repeat => return false,
             "space" | "enter" => return self.reveal(self.cursor),
             "f" => return self.flag(self.cursor),
             _ => return false,
@@ -470,16 +504,86 @@ mod tests {
     fn the_clock_runs_from_the_first_reveal() {
         let mut mines = Mines::new(5);
         assert_eq!(mines.period(), None);
-        mines.key("space");
+        mines.key("space", false);
         assert_eq!(mines.period(), Some(PERIOD));
+    }
+
+    /// Two mines over a count of two at (1, 1), and a fence of mines that
+    /// stops a flood three rows down.
+    const CHORD: [&str; 4] = ["*.*", "", "", "****************"];
+
+    #[test]
+    fn a_count_pressed_again_with_its_flags_placed_shows_the_rest_around_it() {
+        let mut mines = laid(&CHORD);
+        assert!(mines.press((1, 1), false));
+        assert_eq!(count(&mines, Mark::Shown), 1);
+        mines.flag((0, 0));
+        assert!(!mines.press((1, 1), false), "one flag of two: nothing");
+        assert_eq!(count(&mines, Mark::Shown), 1);
+        mines.flag((2, 0));
+        assert!(mines.press((1, 1), false));
+        // its six other neighbours, each a count
+        assert_eq!(count(&mines, Mark::Shown), 7);
+        assert_eq!(mines.mark[2][0], Mark::Shown);
+        assert!(!mines.over());
+        // the keys chord the same
+        let mut keyed = laid(&CHORD);
+        keyed.cursor = (1, 1);
+        keyed.key("space", false);
+        keyed.flag((0, 0));
+        keyed.flag((2, 0));
+        assert!(keyed.key("space", false));
+        assert_eq!(count(&keyed, Mark::Shown), 7);
+    }
+
+    #[test]
+    fn a_chord_round_a_flag_in_the_wrong_place_shows_the_mine_and_ends_the_game() {
+        let mut mines = laid(&CHORD);
+        mines.reveal((1, 1));
+        mines.flag((0, 0));
+        mines.flag((1, 0));
+        assert!(mines.reveal((1, 1)));
+        assert!(mines.over());
+        assert_eq!(mines.hit, Some((2, 0)));
+        assert_eq!(mines.mark[0][2], Mark::Shown);
+    }
+
+    #[test]
+    fn a_chord_opens_round_the_count_pressed_and_not_round_one_its_flood_showed() {
+        // the chord at (1, 1) floods out from (2, 0) and shows (2, 2), a 1
+        // with a wrong flag at (3, 3) beside it: (2, 2) is not chorded
+        let mut mines = laid(&["*", "", "", "..*", "", "", "****************"]);
+        mines.reveal((1, 1));
+        mines.flag((0, 0));
+        mines.flag((3, 3));
+        assert!(mines.reveal((1, 1)));
+        assert_eq!(mines.mark[2][2], Mark::Shown);
+        assert!(!mines.over());
+        assert_eq!(mines.mark[3][2], Mark::Hidden, "the mine under (2, 2)");
+    }
+
+    #[test]
+    fn a_held_f_or_space_acts_once_and_a_held_arrow_goes_on() {
+        let mut mines = laid(&["*"]);
+        mines.cursor = (0, 0);
+        assert!(mines.key("f", false));
+        for _ in 0..3 {
+            assert!(!mines.key("f", true), "the keyboard's repeat");
+        }
+        assert_eq!(mines.mark[0][0], Mark::Flagged, "one flag, kept");
+        assert!(mines.key("right", true));
+        assert!(mines.key("right", true));
+        assert_eq!(mines.cursor, (2, 0));
+        assert!(!mines.key("space", true));
+        assert_eq!(mines.mark[0][2], Mark::Hidden);
     }
 
     #[test]
     fn the_arrows_move_the_cursor_inside_the_field() {
         let mut mines = Mines::new(5);
         mines.cursor = (0, 0);
-        assert!(!mines.key("left"));
-        assert!(mines.key("right"));
+        assert!(!mines.key("left", false));
+        assert!(mines.key("right", false));
         assert_eq!(mines.cursor, (1, 0));
         assert!(mines.press((4, 5), true));
         assert_eq!(mines.mark[5][4], Mark::Flagged);

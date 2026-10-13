@@ -84,6 +84,27 @@ fn an_ended_game_posts_its_score_once_and_drops_the_clock() {
 }
 
 #[test]
+fn a_key_held_into_the_end_neither_plays_again_nor_goes_back() {
+    let mut opened = seated();
+    opened.start(SNAKE);
+    crash(&mut opened);
+    opened.held("enter");
+    opened.held("escape");
+    assert_eq!(
+        opened.cx.host().requests::<HostId>().len(),
+        1,
+        "no new deal"
+    );
+    shows(&opened.cx, &["Game over", "Play again"]);
+    opened.key("enter");
+    assert_eq!(
+        opened.cx.host().requests::<HostId>().len(),
+        2,
+        "a press does"
+    );
+}
+
+#[test]
 fn without_an_account_an_ended_game_posts_nothing_and_says_so() {
     let mut opened = opened(World::default(), None);
     opened.start(SNAKE);

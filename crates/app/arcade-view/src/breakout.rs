@@ -4,7 +4,8 @@
 //! misses costs one of three lives. A brick of the two bottom rows is 1, of
 //! the middle two 4 and of the top two 7, as Atari counted them. A wall
 //! broken whole is built again, the ball a little faster. The tick is 16
-//! ms, a frame: the paddle moves while an arrow is held, and Space serves.
+//! ms, a frame: the paddle moves while an arrow is held, the newest of two
+//! held, and Space serves.
 //! The field counts in units of 1/16 px, so a tick moves the ball by whole
 //! numbers and the same keys play the same game.
 use ducktape_view_guest::Canvas;
@@ -52,8 +53,9 @@ pub(crate) struct Breakout {
     pub(crate) speed: (i32, i32),
     /// The ball rests on the paddle until Space serves it.
     pub(crate) serving: bool,
-    left: bool,
-    right: bool,
+    /// The arrows held, -1 left and 1 right, the newest last: the paddle
+    /// goes its way.
+    arrows: Vec<i32>,
     serve: bool,
     pub(crate) lives: u8,
     walls: u64,
@@ -69,8 +71,7 @@ impl Breakout {
             ball: (0, 0),
             speed: (0, 0),
             serving: true,
-            left: false,
-            right: false,
+            arrows: Vec::new(),
             serve: false,
             lives: LIVES,
             walls: 0,
@@ -93,20 +94,19 @@ impl Breakout {
 
     /// An arrow held, or Space; read on the next tick.
     pub(crate) fn key_down(&mut self, key: &str) -> bool {
-        match key {
-            "left" | "a" => self.left = true,
-            "right" | "d" => self.right = true,
-            "space" | "up" | "w" => self.serve = true,
-            _ => {}
+        if let Some(arrow) = arrow(key) {
+            self.arrows.retain(|held| *held != arrow);
+            self.arrows.push(arrow);
+        } else if matches!(key, "space" | "up" | "w") {
+            self.serve = true;
         }
         false
     }
 
+    /// An arrow came up: the other, if it is still held, moves the paddle.
     pub(crate) fn key_up(&mut self, key: &str) {
-        match key {
-            "left" | "a" => self.left = false,
-            "right" | "d" => self.right = false,
-            _ => {}
+        if let Some(arrow) = arrow(key) {
+            self.arrows.retain(|held| *held != arrow);
         }
     }
 
@@ -116,7 +116,7 @@ impl Breakout {
         if self.over() {
             return false;
         }
-        let step = PADDLE_STEP * (i32::from(self.right) - i32::from(self.left));
+        let step = PADDLE_STEP * self.arrows.last().copied().unwrap_or(0);
         let paddle = (self.paddle + step).clamp(PADDLE_W / 2, WIDTH - PADDLE_W / 2);
         let moved = paddle != self.paddle;
         self.paddle = paddle;
@@ -262,6 +262,15 @@ impl Breakout {
     }
 }
 
+/// The key's way for the paddle, if it is an arrow.
+fn arrow(key: &str) -> Option<i32> {
+    match key {
+        "left" | "a" => Some(-1),
+        "right" | "d" => Some(1),
+        _ => None,
+    }
+}
+
 /// The hub's picture of the game: a wall with a gap, the ball on its way.
 pub(crate) fn preview(theme: &Theme) -> Canvas {
     let mut drawn = canvas().size_full();
@@ -404,6 +413,24 @@ mod tests {
         breakout.tick();
         assert!(!breakout.serving);
         assert!(breakout.speed.1 < 0);
+    }
+
+    #[test]
+    fn of_two_arrows_held_the_newest_moves_the_paddle_and_up_it_gives_the_other_back() {
+        let mut breakout = Breakout::new(1);
+        let from = breakout.paddle;
+        breakout.key_down("left");
+        breakout.tick();
+        assert_eq!(breakout.paddle, from - PADDLE_STEP);
+        // right goes down before left comes up, as a quick turn does
+        breakout.key_down("right");
+        breakout.tick();
+        assert_eq!(breakout.paddle, from, "it turned at once");
+        breakout.key_up("right");
+        breakout.tick();
+        assert_eq!(breakout.paddle, from - PADDLE_STEP, "left again");
+        breakout.key_up("left");
+        assert!(!breakout.tick(), "none held: it stays");
     }
 
     #[test]
