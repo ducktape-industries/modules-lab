@@ -19,9 +19,9 @@ const GUTTER: f32 = 16.;
 
 /// Every key a game or the screen reads: the board keeps them from the
 /// panes around it.
-const KEYS: [&str; 15] = [
+const KEYS: [&str; 16] = [
     "up", "down", "left", "right", "space", "enter", "escape", "p", "w", "a", "s", "d", "x", "z",
-    "f",
+    "f", "c",
 ];
 
 impl Arcade {
@@ -80,6 +80,9 @@ impl Arcade {
         play.paused = !play.paused;
         // the board is read again for the top ten a pause shows
         if play.paused {
+            if let Some(game) = play.game.ready_mut() {
+                game.let_go();
+            }
             self.read_board(cx);
         }
         self.settle(cx);
@@ -105,7 +108,7 @@ impl Arcade {
         let Some(game) = play.game.ready_mut().filter(|game| !game.over()) else {
             return;
         };
-        if game.key_down(key) {
+        if game.key_down(key, event.is_held) {
             cx.notify();
         }
         self.settle(cx);
@@ -433,19 +436,28 @@ impl Arcade {
             .child(fact("Your best", best))
             .children(facts)
             .children(match game {
-                Some(Game::Tetris(tetris)) => Some(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(design::space::XS)
-                        .child(
-                            div()
-                                .text_size(design::text::CAPTION)
-                                .text_color(theme.muted)
-                                .child("Next"),
-                        )
-                        .child(tetris.draw_next(16., &theme)),
-                ),
+                Some(Game::Tetris(tetris)) => {
+                    let boxed = |label: &'static str, drawn| {
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(design::space::XS)
+                            .child(
+                                div()
+                                    .text_size(design::text::CAPTION)
+                                    .text_color(theme.muted)
+                                    .child(label),
+                            )
+                            .child(drawn)
+                    };
+                    Some(
+                        div()
+                            .flex()
+                            .gap(design::space::LG)
+                            .child(boxed("Hold", tetris.draw_hold(16., &theme)))
+                            .child(boxed("Next", tetris.draw_next(16., &theme))),
+                    )
+                }
                 _ => None,
             })
             .children(game.map(|game| design::quiet(game.keys(), &theme)))

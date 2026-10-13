@@ -36,6 +36,49 @@ fn a_tetris_key_moves_the_piece_on_the_next_tick_and_an_idle_tick_draws_nothing(
 }
 
 #[test]
+fn a_held_arrow_slides_the_tetris_piece_to_the_wall_and_c_puts_it_in_hold() {
+    let mut opened = seated();
+    opened.start(TETRIS);
+    shows(&opened.cx, &["Hold", "Next"]);
+    let piece = |opened: &mut Opened| {
+        opened.game(|game| match game {
+            Game::Tetris(tetris) => (tetris.piece, tetris.hold, tetris.falling()),
+            _ => panic!("tetris is on screen"),
+        })
+    };
+    let (first, _, _) = piece(&mut opened);
+    // down and never up while the clock runs: within half a second
+    opened.key("left");
+    opened.tick(30);
+    let (_, _, cells) = piece(&mut opened);
+    assert_eq!(cells.iter().map(|(x, _)| *x).min(), Some(0), "at the wall");
+    opened.cx.simulate_key_up("arcade-board", "left");
+    opened.key("c");
+    opened.tick(1);
+    let (falling, held, _) = piece(&mut opened);
+    assert_eq!(held, Some(first));
+    assert_ne!(falling, first);
+}
+
+#[test]
+fn a_pause_lets_go_of_a_held_tetris_arrow() {
+    let mut opened = seated();
+    opened.start(TETRIS);
+    let at = |opened: &mut Opened| {
+        opened.game(|game| match game {
+            Game::Tetris(tetris) => tetris.at,
+            _ => panic!("tetris is on screen"),
+        })
+    };
+    let from = at(&mut opened);
+    opened.key("right");
+    opened.key("p");
+    opened.key("p");
+    opened.tick(30);
+    assert_eq!(at(&mut opened), (from.0 + 1, from.1), "the press alone");
+}
+
+#[test]
 fn a_2048_arrow_slides_at_once_and_asks_for_no_clock() {
     let mut opened = seated();
     opened.start(MERGE);
