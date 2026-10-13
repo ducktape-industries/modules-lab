@@ -37,10 +37,10 @@ up) ;;
 bot)
   node=$(ps -ww -p "$(cat "$dir/node.pid")" -o args= | sed 's| run --listen .*||')
   [ -x "$node" ] || die "stage $STAGE's node is not running: make live first"
-  exec cargo run -q -p trade --example bot -- "$node" "$dir" bo
+  DUCKTAPE_PASSWORD=$(cat "$dir/password") exec cargo run -q -p trade --example bot -- "$node" "$dir/home" bo
   ;;
 down)
-  pkill -f "examples/bot .* $dir bo" || :
+  pkill -f "examples/bot .* $dir/home bo" || :
   "$KIT" down "$STAGE" --root "$QA"
   exit
   ;;
