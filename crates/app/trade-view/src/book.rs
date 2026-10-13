@@ -118,6 +118,7 @@ impl Trade {
         let active = self.book_cursor.min(count - 1);
         let step = STEPS[self.step].saturating_mul(self.market().tick);
         let places = format::decimals(step);
+        let sized = format::places(asks.iter().chain(bids).map(|level| level.amount));
         // the asks are listed from the worst down to the best, so the row
         // of the best ask's level `at` is counted from their end
         let row = |side: Side, at: usize, level: &Level, running: u64| {
@@ -149,8 +150,8 @@ impl Trade {
                         .text_color(sided(side, &theme))
                         .child(format::fixed(price, places)),
                 )
-                .child(right().child(format::amount(level.amount)))
-                .child(right().child(format::amount(running)));
+                .child(right().child(format::fixed(level.amount, sized)))
+                .child(right().child(format::fixed(running, sized)));
             design::item(row, Role::ListBoxOption, index == active)
         };
         let running = |levels: &[Level]| {
@@ -309,7 +310,9 @@ impl Trade {
             format!("Amount ({base})"),
             "Time".into(),
         ];
-        let rows = match (&self.trades, self.trades.ready()) {
+        let trades = self.trades.ready();
+        let sized = format::places(trades.into_iter().flatten().map(|trade| trade.amount));
+        let rows = match (&self.trades, trades) {
             (Loadable::Failed(refusal), _) => vec![nothing(refusal.message.clone(), &theme)],
             (_, Some(trades)) if trades.is_empty() => vec![nothing("No trades yet", &theme)],
             (_, Some(trades)) => (trades.iter())
@@ -322,7 +325,7 @@ impl Trade {
                                 .text_color(sided(trade.taker, &theme))
                                 .child(self.price(trade.price)),
                         )
-                        .child(right().child(format::amount(trade.amount)))
+                        .child(right().child(format::fixed(trade.amount, sized)))
                         .child(
                             right()
                                 .text_color(theme.muted)
@@ -357,11 +360,13 @@ fn level_row(theme: &Theme) -> Div {
         .text_size(design::text::MONO)
         .text_color(theme.foreground)
         .whitespace_nowrap()
+        .gap(design::space::SM)
 }
 
-/// A column of figures: its text ends at its right edge.
+/// A column of figures: its text ends at its right edge, and the column is
+/// never narrower than its text, so a long figure never runs into the next.
 fn right() -> Div {
-    div().flex_1().min_w_0().flex().justify_end()
+    div().flex_1().flex().justify_end()
 }
 
 /// What the three columns hold, quiet, over the rows.
@@ -376,6 +381,7 @@ fn column_names(names: [String; 3], theme: &Theme) -> Div {
         .text_size(design::text::CAPTION)
         .text_color(theme.muted)
         .whitespace_nowrap()
+        .gap(design::space::SM)
         .child(div().flex_1().child(first))
         .child(right().child(second))
         .child(right().child(third))

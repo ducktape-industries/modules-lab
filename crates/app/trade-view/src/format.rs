@@ -36,6 +36,13 @@ pub(crate) fn amount(value: u64) -> String {
     fixed(value, 4)
 }
 
+/// The fewest places that write every one of `amounts` exactly: a column
+/// of whole thousands reads `3,000`, not `3,000.0000`. At most the four of
+/// [`amount`], which every amount is a multiple of.
+pub(crate) fn places(amounts: impl IntoIterator<Item = u64>) -> u32 {
+    amounts.into_iter().map(decimals).max().unwrap_or(0).min(4)
+}
+
 /// A sum of a quote asset: two places.
 pub(crate) fn quote(value: u64) -> String {
     fixed(value, 2)
@@ -167,5 +174,21 @@ pub(crate) fn axis(millis: u64) -> String {
     match utc(millis) {
         (month, day, 0, 0, _) => format!("{} {day}", MONTHS[month]),
         (_, _, hour, minute, _) => format!("{hour:02}:{minute:02}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use trade::LOT;
+
+    use super::*;
+
+    #[test]
+    fn a_column_takes_the_places_its_amounts_need() {
+        assert_eq!(places([3_000 * UNIT, 6_000 * UNIT]), 0);
+        assert_eq!(fixed(6_000 * UNIT, places([3_000 * UNIT])), "6,000");
+        assert_eq!(places([UNIT / 20, 3 * UNIT / 20]), 2);
+        assert_eq!(places([UNIT, LOT]), 4);
+        assert_eq!(places([]), 0);
     }
 }
