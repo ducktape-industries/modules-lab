@@ -358,8 +358,9 @@ impl Breakout {
     }
 
     /// Space: the balls on the paddle go, off to the side they sit on, a
-    /// ball on the middle to a side the dice pick. With none there, the
-    /// laser fires if it is on and its last shots are gone.
+    /// ball on the middle to a side the dice pick; one held past the end of
+    /// a paddle that has since shrunk goes as from the end. With none there,
+    /// the laser fires if it is on and its last shots are gone.
     fn space(&mut self) {
         let half = self.half();
         let reach = half + RADIUS;
@@ -368,7 +369,7 @@ impl Breakout {
             let Some(off) = ball.held.take() else {
                 continue;
             };
-            let lean = match off {
+            let lean = match off.clamp(-half, half) {
                 0 if self.rng.below(2) == 0 => -LEAN / 2,
                 0 => LEAN / 2,
                 off => LEAN * off / reach,
@@ -1252,6 +1253,26 @@ mod tests {
         let ball = breakout.balls[0];
         assert_eq!(ball.held, None);
         assert!(ball.way.0 > 0 && ball.way.1 < 0, "{ball:?}");
+    }
+
+    #[test]
+    fn a_ball_held_past_the_end_of_a_paddle_that_shrank_goes_at_the_ends_angle() {
+        // held at the wide paddle's end, then Short ends Wide
+        let wide = HALF * 3 / 2;
+        let mut breakout = flying(WIDTH / 2 + wide, PADDLE_Y - RADIUS - 1, (0, UP));
+        breakout.catch(Item::Wide);
+        breakout.catch(Item::Catch);
+        breakout.tick();
+        assert_eq!(breakout.balls[0].held, Some(wide));
+        breakout.catch(Item::Short);
+        breakout.key_down("space", false);
+        breakout.tick();
+        let short = HALF * 5 / 8;
+        let way = (LEAN * short / (short + RADIUS), -UP);
+        assert_eq!(
+            breakout.balls[0].way, way,
+            "no flatter than a hit on the end"
+        );
     }
 
     #[test]
