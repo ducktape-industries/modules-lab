@@ -7,8 +7,9 @@
 //! starts with.
 //!
 //! As Atari's, the ball quickens after 4 and 12 bricks struck and on
-//! reaching the upper rows, and the paddle halves once the ball reaches
-//! the top wall; both last until the ball is lost or the wall is clear.
+//! reaching the upper rows, until the ball is lost or the wall is clear.
+//! The paddle keeps its width on the top wall: halving it there, as Atari
+//! did, came without a sign and played as a fault.
 //! Each wall serves faster than the last, and each round of eight after the
 //! first takes from the paddle.
 //!
@@ -204,8 +205,6 @@ pub(crate) struct Breakout {
     /// The bricks a ball struck since the serve, and the top row it struck.
     hits: u32,
     top: usize,
-    /// A ball reached the top wall since the serve: the paddle is half.
-    pub(crate) halved: bool,
     /// The arrows held, -1 left and 1 right, the newest last: the paddle
     /// goes its way.
     arrows: Vec<i32>,
@@ -227,7 +226,6 @@ impl Breakout {
             left: [0; 8],
             hits: 0,
             top: ROWS,
-            halved: false,
             arrows: Vec::new(),
             space: false,
             lives: LIVES,
@@ -251,7 +249,6 @@ impl Breakout {
         self.left = [0; 8];
         self.hits = 0;
         self.top = ROWS;
-        self.halved = false;
         self.ride();
     }
 
@@ -269,12 +266,11 @@ impl Breakout {
     pub(crate) fn half(&self) -> i32 {
         let round = (self.stage / stages::COUNT).min(2) as i32;
         let half = HALF - HALF_LESS * round;
-        let half = match (self.on(Item::Wide), self.on(Item::Short)) {
+        match (self.on(Item::Wide), self.on(Item::Short)) {
             (true, _) => half * 3 / 2,
             (_, true) => half * 5 / 8,
             _ => half,
-        };
-        if self.halved { half / 2 } else { half }
+        }
     }
 
     /// The balls' climb a tick, in sixteenths of a px.
@@ -423,7 +419,6 @@ impl Breakout {
         } else if ball.at.1 < r {
             ball.at.1 = r;
             ball.way.1 = UP;
-            self.halved = true;
         }
         self.balls[which] = self.paddled(ball, down);
     }
@@ -1019,22 +1014,11 @@ mod tests {
     }
 
     #[test]
-    fn the_ball_on_the_top_wall_halves_the_paddle_until_the_ball_is_lost() {
+    fn the_ball_on_the_top_wall_leaves_the_paddle_as_wide_as_it_was() {
         let mut breakout = flying(200, RADIUS + 1, (0, -UP));
         assert_eq!(breakout.half(), HALF);
         breakout.tick();
-        assert!(breakout.halved);
-        assert_eq!(breakout.half(), HALF / 2);
-        breakout.balls[0] = Ball {
-            at: (20 * SUB, (HEIGHT - 2) * SUB),
-            way: (0, UP),
-            held: None,
-        };
-        breakout.paddle = WIDTH - HALF;
-        for _ in 0..4 {
-            breakout.tick();
-        }
-        assert_eq!(breakout.lives, LIVES - 1);
+        assert_eq!(breakout.balls[0].way.1, UP, "off the top wall");
         assert_eq!(breakout.half(), HALF);
     }
 
@@ -1321,7 +1305,6 @@ mod tests {
         breakout.catch(Item::Fast);
         breakout.hits = 12;
         breakout.top = 0;
-        breakout.halved = true;
         breakout.shots = vec![(300 * SUB, 300 * SUB)];
         breakout.capsules = vec![Capsule {
             item: Item::Life,
