@@ -15,7 +15,7 @@ const BLURBS: [&str; 5] = [
     "Eat, grow, and keep off your tail.",
     "Slide equal tiles together.",
     "Clear the field without a mine.",
-    "Break the wall with one ball.",
+    "Eight walls, steel and falling items.",
 ];
 
 impl Arcade {
