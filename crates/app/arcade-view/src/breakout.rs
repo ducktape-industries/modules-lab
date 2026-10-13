@@ -67,12 +67,13 @@ const PACE_WALL: i32 = SUB / 4;
 const PACE_UP: i32 = 6;
 const PACE_ITEM: i32 = SUB;
 const PACE_LEAST: i32 = 2 * SUB;
-/// 7 px a tick up or down and 8.75 across at most: a step is shorter than
-/// a brick and the ball together on either axis (20 px down, 40 across),
-/// so the overlap it ends in finds every brick in its way.
+/// 7 px a tick at most, along the ball's way: a step is shorter than a
+/// brick and the ball together on either axis (20 px down, 40 across), so
+/// the overlap it ends in finds every brick in its way.
 const PACE_MOST: i32 = 7 * SUB;
-/// A ball's way a tick for each `UP` of the pace: `UP` up or down, and at
-/// most `LEAN` across.
+/// A ball's way: `UP` up or down, and at most `LEAN` across. Only its
+/// direction counts; the ball goes the pace along it, so a lean turns the
+/// ball and never speeds it.
 pub(crate) const UP: i32 = 16;
 const LEAN: i32 = 20;
 
@@ -400,7 +401,7 @@ impl Breakout {
         }
         let pace = self.pace();
         let (r, w) = (RADIUS * SUB, WIDTH * SUB);
-        let across = pace * ball.way.0 / UP;
+        let across = step(pace, ball.way).0;
         ball.at.0 += across;
         if let Some(brick) = self.struck(ball.at, r) {
             ball.at.0 -= across;
@@ -410,7 +411,7 @@ impl Breakout {
             ball.at.0 = ball.at.0.clamp(r, w - r);
             ball.way.0 = -ball.way.0;
         }
-        let down = pace * ball.way.1 / UP;
+        let down = step(pace, ball.way).1;
         ball.at.1 += down;
         if let Some(brick) = self.struck(ball.at, r) {
             ball.at.1 -= down;
@@ -764,6 +765,13 @@ pub(crate) fn preview(theme: &Theme) -> Canvas {
         .circle(point(px(112.), px(72.)), px(4.), theme.foreground)
 }
 
+/// `pace` along `way`: the step across and down a tick, `pace` long
+/// whatever the lean.
+fn step(pace: i32, (x, y): (i32, i32)) -> (i32, i32) {
+    let length = (x * x + y * y).isqrt().max(1);
+    (pace * x / length, pace * y / length)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -778,6 +786,28 @@ mod tests {
             held: None,
         }];
         breakout
+    }
+
+    #[test]
+    fn a_ball_off_the_paddles_end_goes_no_faster_than_one_off_its_middle() {
+        // the px a ball goes the tick after it meets the paddle `off` px
+        // from the paddle's middle
+        let after = |off: i32| {
+            let mut breakout = flying(200, PADDLE_Y - RADIUS - 1, (0, UP));
+            breakout.paddle = 200 - off;
+            breakout.tick();
+            let from = breakout.balls[0].at;
+            breakout.tick();
+            let (x, y) = breakout.balls[0].at;
+            let (dx, dy) = (f64::from(x - from.0), f64::from(y - from.1));
+            (dx.hypot(dy) / f64::from(SUB), dx)
+        };
+        let ((middle, _), (end, across)) = (after(0), after(HALF));
+        assert!(across > 0., "off the right end it goes right");
+        assert!(
+            (end - middle).abs() < 0.2,
+            "{middle} px a tick off the middle, {end} off the end"
+        );
     }
 
     /// The first wall's bottom, in px.
