@@ -4,7 +4,7 @@ use ducktape_view_guest::{MouseButton, MouseDownEvent, Point, px};
 
 use super::*;
 use crate::mines::{self, Mark};
-use crate::tetris;
+use crate::{merge, tetris};
 
 const TETRIS: usize = 0;
 const MERGE: usize = 2;
@@ -79,22 +79,28 @@ fn a_pause_lets_go_of_a_held_tetris_arrow() {
 }
 
 #[test]
-fn a_2048_arrow_slides_at_once_and_asks_for_no_clock() {
+fn a_2048_arrow_slides_at_once_and_asks_for_the_clock_only_while_tiles_move() {
     let mut opened = seated();
     opened.start(MERGE);
     assert!(opened.clocks().is_empty());
     assert!(!opened.ticks.subscribed());
-    opened.game(|game| match game {
-        Game::Merge(merge) => merge.tiles = [[2, 2, 0, 0], [0; 4], [0; 4], [0; 4]],
-        _ => panic!("2048 is on screen"),
-    });
+    let place = |opened: &mut Opened, tiles| {
+        opened.game(|game| match game {
+            Game::Merge(merge) => merge.tiles = tiles,
+            _ => panic!("2048 is on screen"),
+        })
+    };
+    let tiles = |opened: &mut Opened| {
+        opened.game(|game| match game {
+            Game::Merge(merge) => merge.tiles,
+            _ => panic!("2048 is on screen"),
+        })
+    };
+    place(&mut opened, [[2, 2, 0, 0], [0; 4], [0; 4], [0; 4]]);
     opened.key("left");
-    shows(&opened.cx, &["4", "Best tile"]);
-    let tiles = opened.game(|game| match game {
-        Game::Merge(merge) => merge.tiles,
-        _ => panic!("2048 is on screen"),
-    });
-    assert_eq!(tiles[0][0], 4);
+    // the rules moved with the key; the clock draws the tiles getting there
+    assert_eq!(tiles(&mut opened)[0][0], 4);
+    shows(&opened.cx, &["Best tile", "4"]);
     assert_eq!(
         opened.view.read(|arcade| arcade
             .play
@@ -102,6 +108,39 @@ fn a_2048_arrow_slides_at_once_and_asks_for_no_clock() {
             .map(|play| play.game.ready().map(Game::score))),
         Some(Some(4))
     );
+    assert_eq!(opened.clocks(), [merge::PERIOD]);
+    let renders = opened.cx.renders();
+    let frames = usize::from(merge::FRAMES);
+    opened.tick(frames - 2);
+    assert!(
+        opened.ticks.subscribed(),
+        "the new tile is still popping in"
+    );
+    opened.tick(1);
+    assert!(!opened.ticks.subscribed(), "at rest: no clock");
+    assert_eq!(
+        opened.cx.renders(),
+        renders + frames as u64 - 1,
+        "a frame each"
+    );
+    // a key mid-motion moves at once and keeps the one clock
+    place(&mut opened, [[0, 0, 0, 2], [0; 4], [0; 4], [0; 4]]);
+    opened.key("left");
+    opened.tick(2);
+    place(&mut opened, [[0, 0, 0, 8], [0; 4], [0; 4], [0; 4]]);
+    opened.key("left");
+    assert_eq!(tiles(&mut opened)[0][0], 8);
+    assert_eq!(opened.clocks(), [merge::PERIOD; 2]);
+    opened.tick(frames - 1);
+    assert!(!opened.ticks.subscribed());
+    // a pause lands the tiles, and going on asks for no clock
+    place(&mut opened, [[0, 0, 0, 2], [0; 4], [0; 4], [0; 4]]);
+    opened.key("left");
+    opened.key("p");
+    assert!(!opened.ticks.subscribed());
+    opened.key("p");
+    assert!(!opened.ticks.subscribed(), "nothing left to move");
+    assert_eq!(opened.clocks(), [merge::PERIOD; 3]);
 }
 
 #[test]

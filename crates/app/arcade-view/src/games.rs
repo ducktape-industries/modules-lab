@@ -61,10 +61,11 @@ impl Game {
     }
 
     /// The game pauses or goes off screen: what a key held did stops, as
-    /// its coming up may go elsewhere.
+    /// its coming up may go elsewhere, and 2048's tiles land.
     pub(crate) fn let_go(&mut self) {
         match self {
             Game::Tetris(game) => game.let_go(),
+            Game::Merge(game) => game.motion = None,
             Game::Breakout(game) => {
                 game.key_up("left");
                 game.key_up("right");
@@ -78,19 +79,19 @@ impl Game {
         match self {
             Game::Tetris(game) => game.tick(),
             Game::Snake(game) => game.tick(),
-            Game::Merge(_) => false,
+            Game::Merge(game) => game.tick(),
             Game::Mines(game) => game.tick(),
             Game::Breakout(game) => game.tick(),
         }
     }
 
-    /// The clock's period while the game runs, in milliseconds: none for a
-    /// game that moves only when a key does.
+    /// The clock's period while the game runs, in milliseconds: none while
+    /// nothing moves until a key does.
     pub(crate) fn period(&self) -> Option<i64> {
         match self {
             Game::Tetris(_) => Some(tetris::PERIOD),
             Game::Snake(game) => game.period(),
-            Game::Merge(_) => None,
+            Game::Merge(game) => game.period(),
             Game::Mines(game) => game.period(),
             Game::Breakout(_) => Some(breakout::PERIOD),
         }

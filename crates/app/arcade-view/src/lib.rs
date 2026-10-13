@@ -12,8 +12,9 @@
 //! redraw however far behind the host is, with no time on it, so a tick
 //! is a step and a game counts them. A host that falls behind slows the
 //! game; nothing is skipped. The clock is asked for only while a game
-//! runs: the hub, a paused game, an ended one and a game that moves only
-//! on a key ask for none, so an idle Arcade costs nothing.
+//! runs: the hub, a paused game, an ended one and a game at rest until a
+//! key, as 2048 is between its moves, ask for none, so an idle Arcade
+//! costs nothing.
 mod breakout;
 mod data;
 mod games;
