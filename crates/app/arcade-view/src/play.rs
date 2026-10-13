@@ -10,7 +10,7 @@ use ducktape_view_guest::{AnyElement, Div, FontWeight, Stateful};
 
 use crate::data::Row;
 use crate::games::{Game, seed};
-use crate::{Arcade, Play, Post, breakout, merge, mines, snake, tetris};
+use crate::{Arcade, Play, Post, breakout, dating, merge, mines, snake, tetris};
 
 /// The bar over the board, the panel's width and the room around a board.
 const BAR_H: Pixels = px(44.);
@@ -150,6 +150,19 @@ impl Arcade {
         self.settle(cx);
     }
 
+    /// A click on answer `i` of the dating sim's choice.
+    fn choose(&mut self, i: usize, cx: &mut Context<Self>) {
+        let Some(play) = self.play.as_mut().filter(|play| !play.paused) else {
+            return;
+        };
+        if let Some(Game::Dating(dating)) = play.game.ready_mut()
+            && dating.pick(i)
+        {
+            cx.notify();
+        }
+        self.settle(cx);
+    }
+
     fn key_up(&mut self, event: &KeyUpEvent) {
         if let Some(game) = self.play.as_mut().and_then(|play| play.game.ready_mut()) {
             game.key_up(event.keystroke.key.as_str());
@@ -222,6 +235,9 @@ impl Arcade {
         // Minesweeper's field tells where the host laid it, so a press's
         // place in the window is a cell
         let mines = matches!(play.game.ready(), Some(Game::Mines(_)));
+        // the dating sim's answers are options of the board, which holds
+        // the keys that pick among them
+        let dating = matches!(play.game.ready(), Some(Game::Dating(_)));
         let drawn = match play.game.ready() {
             Some(Game::Mines(field)) => {
                 let measured = cx.listener(|view: &mut Arcade, bounds: &Bounds<Pixels>, _, _| {
@@ -233,6 +249,12 @@ impl Arcade {
                     .on_bounds(measured)
                     .into_any_element()
             }
+            // the dating sim's answers are clicked
+            Some(Game::Dating(dating)) => dating
+                .draw(room, theme, |i| {
+                    cx.listener(move |view: &mut Arcade, _: &ClickEvent, _, cx| view.choose(i, cx))
+                })
+                .into_any_element(),
             Some(game) => draw(game, room, theme),
             None => div().into_any_element(),
         };
@@ -242,10 +264,14 @@ impl Arcade {
             .flex_none()
             .border_1()
             .border_color(theme.border)
-            .role(Role::Figure)
+            .role(if dating { Role::ListBox } else { Role::Figure })
             .aria_label(label)
             .focusable()
-            .consumes_keys(KEYS)
+            // the sim reads 1-3 as well, and the host's sixteen are full
+            .consumes_keys(match play.game.ready() {
+                Some(Game::Dating(_)) => dating::CONSUMED.to_vec(),
+                _ => KEYS.to_vec(),
+            })
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {
                 view.key_down(event, window, cx)
             }))
@@ -565,6 +591,7 @@ fn draw(game: &Game, room: (f32, f32), theme: &Theme) -> AnyElement {
             let scale = (room.0 / width).min(room.1 / height).clamp(0.5, 2.);
             breakout.draw(scale, theme).into_any_element()
         }
+        Game::Dating(_) => unreachable!("the dating sim is drawn with its listeners"),
     }
 }
 
