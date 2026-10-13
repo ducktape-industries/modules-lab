@@ -97,9 +97,10 @@ for program in $PROGRAMS; do
   pack --describe "$dir/programs/$name.wasm" "$RELEASE/$name.describe.wasm" "$dir/programs/$name.wasm"
 done
 cp "$OUT/trade.params" "$dir/programs/trade.params"
-# The browser has no program: its view goes in as it is, a `[[views]]` entry of
-# live/founding.toml.
+# The browser and huddle have no program: each view goes in as it is, a
+# `[[views]]` entry of live/founding.toml.
 cp "$RELEASE/browser_view.wasm" "$dir/programs/browser_view.wasm"
+cp "$RELEASE/huddle_view.wasm" "$dir/programs/huddle_view.wasm"
 
 "$KIT" up "$STAGE" --root "$OUT"
 

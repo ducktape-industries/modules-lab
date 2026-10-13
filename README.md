@@ -12,6 +12,7 @@ moves over as it is.
 | `crates/app/arcade` | the high scores of six classic games: the program |
 | `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, and the boards |
 | `crates/app/browser-view` | a view alone, no program: web pages in tabs on the SDK's `web` piece |
+| `crates/app/huddle-view` | a view alone, no program: check your camera and microphone on the SDK's `camera` and `microphone` pieces |
 
 The SDK is modules `dev` at the rev the app pins (`Cargo.toml`, `sdk-line`).
 The app refuses a view built against another wire, so the pin moves when the
@@ -174,6 +175,33 @@ DUCKTAPE_APP=/path/to/app/target/debug/ducktape-app cargo run -p browser-view --
 
 runs it in the real app over a fake node; the app must be built with its
 `web` feature (CEF); without it the piece only says the build has no web view.
+
+## huddle-view
+
+A view alone, no program: a person checks themselves before a call. Its
+manifest declares `camera` and `microphone` (each gates its piece and its
+device list; the system asks for each apart) and `host` for the log. The
+camera's picture is the host's: the view places the SDK's `camera` piece
+(mirrored unless turned off) and never sees a frame; turning the camera off
+removes the piece, and the host releases the camera with it. The
+microphone's level is a meter the host draws (`microphone` piece), so a
+level never wakes the view. "Record 5 s and play back" asks the host to
+record five seconds and play them on the picked speaker, so nothing loops
+through the speakers; "Hear myself live" loops the microphone straight to
+the speaker, off until switched on, with the headphones warning beside it.
+Pickers list what `camera.devices` and `microphone.devices` answer; a
+refused, busy, vanished or missing device says so and offers Try again
+(the piece under a new id, so the host opens its device again). A host
+without camera and microphone support refuses both lists
+`media_unsupported`, and the view says so instead of placing pieces.
+
+```sh
+DUCKTAPE_APP=/path/to/app/target/debug/ducktape-app cargo run -p huddle-view --example live
+```
+
+runs it in the real app over a fake node; the app must be built with its
+`av` feature (nokhwa and cpal); without it each piece only says the build
+has no camera or microphone.
 
 ## Loop
 
