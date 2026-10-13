@@ -142,14 +142,15 @@ pub(crate) struct Tetris {
     pub(crate) next: Piece,
     /// The piece put aside with C.
     pub(crate) hold: Option<Piece>,
-    /// The piece falling came out of hold: no hold again until it locks.
+    /// Hold was used for the piece falling: no hold again until it locks.
     held: bool,
     bag: Vec<Piece>,
     rng: Rng,
     moves: VecDeque<Move>,
     /// The arrows held to a side, the newest last: the piece slides to it.
     sides: Vec<Move>,
-    /// Ticks the newest of `sides` has been held.
+    /// Ticks since the newest of `sides` went down, or took over from a
+    /// newer one let go.
     charge: u32,
     /// Ticks ↓ has been held.
     soft: Option<u32>,
@@ -525,8 +526,8 @@ impl Tetris {
         piece(Some(self.next), cell, self.next.color(theme))
     }
 
-    /// The piece in hold, as the next is drawn; faint while the piece
-    /// falling came out of it.
+    /// The piece in hold, as the next is drawn; faint once hold is used
+    /// for the piece falling.
     pub(crate) fn draw_hold(&self, cell: f32, theme: &Theme) -> Canvas {
         let color = self
             .hold
