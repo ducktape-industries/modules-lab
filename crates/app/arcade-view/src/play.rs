@@ -10,7 +10,7 @@ use ducktape_view_guest::{AnyElement, Div, FontWeight, Stateful};
 
 use crate::data::Row;
 use crate::games::{Game, seed};
-use crate::{Arcade, Play, Post, breakout, merge, mines, snake, tetris};
+use crate::{Arcade, Play, Post, breakout, invaders, merge, mines, snake, tetris};
 
 /// The bar over the board, the panel's width and the room around a board.
 const BAR_H: Pixels = px(44.);
@@ -564,6 +564,11 @@ fn draw(game: &Game, room: (f32, f32), theme: &Theme) -> AnyElement {
             let (width, height) = (breakout::WIDTH as f32, breakout::HEIGHT as f32);
             let scale = (room.0 / width).min(room.1 / height).clamp(0.5, 2.);
             breakout.draw(scale, theme).into_any_element()
+        }
+        Game::Invaders(invaders) => {
+            let (width, height) = (invaders::WIDTH as f32, invaders::HEIGHT as f32);
+            let scale = (room.0 / width).min(room.1 / height).clamp(0.5, 4.);
+            invaders.draw(scale, theme).into_any_element()
         }
     }
 }

@@ -1,4 +1,4 @@
-//! The five games behind one enum, in [`arcade::GAMES`]' order, and the
+//! The six games behind one enum, in [`arcade::GAMES`]' order, and the
 //! seeded randomness they share. A game is its own rules: it hears keys,
 //! steps on a tick, and says its score and whether it is over. Nothing
 //! here knows the view; the view knows each game's board (`play.rs`).
@@ -6,6 +6,7 @@ use ducktape_view_guest::prelude::*;
 use gpui::{point, size};
 
 use crate::breakout::{self, Breakout};
+use crate::invaders::{self, Invaders};
 use crate::merge::{self, Merge};
 use crate::mines::{self, Mines};
 use crate::snake::{self, Snake};
@@ -20,6 +21,8 @@ pub(crate) enum Game {
     /// Boxed: its field is three grids of 256 cells.
     Mines(Box<Mines>),
     Breakout(Breakout),
+    /// Boxed: its shields are 896 cells.
+    Invaders(Box<Invaders>),
 }
 
 /// What a game shows beside its board under its score: a name and a value.
@@ -33,7 +36,8 @@ impl Game {
             1 => Game::Snake(Snake::new(seed)),
             2 => Game::Merge(Merge::new(seed)),
             3 => Game::Mines(Box::new(Mines::new(seed))),
-            _ => Game::Breakout(Breakout::new(seed)),
+            4 => Game::Breakout(Breakout::new(seed)),
+            _ => Game::Invaders(Box::new(Invaders::new(seed))),
         }
     }
 
@@ -47,15 +51,17 @@ impl Game {
             Game::Merge(game) => game.key(key),
             Game::Mines(game) => game.key(key, repeat),
             Game::Breakout(game) => game.key_down(key, repeat),
+            Game::Invaders(game) => game.key_down(key, repeat),
         }
     }
 
-    /// A key came up on the board: Breakout's paddle stops, and a Tetris
-    /// piece stops sliding or dropping.
+    /// A key came up on the board: Breakout's paddle and the Invaders'
+    /// cannon stop, and a Tetris piece stops sliding or dropping.
     pub(crate) fn key_up(&mut self, key: &str) {
         match self {
             Game::Tetris(game) => game.key_up(key),
             Game::Breakout(game) => game.key_up(key),
+            Game::Invaders(game) => game.key_up(key),
             _ => {}
         }
     }
@@ -70,6 +76,7 @@ impl Game {
                 game.key_up("left");
                 game.key_up("right");
             }
+            Game::Invaders(game) => game.let_go(),
             _ => {}
         }
     }
@@ -82,6 +89,7 @@ impl Game {
             Game::Merge(game) => game.tick(),
             Game::Mines(game) => game.tick(),
             Game::Breakout(game) => game.tick(),
+            Game::Invaders(game) => game.tick(),
         }
     }
 
@@ -94,6 +102,7 @@ impl Game {
             Game::Merge(game) => game.period(),
             Game::Mines(game) => game.period(),
             Game::Breakout(_) => Some(breakout::PERIOD),
+            Game::Invaders(_) => Some(invaders::PERIOD),
         }
     }
 
@@ -104,6 +113,7 @@ impl Game {
             Game::Merge(game) => game.score(),
             Game::Mines(game) => game.score(),
             Game::Breakout(game) => game.score(),
+            Game::Invaders(game) => game.score(),
         }
     }
 
@@ -114,6 +124,7 @@ impl Game {
             Game::Merge(game) => game.over(),
             Game::Mines(game) => game.over(),
             Game::Breakout(game) => game.over(),
+            Game::Invaders(game) => game.over(),
         }
     }
 
@@ -125,6 +136,7 @@ impl Game {
             Game::Merge(game) => game.facts(),
             Game::Mines(game) => game.facts(),
             Game::Breakout(game) => game.facts(),
+            Game::Invaders(game) => game.facts(),
         }
     }
 
@@ -136,6 +148,7 @@ impl Game {
             Game::Merge(_) => merge::KEYS,
             Game::Mines(_) => mines::KEYS,
             Game::Breakout(_) => breakout::KEYS,
+            Game::Invaders(_) => invaders::KEYS,
         }
     }
 }

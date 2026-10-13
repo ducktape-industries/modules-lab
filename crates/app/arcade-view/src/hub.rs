@@ -3,19 +3,20 @@
 use ducktape_view_guest::prelude::*;
 use ducktape_view_guest::{Canvas, Div, FontWeight, Stateful};
 
-use crate::{Arcade, breakout, merge, mines, snake, tetris};
+use crate::{Arcade, breakout, invaders, merge, mines, snake, tetris};
 
 /// A card's width and its picture's height.
 const CARD_W: Pixels = px(208.);
 const PICTURE_H: Pixels = px(120.);
 
 /// What each game is, in a line, in [`arcade::GAMES`]' order.
-const BLURBS: [&str; 5] = [
+const BLURBS: [&str; 6] = [
     "Fill rows to clear them.",
     "Eat, grow, and keep off your tail.",
     "Slide equal tiles together.",
     "Clear the field without a mine.",
     "Eight walls, steel and falling items.",
+    "Shoot the march down before it lands.",
 ];
 
 impl Arcade {
@@ -123,6 +124,7 @@ fn picture(which: usize, theme: &Theme) -> Canvas {
         1 => snake::preview(theme),
         2 => merge::preview(theme),
         3 => mines::preview(theme),
-        _ => breakout::preview(theme),
+        4 => breakout::preview(theme),
+        _ => invaders::preview(theme),
     }
 }

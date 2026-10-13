@@ -9,8 +9,8 @@ moves over as it is.
 |---|---|
 | `crates/app/trade` | spot markets for practice funds: the program, its types on the wire and its tables |
 | `crates/app/trade-view` | its view: a trading terminal on the view SDK as it is |
-| `crates/app/arcade` | the high scores of five classic games: the program |
-| `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper and Breakout, and the boards |
+| `crates/app/arcade` | the high scores of six classic games: the program |
+| `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, and the boards |
 | `crates/app/browser-view` | a view alone, no program: web pages in tabs on the SDK's `web` piece |
 
 The SDK is modules `dev` at the rev the app pins (`Cargo.toml`, `sdk-line`).
@@ -104,12 +104,13 @@ The boards are practice, a place to compare, not proof of anything.
 
 ## arcade-view
 
-A hub of five cards, each a button with the game's name, a line of what it
+A hub of six cards, each a button with the game's name, a line of what it
 is, a still picture and the reader's best; pressed, the game starts with
 its board taking the keys. A game is its board, a panel with the score,
 the reader's best and the game's own facts (Tetris's level, lines, hold
 and next three pieces; Snake's length; 2048's best tile; Minesweeper's
-mines left and time; Breakout's stage, lives and items on), and a pause. Paused or
+mines left and time; Breakout's stage, lives and items on; Invaders' lives
+and wave), and a pause. Paused or
 over, an overlay lies on the board and the panel shows the game's top ten,
 each account by the name identity gives it, by its number where it has
 none. An ended game's score is sent once when an account is seated,
@@ -118,24 +119,34 @@ says what the node answered, sent or refused and why. Without an account
 the games play and the score stays on the screen.
 
 Each game is one file of its rules and its drawing: `tetris.rs`,
-`snake.rs`, `merge.rs` (2048), `mines.rs`, `breakout.rs`. A game is dealt
+`snake.rs`, `merge.rs` (2048), `mines.rs`, `breakout.rs`, `invaders.rs`
+(Space Invaders, named `Invaders` on the board). A game is dealt
 from the id the host mints for it (`host.id`), so the same id deals the
 same game, and every rule is tested with a seed. Tetris takes from the
 Tetris Guideline what the NES lacks: SRS's turns and kick tables (the I
 has its own), a landed piece that locks after half a second (31 ticks), a
 move or a turn on the ground that starts that half second again, 15 times
 a piece at most (the 16th locks it), and a hard drop that locks at once.
+Invaders keeps the 1978 arcade's rules: the rack moves one invader a tick,
+so it quickens as it thins; one cannon shot at a time and one per press of
+Space; three kinds of invader shot, one aimed, on the arcade's reload
+table; shields that wear away cell by cell; the mystery ship worth the
+arcade's table entry for the shots fired; a life at 1,500; each wave
+starting lower. It draws its rack as a canvas an invader, so a tick that
+moves one sends that canvas and the shots' (about 2 kB), not the field.
 
 The SDK's clock (`clock.ticks`) gives one item per redraw however far
 behind the host is, with no time on it: a tick is a step, and a host that
-falls behind slows a game rather than skipping it. Tetris and Breakout
-tick every 16 ms and count ticks for gravity and the ball; Snake waits for
+falls behind slows a game rather than skipping it. Tetris, Breakout and
+Invaders tick every 16 ms and count ticks for gravity, the ball and the
+march; Snake waits for
 the first arrow, then its tick is its step, 160 ms quickening to 70;
 Minesweeper's clock counts seconds from
 the first reveal; 2048 asks for none. The clock is asked for only while a
 game runs: the hub, a paused game and an ended one ask for nothing, and a
-game pauses when the view leaves the screen. Tetris, Snake and Breakout
-read a key on their next tick; 2048 and Minesweeper act on it at once.
+game pauses when the view leaves the screen. Tetris, Snake, Breakout and
+Invaders read a key on their next tick; 2048 and Minesweeper act on it at
+once.
 
 ## browser-view
 
