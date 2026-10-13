@@ -275,3 +275,18 @@ fn a_host_without_media_says_so() {
     assert!(cx.has_text("This build of the app has no camera or microphone support."));
     assert!(camera_piece(&cx).is_none() && mic_piece(&cx).is_none());
 }
+
+/// Two devices of one name are told apart by their ids.
+#[test]
+fn a_shared_name_shows_its_id() {
+    let devices = [
+        device("alsa:hw:CARD=Loopback,DEV=0", "Loopback PCM", false),
+        device("alsa:hw:CARD=Loopback,DEV=1", "Loopback PCM", false),
+        device("alsa:default", "Default Audio Device", true),
+    ];
+    assert_eq!(
+        crate::shown(&devices, &devices[1]),
+        "Loopback PCM · alsa:hw:CARD=Loopback,DEV=1"
+    );
+    assert_eq!(crate::shown(&devices, &devices[2]), "Default Audio Device");
+}

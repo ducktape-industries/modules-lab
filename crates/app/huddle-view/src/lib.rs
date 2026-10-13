@@ -486,9 +486,9 @@ fn failure<T>(list: &Loadable<T>) -> Option<String> {
     }
 }
 
-/// One device picker: the devices side by side, the picked one (else the
-/// system's default) filled. Nothing listed: says why, or that there is
-/// none.
+/// One device picker: the devices one under another (names run long), the
+/// picked one (else the system's default) filled; a radio group, one Tab
+/// stop, the arrows pick. Nothing listed: says why, or that there is none.
 fn picker(
     id: &'static str,
     label: &'static str,
@@ -498,39 +498,68 @@ fn picker(
     theme: &Theme,
     pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
 ) -> Div {
-    let row = div()
-        .flex()
-        .flex_wrap()
-        .items_center()
-        .gap(design::space::MD)
-        .child(
-            div()
-                .w(px(88.))
-                .flex_none()
-                .font_weight(FontWeight::MEDIUM)
-                .child(label),
-        );
+    let theme = *theme;
+    let column = div().flex().flex_col().gap(design::space::XS).child(
+        div()
+            .text_size(design::text::SECONDARY)
+            .font_weight(FontWeight::MEDIUM)
+            .child(label),
+    );
     if devices.is_empty() {
-        return row.child(design::quiet(failed.unwrap_or("None found".into()), theme));
+        return column.child(design::quiet(failed.unwrap_or("None found".into()), &theme));
     }
     let at = devices
         .iter()
         .position(|device| Some(device.id.as_str()) == picked)
         .or_else(|| devices.iter().position(|device| device.default));
-    let choices = devices.iter().enumerate().map(|(index, device)| {
-        (
-            ElementId::from(SharedString::from(format!("{id}-{index}"))),
-            SharedString::from(device.name.clone()),
-        )
+    let active = at.unwrap_or(0);
+    let pick = std::rc::Rc::new(pick);
+    let moved = pick.clone();
+    let rows = devices.iter().enumerate().map(|(index, device)| {
+        let pick = pick.clone();
+        let selected = at == Some(index);
+        let row = div()
+            .id(SharedString::from(format!("{id}-{index}")))
+            .px(design::space::MD)
+            .py(design::space::XS)
+            .text_size(design::text::SECONDARY)
+            .map(|row| match selected {
+                true => row.bg(theme.primary).text_color(theme.primary_foreground),
+                false => row
+                    .text_color(theme.muted)
+                    .hover(move |style| style.text_color(theme.foreground)),
+            })
+            .role(Role::RadioButton)
+            .aria_toggled(selected.into())
+            .on_click(move |_, window, app| pick(&index, window, app))
+            .child(shown(devices, device));
+        design::item(row, Role::RadioButton, index == active)
     });
-    row.child(design::segmented(
-        id,
-        label,
-        theme,
-        at,
-        choices,
-        move |index, window, app| pick(&index, window, app),
-    ))
+    column.child(
+        design::composite(id, Role::RadioGroup, label)
+            .orientation(design::Orientation::Vertical)
+            .active(active, devices.len())
+            .on_move(move |index, window, app| moved(&index, window, app))
+            .build()
+            .flex()
+            .flex_col()
+            .border_1()
+            .border_color(theme.border)
+            .children(rows),
+    )
+}
+
+/// A device's name, with its id beside it where another device shares
+/// the name (a sound card's devices often do).
+pub(crate) fn shown(devices: &[Device], device: &Device) -> String {
+    match devices
+        .iter()
+        .filter(|other| other.name == device.name)
+        .count()
+    {
+        1 => device.name.clone(),
+        _ => format!("{} · {}", device.name, device.id),
+    }
 }
 
 export_view!(Huddle);
