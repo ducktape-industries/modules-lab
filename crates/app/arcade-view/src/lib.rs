@@ -1,12 +1,13 @@
-//! Arcade: five classic games, Tetris, Snake, 2048, Minesweeper and
-//! Breakout, and a board of the best scores the `arcade` program keeps
-//! for everyone on the network.
+//! Arcade: six classic games, Tetris, Snake, 2048, Minesweeper, Breakout
+//! and Space Invaders, and a board of the best scores the `arcade` program
+//! keeps for everyone on the network.
 //!
 //! The hub (`hub.rs`) lists the games; a game (`play.rs`) is its board,
 //! a panel of its score, the reader's best and the game's own facts, and,
 //! paused or over, an overlay and the top ten. Each game is one file of
 //! its rules and its board's drawing (`tetris.rs`, `snake.rs`, `merge.rs`
-//! for 2048, `mines.rs`, `breakout.rs`), behind one enum (`games.rs`). `data.rs` is everything the view follows and asks.
+//! for 2048, `mines.rs`, `breakout.rs`, `invaders.rs`), behind one enum
+//! (`games.rs`). `data.rs` is everything the view follows and asks.
 //!
 //! A game runs on the host's clock: `clock.ticks` delivers one item per
 //! redraw however far behind the host is, with no time on it, so a tick
@@ -19,6 +20,7 @@ mod breakout;
 mod data;
 mod games;
 mod hub;
+mod invaders;
 mod merge;
 mod mines;
 mod play;
@@ -87,8 +89,7 @@ pub(crate) enum Post {
 
 impl View for Arcade {
     const NAME: &'static str = "Arcade";
-    const DESCRIPTION: &'static str =
-        "Tetris, Snake, 2048, Minesweeper and Breakout, with a board of everyone's best scores.";
+    const DESCRIPTION: &'static str = "Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, with a board of everyone's best scores.";
     const ICON: &'static str = "icons/gamepad-2.svg";
     const CAPABILITIES: &'static [Capability] = &[
         Capability::Module,

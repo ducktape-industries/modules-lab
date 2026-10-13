@@ -70,19 +70,19 @@ fn a_higher_score_becomes_the_best_and_one_at_or_under_it_changes_nothing() {
     let mut hall = Hall::default();
     assert_eq!(hall.bests(ADA), [0; GAMES.len()]);
     hall.ok(ADA, TETRIS, 1_200);
-    assert_eq!(hall.bests(ADA), [1_200, 0, 0, 0, 0]);
+    assert_eq!(hall.bests(ADA), [1_200, 0, 0, 0, 0, 0]);
     let kept = hall.store.borrow().state.clone();
     for lower in [1_200, 800, 0] {
         hall.ok(ADA, TETRIS, lower);
         assert_eq!(hall.store.borrow().state, kept, "{lower}: nothing written");
     }
     hall.ok(ADA, TETRIS, 4_000);
-    assert_eq!(hall.bests(ADA), [4_000, 0, 0, 0, 0]);
+    assert_eq!(hall.bests(ADA), [4_000, 0, 0, 0, 0, 0]);
     // the board holds the new best alone: the old row went with it
     assert_eq!(hall.top(TETRIS, MAX_TOP), [(ADA, 4_000)]);
     // a game is its own
     hall.ok(ADA, SNAKE, 90);
-    assert_eq!(hall.bests(ADA), [4_000, 90, 0, 0, 0]);
+    assert_eq!(hall.bests(ADA), [4_000, 90, 0, 0, 0, 0]);
     assert_eq!(hall.bests(BO), [0; GAMES.len()]);
 }
 
@@ -168,7 +168,7 @@ fn an_op_reads_as_a_person_would_say_it() {
         game: SNAKE,
         score: 340,
     });
-    assert_eq!(said.title, "Post a Snake score");
+    assert_eq!(said.title, "Post a score in Snake");
     assert_eq!(
         said.fields,
         [
@@ -176,6 +176,9 @@ fn an_op_reads_as_a_person_would_say_it() {
             field("score", Value::count(340)),
         ]
     );
+    // any name reads right
+    let invaders = describe(&Op::Score { game: 5, score: 1 });
+    assert_eq!(invaders.title, "Post a score in Invaders");
     let nowhere = describe(&Op::Score { game: 9, score: 1 });
-    assert_eq!(nowhere.title, "Post a game 9 score");
+    assert_eq!(nowhere.title, "Post a score in game 9");
 }
