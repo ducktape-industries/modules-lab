@@ -4,8 +4,8 @@
 //! drop is 1 and a cell of hard drop 2. Ten rows clear a level, and the
 //! level sets how many ticks a row of fall takes, 48 at level 0 down to
 //! one from level 29. The tick is 16 ms, a frame: the pieces come from a
-//! shuffled bag of the seven, each once a bag. A key is read on the next
-//! tick. The rest is the Tetris Guideline's: a turn that does not fit
+//! shuffled bag of the seven, each once a bag, and the panel shows the
+//! next three. A key is read on the next tick. The rest is the Tetris Guideline's: a turn that does not fit
 //! tries SRS's kicks, the I its own; a piece that lands locks after half a
 //! second, which a move or a turn on the ground starts again, 15 times a
 //! piece at most (the 16th locks it); a hard drop locks at once; C puts
@@ -35,6 +35,8 @@ const GRAVITY: [u32; 29] = [
 const CLEARED: [u64; 5] = [0, 40, 100, 300, 1200];
 /// The keys that may wait for a tick.
 const WAITING: usize = 8;
+/// The pieces the panel shows coming.
+const NEXT: usize = 3;
 /// SRS's kicks for a clockwise turn out of each of the four states, as the
 /// Guideline writes them (x right, y up); a turn back out of state s + 1
 /// tries the same, negated. The first that fits is the turn.
@@ -139,7 +141,8 @@ pub(crate) struct Tetris {
     pub(crate) turn: u8,
     /// The top left corner of the falling piece's box.
     pub(crate) at: (i32, i32),
-    pub(crate) next: Piece,
+    /// The pieces coming, the first next.
+    pub(crate) next: [Piece; NEXT],
     /// The piece put aside with C.
     pub(crate) hold: Option<Piece>,
     /// Hold was used for the piece falling: no hold again until it locks.
@@ -173,7 +176,7 @@ impl Tetris {
             piece: Piece::I,
             turn: 0,
             at: (0, 0),
-            next: Piece::I,
+            next: [Piece::I; NEXT],
             hold: None,
             held: false,
             bag: Vec::new(),
@@ -190,7 +193,7 @@ impl Tetris {
             score: 0,
             over: false,
         };
-        tetris.next = tetris.draw_bag();
+        tetris.next = std::array::from_fn(|_| tetris.draw_bag());
         tetris.spawn();
         tetris
     }
@@ -208,10 +211,12 @@ impl Tetris {
         self.bag.pop().expect("a filled bag")
     }
 
-    /// The next piece at the top of the well.
+    /// The next piece at the top of the well, and one more from the bag
+    /// at the end of those coming.
     fn spawn(&mut self) {
-        let next = self.next;
-        self.next = self.draw_bag();
+        let next = self.next[0];
+        self.next.rotate_left(1);
+        self.next[NEXT - 1] = self.draw_bag();
         self.held = false;
         self.enter(next);
     }
@@ -521,19 +526,35 @@ impl Tetris {
         drawn
     }
 
-    /// The next piece, in a box of four by two cells of `cell` px.
+    /// The pieces coming, the first on top, each in a box of four by two
+    /// cells of `cell` px and half a cell apart.
     pub(crate) fn draw_next(&self, cell: f32, theme: &Theme) -> Canvas {
-        piece(Some(self.next), cell, self.next.color(theme))
+        let drawn = canvas()
+            .w(px(4. * cell))
+            .h(px((2.5 * NEXT as f32 - 0.5) * cell));
+        (0..).zip(self.next).fold(drawn, |drawn, (at, coming)| {
+            piece(
+                drawn,
+                coming,
+                cell,
+                2.5 * at as f32 * cell,
+                coming.color(theme),
+            )
+        })
     }
 
-    /// The piece in hold, as the next is drawn; faint once hold is used
+    /// The piece in hold, as one coming is drawn; faint once hold is used
     /// for the piece falling.
     pub(crate) fn draw_hold(&self, cell: f32, theme: &Theme) -> Canvas {
-        let color = self
-            .hold
-            .filter(|_| !self.held)
-            .map_or(theme.border_strong, |held| held.color(theme));
-        piece(self.hold, cell, color)
+        let drawn = canvas().w(px(4. * cell)).h(px(2. * cell));
+        let Some(held) = self.hold else {
+            return drawn;
+        };
+        let color = match self.held {
+            true => theme.border_strong,
+            false => held.color(theme),
+        };
+        piece(drawn, held, cell, 0., color)
     }
 }
 
@@ -551,19 +572,15 @@ fn read(key: &str) -> Option<Move> {
     })
 }
 
-/// `shown` unturned in `color`, `cell` px a cell, in a box of four by two
-/// cells; none is the empty box.
-fn piece(shown: Option<Piece>, cell: f32, color: Hsla) -> Canvas {
-    let mut drawn = canvas().w(px(4. * cell)).h(px(2. * cell));
-    let Some(shown) = shown else {
-        return drawn;
-    };
+/// `shown` unturned in `color` on `drawn`, `cell` px a cell, in a box of
+/// four by two cells `top` px down.
+fn piece(mut drawn: Canvas, shown: Piece, cell: f32, top: f32, color: Hsla) -> Canvas {
     // the I lies in its box's second row: drawn a row up
     let up = i32::from(shown == Piece::I);
     for (x, y) in shown.cells(0) {
         let at = square(
             x as f32 * cell + 1.,
-            (y - up) as f32 * cell + 1.,
+            top + (y - up) as f32 * cell + 1.,
             cell - 2.,
             cell - 2.,
         );
@@ -953,7 +970,7 @@ mod tests {
     #[test]
     fn c_puts_the_piece_in_hold_once_a_piece_and_brings_it_back_unturned_at_the_top() {
         let mut tetris = with(Piece::T);
-        let next = tetris.next;
+        let next = tetris.next[0];
         tetris.turn = 1;
         tetris.at = (5, 7);
         tetris.tap("c");
@@ -976,6 +993,26 @@ mod tests {
             (Piece::T, Some(falling), (3, 0)),
             "a new piece holds again and takes the T back"
         );
+    }
+
+    #[test]
+    fn the_panel_shows_three_coming_and_they_come_in_that_order() {
+        let mut tetris = Tetris::new(9);
+        let coming = tetris.next;
+        assert_eq!(coming.len(), 3);
+        let mut came = Vec::new();
+        for _ in 0..3 {
+            tetris.tap("space");
+            tetris.tick();
+            came.push(tetris.piece);
+        }
+        assert_eq!(came, coming);
+        // one held comes from the first in line, and the line moves up
+        let after = tetris.next;
+        tetris.tap("c");
+        tetris.tick();
+        assert_eq!(tetris.piece, after[0]);
+        assert_eq!(tetris.next[..2], after[1..]);
     }
 
     #[test]
