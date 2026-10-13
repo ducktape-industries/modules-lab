@@ -479,7 +479,9 @@ impl Invaders {
         };
         let y = y - CLIMB;
         self.shot = Some((x, y));
-        let area = (whole(x), whole(y), 1, SHOT_H);
+        // where it is and where it was: an invader or the ship that stepped
+        // onto it since is struck, not passed through
+        let area = (whole(x), whole(y), 1, SHOT_H + whole(CLIMB));
         let ship = self
             .ship
             .map(|(left, _)| whole(left))
@@ -997,6 +999,29 @@ mod tests {
         invaders.tick();
         assert!(invaders.shot.is_some());
         assert_eq!(invaders.fired, 2);
+    }
+
+    #[test]
+    fn an_invader_that_steps_onto_the_shot_is_struck() {
+        // the bottom left steps down onto the shot just under it
+        let mut invaders = Invaders::new(1);
+        invaders.rack.0 = WIDTH - COLS as i32 * SLOT;
+        let (x, y, w, h) = invaders.area(4, 0);
+        invaders.shot = Some(((x + w / 2) * SUB, (y + h + SHOT_H) * SUB));
+        invaders.tick();
+        assert!(invaders.alive[4][0], "it stepped down onto the shot");
+        invaders.tick();
+        assert!(!invaders.alive[4][0]);
+        // the next one steps aside onto the shot at its height
+        let mut invaders = Invaders::new(1);
+        invaders.tick();
+        let (x, y, w, _) = invaders.area(4, 1);
+        invaders.shot = Some(((x + w) * SUB, (y + SHOT_H) * SUB));
+        invaders.tick();
+        assert!(invaders.alive[4][1], "it stepped aside onto the shot");
+        invaders.tick();
+        assert!(!invaders.alive[4][1]);
+        assert_eq!(invaders.score(), 10);
     }
 
     #[test]

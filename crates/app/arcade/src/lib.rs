@@ -91,7 +91,7 @@ pub fn describe(op: &Op) -> describe::Description {
                 None => format!("game {game}"),
             };
             (
-                format!("Post a {game} score"),
+                format!("Post a score in {game}"),
                 vec![
                     field("game", Value::text(&game)),
                     field("score", Value::count(*score)),

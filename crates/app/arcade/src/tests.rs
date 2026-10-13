@@ -168,7 +168,7 @@ fn an_op_reads_as_a_person_would_say_it() {
         game: SNAKE,
         score: 340,
     });
-    assert_eq!(said.title, "Post a Snake score");
+    assert_eq!(said.title, "Post a score in Snake");
     assert_eq!(
         said.fields,
         [
@@ -176,6 +176,9 @@ fn an_op_reads_as_a_person_would_say_it() {
             field("score", Value::count(340)),
         ]
     );
+    // any name reads right
+    let invaders = describe(&Op::Score { game: 5, score: 1 });
+    assert_eq!(invaders.title, "Post a score in Invaders");
     let nowhere = describe(&Op::Score { game: 9, score: 1 });
-    assert_eq!(nowhere.title, "Post a game 9 score");
+    assert_eq!(nowhere.title, "Post a score in game 9");
 }
