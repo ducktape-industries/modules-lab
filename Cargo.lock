@@ -1915,6 +1915,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "huddle-view"
+version = "0.1.0"
+dependencies = [
+ "ducktape-view-guest",
+ "serde",
+]
+
+[[package]]
 name = "hybrid-array"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
