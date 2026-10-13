@@ -19,6 +19,7 @@ use program::role::Identity;
 use crate::games::Game;
 use crate::{Arcade, Post};
 
+mod breakout;
 mod games;
 mod snake;
 

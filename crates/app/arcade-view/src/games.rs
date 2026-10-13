@@ -46,7 +46,7 @@ impl Game {
             Game::Snake(game) => game.key(key),
             Game::Merge(game) => game.key(key),
             Game::Mines(game) => game.key(key, repeat),
-            Game::Breakout(game) => game.key_down(key),
+            Game::Breakout(game) => game.key_down(key, repeat),
         }
     }
 

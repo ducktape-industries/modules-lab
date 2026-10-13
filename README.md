@@ -109,7 +109,7 @@ is, a still picture and the reader's best; pressed, the game starts with
 its board taking the keys. A game is its board, a panel with the score,
 the reader's best and the game's own facts (Tetris's level, lines, hold
 and next three pieces; Snake's length; 2048's best tile; Minesweeper's
-mines left and time; Breakout's lives and wall), and a pause. Paused or
+mines left and time; Breakout's stage, lives and items on), and a pause. Paused or
 over, an overlay lies on the board and the panel shows the game's top ten,
 each account by the name identity gives it, by its number where it has
 none. An ended game's score is sent once when an account is seated,
