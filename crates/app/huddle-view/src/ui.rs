@@ -382,16 +382,25 @@ fn settings(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<
                 ))
                 .child(meter(view, cx, &theme)),
         )
-        .child(field(
-            "Speaker",
-            div()
-                .flex()
-                .items_center()
-                .gap(design::space::XS)
-                .child(picker(view, Which::Speaker, SPEAKER, cx, &theme).flex_1())
-                .child(speaker_test(view, cx, &theme)),
-            &theme,
-        ))
+        .child(
+            field(
+                "Speaker",
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(design::space::XS)
+                    .child(picker(view, Which::Speaker, SPEAKER, cx, &theme).flex_1())
+                    .child(speaker_test(view, cx, &theme)),
+                &theme,
+            )
+            .children(view.speaker_fault.as_ref().map(|why| {
+                div()
+                    .id("huddle-speaker-fault")
+                    .text_size(design::text::CAPTION)
+                    .text_color(theme.muted)
+                    .child(format!("Test failed: {why}."))
+            })),
+        )
         .child(div().h(px(1.)).flex_none().bg(theme.border))
         .child(record(view, cx, &theme))
         .child(monitor(view, cx, &theme))
@@ -529,9 +538,11 @@ fn mic_trouble(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Statef
         .child(actions(Device::Microphone, state, cx, theme))
 }
 
-/// Test: the host's chime on the picked speaker.
+/// Test: the host's chime on the picked speaker; muted or with the
+/// microphone in trouble too (an output, apart from the microphone), not
+/// over a recording's playback.
 fn speaker_test(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
-    let enabled = view.mic_live() && view.mic_state.playback == Playback::Idle && !view.chiming;
+    let enabled = view.mic_state.playback == Playback::Idle && !view.chiming;
     outline(
         "huddle-speaker-test",
         None,
@@ -542,11 +553,7 @@ fn speaker_test(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> State
         },
         enabled,
         theme,
-        cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
-            view.chiming = true;
-            view.recorder.chime();
-            cx.notify();
-        }),
+        cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.chime(cx)),
     )
     .flex_none()
 }
@@ -554,7 +561,7 @@ fn speaker_test(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> State
 /// Record five seconds and hear them back, and the line under it.
 fn record(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
     let playback = view.mic_state.playback.clone();
-    let under_way = playback != Playback::Idle && !view.chiming;
+    let under_way = playback != Playback::Idle;
     let (icon, label) = match (&playback, under_way) {
         (Playback::Recording, true) => (STOP, "Stop".to_owned()),
         (Playback::Playing, true) => (STOP, "Stop playback".to_owned()),
@@ -578,7 +585,7 @@ fn record(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
     .w_full()
     .justify_start();
     let line: AnyElement = match (&playback, under_way) {
-        _ if view.muted => caption("Unmute to test your microphone and speaker.", theme),
+        _ if view.muted => caption("Unmute to test your microphone.", theme),
         (Playback::Recording, true) => {
             let since = view.recording_since.unwrap_or(view.ticks);
             let left = u64::from(RECORD_SECONDS)
