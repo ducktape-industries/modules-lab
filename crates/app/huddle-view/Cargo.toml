@@ -11,6 +11,8 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ducktape-view-guest.workspace = true
+# `relative` for the view's line height, which the SDK does not re-export
+gpui.workspace = true
 serde.workspace = true
 
 [dev-dependencies]
