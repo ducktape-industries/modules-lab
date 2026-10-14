@@ -89,12 +89,12 @@ cargo run -q -p trade --example seed -- "$OUT/trade.params" "$OUT/seed"
 "$KIT" build "$STAGE" --root "$OUT"
 
 # Each program as a founding takes it: its view (<program>-view), then its describe
-# module, packed in.
-pack() { cargo run -q -p view-pack --manifest-path "$QA/Cargo.toml" -- "$@"; }
+# module, each a custom section (`live/pack.py`).
+pack() { python3 live/pack.py "$@"; }
 for program in $PROGRAMS; do
   name=$(echo "$program" | tr - _)
-  pack "$RELEASE/$name.wasm" "$RELEASE/${name}_view.wasm" "$dir/programs/$name.wasm"
-  pack --describe "$dir/programs/$name.wasm" "$RELEASE/$name.describe.wasm" "$dir/programs/$name.wasm"
+  pack ducktape.view "$RELEASE/$name.wasm" "$RELEASE/${name}_view.wasm" "$dir/programs/$name.wasm"
+  pack ducktape.describe "$dir/programs/$name.wasm" "$RELEASE/$name.describe.wasm" "$dir/programs/$name.wasm"
 done
 cp "$OUT/trade.params" "$dir/programs/trade.params"
 # The browser has no program: its view goes in as it is, a `[[views]]` entry of
