@@ -155,6 +155,15 @@ impl Opened {
         self.cx.simulate_key_down("arcade-board", keystroke);
     }
 
+    /// The modifier keys down on the board become `modifiers`.
+    pub(crate) fn modifiers(&mut self, modifiers: gpui::Modifiers) {
+        let event = gpui::ModifiersChangedEvent {
+            modifiers,
+            capslock: gpui::Capslock { on: false },
+        };
+        self.cx.simulate_modifiers_changed("arcade-board", event);
+    }
+
     /// The keyboard repeats `keystroke`, held down on the board.
     pub(crate) fn held(&mut self, keystroke: &str) {
         let handler = self.cx.interactivity("arcade-board").on_key_down;

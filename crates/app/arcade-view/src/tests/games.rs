@@ -61,6 +61,51 @@ fn a_held_arrow_slides_the_tetris_piece_to_the_wall_and_c_puts_it_in_hold() {
 }
 
 #[test]
+fn shift_alone_holds_as_c_does_once_a_piece_and_only_as_it_goes_down() {
+    let mut opened = seated();
+    opened.start(TETRIS);
+    let piece = |opened: &mut Opened| {
+        opened.game(|game| match game {
+            Game::Tetris(tetris) => (tetris.piece, tetris.hold),
+            _ => panic!("tetris is on screen"),
+        })
+    };
+    let (first, _) = piece(&mut opened);
+    opened.modifiers(gpui::Modifiers::shift());
+    opened.tick(1);
+    let (second, held) = piece(&mut opened);
+    assert_eq!(held, Some(first), "Shift put the first piece in hold");
+    // up and down again: hold is used for this piece
+    opened.modifiers(gpui::Modifiers::none());
+    opened.modifiers(gpui::Modifiers::shift());
+    opened.tick(1);
+    assert_eq!(
+        piece(&mut opened),
+        (second, Some(first)),
+        "not twice a piece"
+    );
+    opened.key("space");
+    opened.tick(1);
+    let (third, _) = piece(&mut opened);
+    // Ctrl going down while Shift is held is no new press of Shift
+    opened.modifiers(gpui::Modifiers {
+        shift: true,
+        control: true,
+        ..gpui::Modifiers::none()
+    });
+    opened.tick(1);
+    assert_eq!(piece(&mut opened), (third, Some(first)));
+    opened.modifiers(gpui::Modifiers::none());
+    opened.modifiers(gpui::Modifiers::shift());
+    opened.tick(1);
+    assert_eq!(
+        piece(&mut opened),
+        (first, Some(third)),
+        "a new piece holds again and takes the first back"
+    );
+}
+
+#[test]
 fn a_pause_lets_go_of_a_held_tetris_arrow() {
     let mut opened = seated();
     opened.start(TETRIS);

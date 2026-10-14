@@ -73,6 +73,8 @@ pub(crate) struct Play {
     /// Where the host laid Minesweeper's field out, in the window's
     /// pixels: what a press is measured from.
     pub(crate) field: Option<(f32, f32)>,
+    /// Shift is down, as the board last heard the modifiers.
+    pub(crate) shift: bool,
 }
 
 /// What became of an ended game's score.

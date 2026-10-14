@@ -4,7 +4,8 @@
 //! the game's top ten.
 //!
 //! The board takes the keys: it is focused as the game starts, and every
-//! key the games read stops there.
+//! key the games read stops there. It hears Shift too, which gpui tells as
+//! a change of the modifiers, not as a key.
 use ducktape_view_guest::prelude::*;
 use ducktape_view_guest::{AnyElement, Div, FontWeight, Stateful};
 
@@ -50,6 +51,7 @@ impl Arcade {
             paused: false,
             post: Post::Playing,
             field: None,
+            shift: false,
         });
         self.board = Loadable::Idle;
         self.read_board(cx);
@@ -145,6 +147,32 @@ impl Arcade {
             ((f32::from(event.position.y) - top) / cell).floor() as i32,
         );
         if mines.press(at, right) {
+            cx.notify();
+        }
+        self.settle(cx);
+    }
+
+    /// Shift alone is no key to gpui, only a change of the modifiers: it
+    /// going down is a press of the key "shift", and up its release. A
+    /// change that leaves it as it was, another modifier's, is neither.
+    fn modifiers_changed(&mut self, event: &ModifiersChangedEvent, cx: &mut Context<Self>) {
+        let Some(play) = &mut self.play else {
+            return;
+        };
+        let shift = event.modifiers.shift;
+        if std::mem::replace(&mut play.shift, shift) == shift {
+            return;
+        }
+        let Some(game) = play.game.ready_mut() else {
+            return;
+        };
+        if !shift {
+            return game.key_up("shift");
+        }
+        if play.paused || game.over() {
+            return;
+        }
+        if game.key_down("shift", false) {
             cx.notify();
         }
         self.settle(cx);
@@ -250,6 +278,9 @@ impl Arcade {
                 view.key_down(event, window, cx)
             }))
             .on_key_up(cx.listener(|view, event: &KeyUpEvent, _, _| view.key_up(event)))
+            .on_modifiers_changed(cx.listener(|view, event: &ModifiersChangedEvent, _, cx| {
+                view.modifiers_changed(event, cx)
+            }))
             .when(mines, |board| {
                 board
                     .cursor_pointer()

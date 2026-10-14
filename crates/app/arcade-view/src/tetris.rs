@@ -8,8 +8,9 @@
 //! next three. A key is read on the next tick. The rest is the Tetris Guideline's: a turn that does not fit
 //! tries SRS's kicks, the I its own; a piece that lands locks after half a
 //! second, which a move or a turn on the ground starts again, 15 times a
-//! piece at most (the 16th locks it); a hard drop locks at once; C puts
-//! the piece in hold and takes the one there, or the next, once a piece.
+//! piece at most (the 16th locks it); a hard drop locks at once; C or
+//! Shift puts the piece in hold and takes the one there, or the next, once
+//! a piece.
 //! A held key repeats on the game's own count, never the keyboard's (half
 //! a second before its first repeat): a held arrow slides the piece again
 //! after 160 ms and then a cell every 32 ms, a held ↓ drops a row every
@@ -24,7 +25,7 @@ use crate::games::{Fact, Rng, square};
 pub(crate) const COLS: i32 = 10;
 pub(crate) const ROWS: i32 = 20;
 pub(crate) const KEYS: &str =
-    "← → move, ↑ or X turns, Z turns back, ↓ drops a row, Space drops, C holds";
+    "← → move, ↑ or X turns, Z turns back, ↓ drops a row, Space drops, C or Shift holds";
 pub(crate) const PERIOD: i64 = 16;
 
 /// The ticks a row of fall takes at each level; one from level 29 on.
@@ -143,7 +144,7 @@ pub(crate) struct Tetris {
     pub(crate) at: (i32, i32),
     /// The pieces coming, the first next.
     pub(crate) next: [Piece; NEXT],
-    /// The piece put aside with C.
+    /// The piece put aside with C or Shift.
     pub(crate) hold: Option<Piece>,
     /// Hold was used for the piece falling: no hold again until it locks.
     held: bool,
@@ -567,7 +568,7 @@ fn read(key: &str) -> Option<Move> {
         "z" => Move::TurnBack,
         "down" | "s" => Move::Down,
         "space" => Move::Drop,
-        "c" => Move::Hold,
+        "c" | "shift" => Move::Hold,
         _ => return None,
     })
 }
