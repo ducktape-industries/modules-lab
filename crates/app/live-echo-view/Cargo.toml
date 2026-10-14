@@ -1,0 +1,16 @@
+[package]
+name = "live-echo-view"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+# A Rust-authored view, exported as a dynamically loaded wasm module by
+# `export_view!`; the rlib is what its native tests link.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ducktape-view-guest.workspace = true
+serde.workspace = true
+# the program's types, linked with `module` off: the op that opens the lobby
+live-echo.workspace = true

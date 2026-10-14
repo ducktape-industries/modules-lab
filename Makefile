@@ -2,8 +2,8 @@
 # output under $(BUILD_TARGET); none is committed.
 CARGO ?= cargo
 WASM_OPT ?= wasm-opt
-PROGRAMS := trade arcade
-VIEWS := trade-view arcade-view browser-view
+PROGRAMS := trade arcade live-echo
+VIEWS := trade-view arcade-view browser-view live-echo-view
 
 BUILD_TARGET := $(abspath $(or $(CARGO_TARGET_DIR),target))
 RELEASE := $(BUILD_TARGET)/wasm32-unknown-unknown/release

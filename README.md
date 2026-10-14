@@ -12,6 +12,8 @@ moves over as it is.
 | `crates/app/arcade` | the high scores of six classic games: the program |
 | `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, and the boards |
 | `crates/app/browser-view` | a view alone, no program: web pages in tabs on the SDK's `web` piece |
+| `crates/app/live-echo` | the program behind a live room: one op that opens it to every account |
+| `crates/app/live-echo-view` | its view: lines typed in the lobby, live through the node, by account |
 
 The SDK is modules `dev` at the rev the app pins (`Cargo.toml`, `sdk-line`).
 The app refuses a view built against another wire, so the pin moves when the
@@ -175,6 +177,30 @@ DUCKTAPE_APP=/path/to/app/target/debug/ducktape-app cargo run -p browser-view --
 runs it in the real app over a fake node; the app must be built with its
 `web` feature (CEF); without it the piece only says the build has no web view.
 
+## live-echo
+
+The smallest use of the SDK's `live` piece: tracks a view publishes and
+subscribes to through the node it is connected to, off the chain. Each
+reader publishes `echo/<account>` in the room `lobby` in stream mode, a
+line as one object alone in its group, so a reader who comes later is
+replayed each person's last line. The view follows the room's tracks
+(`live.tracks`), subscribes to every `echo/*` it hears of, and lists the
+lines by account, the reader's own first; a track that ends says why
+under its account (`left: publisher_gone` when that app went away).
+
+The node lets an account into a room only as the module's program granted
+it, in a row the program writes. The program keeps nothing else: its one
+op, `Open { room }`, writes the grant that lets every account on the chain
+publish and subscribe to every track of the room
+(`guest::live::grant(ctx, room, None, Grant::all())`). On a network
+nobody opened the lobby on, the first publish is refused `not_granted`;
+the view sends `Open`, once a session, and joins again on the next block
+of the program.
+
+`src/tests.rs` links two and three views with the SDK's `testing::Relay`,
+which answers `live.*` as one node would: a line crosses, a late reader
+is replayed the last one, an app that goes away shows `publisher_gone`.
+
 ## Loop
 
 ```sh
@@ -230,7 +256,7 @@ There is no runner that keeps one view alive without a node. What there is:
    rests 36 orders around BTC/USD's last price; two market orders of
    `dev`'s trade against them. It ends with the command that opens the app
    on the stage, a `kit app` with the lab's root: the wallet's password is
-   `ducktape`, and Trade and Arcade are on the rail. `live/live.sh` is all of it. Run
+   `ducktape`, and Trade, Arcade and Live echo are on the rail. `live/live.sh` is all of it. Run
    again, it founds a fresh network on the same stage.
 
    The stage's node keeps running until `make live-down QA=/path/to/qa`

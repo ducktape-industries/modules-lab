@@ -16,6 +16,13 @@ params = "@PROGRAMS@/trade.params"
 id = "arcade"
 code = "@PROGRAMS@/arcade.wasm"
 
+# The live lobby, with its view packed in; no params. Its one op opens a
+# room to every account, and the lines never touch the chain: they ride the
+# node's live tracks.
+[[programs]]
+id = "live-echo"
+code = "@PROGRAMS@/live_echo.wasm"
+
 # The browser: a view with no program behind it, listed by the registry and
 # never admitted, as kit's explorer is. It declares `web`, so an https link
 # another view opens comes to it.

@@ -1,0 +1,22 @@
+[package]
+name = "live-echo"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+# The types and the rule are always built; the view links them with
+# `module` off. `module` adds the wasm exports (`guest::export!`), which
+# only the program's own wasm build turns on.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+module = []
+# `describe` makes this crate's wasm build the `ducktape.describe` module:
+# the `describe` export alone, no module, no imports.
+describe = []
+
+[dependencies]
+borsh = { workspace = true }
+describe = { workspace = true }
+guest = { workspace = true }
