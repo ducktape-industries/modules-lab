@@ -1,23 +1,73 @@
-//! Huddle: check yourself before a call. Your camera as others would see
-//! it (mirrored, as a mirror shows you, unless you turn that off), your
-//! microphone's level as you speak, and your own voice: record five
-//! seconds and hear them played back, or, with headphones on, a live loop.
+//! Huddle: check your camera and microphone, then huddle. The device check
+//! is a big picture of yourself (mirrored, as a mirror shows you, unless
+//! you turn that off) with the microphone and camera toggles over it, and
+//! a column of the devices, the microphone's level, a speaker test, "record
+//! five seconds and play them back", "hear myself live" with its warning,
+//! and Join. The room is your tile on a stage and a bar of the same
+//! toggles, each with its device menu, and Leave. Calls with other people
+//! are not connected yet: the room says so.
 //!
 //! The view never touches a device: it places the SDK's `camera` and
 //! `microphone` pieces, which the host captures, draws and plays, and hears
 //! how their devices are. Turning the camera off or muting removes the
-//! piece, which releases the device (the camera's light goes off). The
-//! pickers list what `camera.devices` and `microphone.devices` answer; a
-//! device that goes away, or an answer of none, offers a retry.
+//! piece, which releases the device (the camera's light and the system's
+//! microphone mark go off). The menus list what `camera.devices` and
+//! `microphone.devices` answer, read again whenever a menu opens (no host
+//! tells the view of a device plugged in).
 use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Div, FontWeight, Stateful};
+use ducktape_view_guest::{Bounds, accesskit};
 use serde::{Deserialize, Serialize};
+
+mod ui;
 
 /// How long "Record and play back" records, in seconds.
 pub const RECORD_SECONDS: u8 = 5;
 
-/// The widest the column grows.
-const COLUMN: Pixels = px(640.);
+/// Which screen is up: the device check, or the room.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Screen {
+    #[default]
+    Check,
+    Room,
+}
+
+/// Which device menu: one device kind, or the room's microphone caret,
+/// which lists the microphones and then the speakers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Which {
+    Camera,
+    Microphone,
+    Speaker,
+    Sound,
+}
+
+impl Which {
+    /// The control that opened it, which takes the keys back.
+    pub(crate) fn opener(self) -> &'static str {
+        match self {
+            Which::Camera => "huddle-pick-camera",
+            Which::Microphone => "huddle-pick-microphone",
+            Which::Speaker => "huddle-pick-speaker",
+            Which::Sound => "huddle-mic-menu",
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Which::Camera => "Camera",
+            Which::Microphone => "Microphone",
+            Which::Speaker => "Speaker",
+            Which::Sound => "Microphone and speaker",
+        }
+    }
+}
+
+/// An open device menu: which, and the row the arrows are on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Menu {
+    pub(crate) which: Which,
+    pub(crate) cursor: usize,
+}
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Huddle {
@@ -34,9 +84,12 @@ pub struct Huddle {
     pub(crate) muted: bool,
     /// Kept on: a person checking themselves expects a mirror.
     pub(crate) unmirrored: bool,
-    /// The live loop, on only while the person keeps it on.
+    /// The live loop, on only while the person keeps it on, on the check.
     #[serde(skip)]
     pub(crate) monitor: bool,
+    /// The view always opens on the check.
+    #[serde(skip)]
+    pub(crate) screen: Screen,
     /// What the pieces last told.
     #[serde(skip)]
     pub(crate) camera_state: MediaState,
@@ -48,20 +101,56 @@ pub struct Huddle {
     attempt: u32,
     #[serde(skip)]
     pub(crate) recorder: MicHandle,
+    /// The speaker test asked, until its playback ends.
+    #[serde(skip)]
+    pub(crate) chiming: bool,
+    #[serde(skip)]
+    pub(crate) menu: Option<Menu>,
+    /// Where layout put each menu's opener, in window pixels: a menu hangs
+    /// under its picker, or over the room's caret.
+    #[serde(skip)]
+    pub(crate) anchors: Vec<(Which, Bounds<Pixels>)>,
+    /// Seconds on the view's clock, and when the room was entered, a
+    /// recording started and the camera was last placed, by it.
+    #[serde(skip)]
+    pub(crate) ticks: u64,
+    #[serde(skip)]
+    pub(crate) entered: u64,
+    #[serde(skip)]
+    pub(crate) recording_since: Option<u64>,
+    #[serde(skip)]
+    pub(crate) camera_since: u64,
+    /// The pane's size as the host lays the frame out.
+    #[serde(skip)]
+    pub(crate) viewport: (f32, f32),
 }
 
 impl View for Huddle {
     const NAME: &'static str = "Huddle";
-    const DESCRIPTION: &'static str = "Check your camera and microphone.";
+    const DESCRIPTION: &'static str = "Check your camera and microphone, then huddle.";
     const ICON: &'static str = "icons/video.svg";
-    // `camera` and `microphone`: the pieces and their device lists; `host`:
-    // the log a refusal nothing waits on goes to
-    const CAPABILITIES: &'static [Capability] =
-        &[Capability::Camera, Capability::Microphone, Capability::Host];
-    const MIN_WINDOW_WIDTH: u32 = 360;
+    // `camera` and `microphone`: the pieces and their device lists; `clock`:
+    // the room's clock and the recording's countdown; `host`: the window's
+    // title and the log a refusal nothing waits on goes to; `link`: the
+    // settings page a refused device opens (macOS)
+    const CAPABILITIES: &'static [Capability] = &[
+        Capability::Camera,
+        Capability::Microphone,
+        Capability::Clock,
+        Capability::Host,
+        Capability::Link,
+    ];
+    /// The check's two columns: the picture and the 272 px settings.
+    const MIN_WINDOW_WIDTH: u32 = 560;
 
     fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         self.list(cx);
+        cx.host().notify::<HostTitle>("Huddle".into());
+        cx.follow::<ClockTicks>(1000, |view, tick, cx| match tick {
+            Ok(()) => view.tick(cx),
+            Err(refusal) => cx.log_refused("the clock", &refusal),
+        })
+        .detach();
     }
 }
 
@@ -70,8 +159,13 @@ fn unsupported(error: &Error) -> bool {
     error.code == refusal::MEDIA_UNSUPPORTED
 }
 
+/// A device that is not starting or live, said as the view says it.
+pub(crate) fn trouble(state: &MediaState) -> bool {
+    !matches!(state.status, MediaStatus::Starting | MediaStatus::Live)
+}
+
 impl Huddle {
-    /// The device lists, read again.
+    /// The device lists, read again (the values on screen stay meanwhile).
     pub(crate) fn list(&mut self, cx: &mut Context<Self>) {
         let cameras = cx.host().ask::<CameraDevices>(());
         cx.load(self, cameras, |view| &mut view.cameras);
@@ -81,401 +175,267 @@ impl Huddle {
 
     /// Both devices opened again, the lists read again: after a device
     /// went away, was refused or was busy.
-    fn retry(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn retry(&mut self, cx: &mut Context<Self>) {
         self.attempt += 1;
         self.camera_state = MediaState::default();
         self.mic_state = MediaState::default();
+        self.camera_since = self.ticks;
+        self.chiming = false;
+        self.recording_since = None;
         self.list(cx);
         cx.notify();
     }
 
-    /// The host has no camera or microphone: its lists were refused so.
+    /// The host has no camera or microphone: its lists were refused so, or
+    /// a piece says so.
     pub(crate) fn no_support(&self) -> bool {
         matches!(&self.cameras, Loadable::Failed(error) if unsupported(error))
             || matches!(&self.audio, Loadable::Failed(error) if unsupported(error))
+            || self.camera_state.status == MediaStatus::Unsupported
+            || self.mic_state.status == MediaStatus::Unsupported
     }
 
-    fn recording(&self) -> Playback {
-        self.mic_state.playback.clone()
+    /// The piece ids: a retry makes new ones.
+    pub(crate) fn camera_key(&self) -> SharedString {
+        format!("huddle-camera-{}", self.attempt).into()
     }
-}
 
-impl Render for Huddle {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = *cx.global::<Theme>();
-        let column = div()
-            .w_full()
-            .max_w(COLUMN)
-            .flex()
-            .flex_col()
-            .gap(design::space::LG)
-            .child(design::heading("huddle-title", "Check yourself", 1, &theme));
-        let column = match self.no_support() {
-            true => column.child(design::empty_state(
-                "huddle-unsupported",
-                "No camera or microphone here",
-                "This build of the app has no camera or microphone support.",
-                &theme,
-            )),
-            false => column
-                .child(self.camera_section(cx, &theme))
-                .child(self.microphone_section(cx, &theme)),
-        };
-        div()
-            .id("huddle")
-            .size_full()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .items_center()
-            .p(design::space::XL)
-            .bg(theme.background)
-            .text_color(theme.foreground)
-            .text_size(design::text::BODY)
-            .child(column)
+    pub(crate) fn mic_key(&self) -> SharedString {
+        format!("huddle-microphone-{}", self.attempt).into()
     }
-}
 
-impl Huddle {
-    /// The preview, its switches and the camera picker.
-    fn camera_section(&self, cx: &mut Context<Self>, theme: &Theme) -> Div {
-        let theme = *theme;
-        let preview = div()
-            .id("huddle-preview")
-            .w_full()
-            .h(px(300.))
-            .relative()
-            .bg(theme.surface_raised)
-            .border_1()
-            .border_color(theme.border);
-        let preview = match self.camera_off {
-            true => preview.child(notice("huddle-camera-off", "Your camera is off.", &theme)),
-            false => {
-                let piece = camera(SharedString::from(format!(
-                    "huddle-camera-{}",
-                    self.attempt
-                )))
-                .mirror(!self.unmirrored)
-                .on_state(cx.listener(|view: &mut Huddle, state: &MediaState, _, cx| {
-                    view.camera_state = state.clone();
-                    cx.notify();
-                }))
-                .size_full()
-                .bg(hsla(0., 0., 0., 1.));
-                let piece = match &self.camera {
-                    Some(id) => piece.device(id.clone()),
-                    None => piece,
-                };
-                let trouble = trouble("camera", &self.camera_state).map(|line| {
-                    notice("huddle-camera-trouble", line, &theme)
-                        .absolute()
-                        .inset_0()
-                        .bg(theme.surface_raised)
-                        .child(design::button(
-                            "huddle-camera-retry",
-                            "Try again",
-                            &theme,
-                            {
-                                cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
-                                    view.retry(cx)
-                                })
-                            },
-                        ))
-                });
-                preview.child(piece).children(trouble)
-            }
-        };
-        let switches = div()
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap(design::space::LG)
-            .child(labelled(
-                design::switch(
-                    "huddle-camera-on",
-                    "Camera",
-                    !self.camera_off,
-                    true,
-                    &theme,
-                    cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
-                        view.camera_off = !view.camera_off;
-                        view.camera_state = MediaState::default();
-                        cx.notify();
-                    }),
-                ),
-                "Camera",
-            ))
-            .child(labelled(
-                design::switch(
-                    "huddle-mirror",
-                    "Mirror",
-                    !self.unmirrored,
-                    !self.camera_off,
-                    &theme,
-                    cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
-                        view.unmirrored = !view.unmirrored;
-                        cx.notify();
-                    }),
-                ),
-                "Mirror",
-            ));
-        let cameras = self.cameras.ready().cloned().unwrap_or_default();
-        let listed = cameras.clone();
-        let picker = picker(
-            "huddle-cameras",
-            "Camera",
-            &cameras,
-            failure(&self.cameras),
-            self.camera.as_deref(),
-            &theme,
-            cx.listener(move |view: &mut Huddle, index: &usize, _, cx| {
-                if let Some(device) = listed.get(*index) {
-                    view.camera = Some(device.id.clone());
-                    view.camera_state = MediaState::default();
-                    cx.notify();
+    /// Whether the camera piece is placed: on, and not in trouble (a
+    /// refused or vanished camera is let go until Try again).
+    pub(crate) fn camera_placed(&self) -> bool {
+        !self.camera_off && !trouble(&self.camera_state)
+    }
+
+    /// Whether the microphone piece is placed: unmuted, and not in trouble.
+    pub(crate) fn mic_placed(&self) -> bool {
+        !self.muted && !trouble(&self.mic_state)
+    }
+
+    pub(crate) fn mic_live(&self) -> bool {
+        !self.muted && self.mic_state.status == MediaStatus::Live
+    }
+
+    fn tick(&mut self, cx: &mut Context<Self>) {
+        self.ticks += 1;
+        // only what the clock shows is drawn again
+        let starting = !self.camera_off && self.camera_state.status == MediaStatus::Starting;
+        if self.screen == Screen::Room || self.recording_since.is_some() || starting {
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn toggle_mute(&mut self, cx: &mut Context<Self>) {
+        self.muted = !self.muted;
+        self.monitor = false;
+        self.chiming = false;
+        self.recording_since = None;
+        self.mic_state = MediaState::default();
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_camera(&mut self, cx: &mut Context<Self>) {
+        self.camera_off = !self.camera_off;
+        self.camera_state = MediaState::default();
+        self.camera_since = self.ticks;
+        cx.notify();
+    }
+
+    pub(crate) fn join(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.screen = Screen::Room;
+        self.entered = self.ticks;
+        self.monitor = false;
+        self.menu = None;
+        // the room's own clock; the pieces open again in their new place
+        self.camera_since = self.ticks;
+        cx.host()
+            .notify::<HostTitle>("Huddle \u{b7} just you".into());
+        window.focus("huddle-room");
+        cx.notify();
+    }
+
+    pub(crate) fn leave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.screen = Screen::Check;
+        self.menu = None;
+        self.camera_since = self.ticks;
+        cx.host().notify::<HostTitle>("Huddle".into());
+        window.focus("huddle-join");
+        cx.notify();
+    }
+
+    /// The menu of `which` opened, its picked row active, the lists read
+    /// again (a device plugged in since shows), the keys in it.
+    pub(crate) fn open_menu(&mut self, which: Which, window: &mut Window, cx: &mut Context<Self>) {
+        let rows = self.rows(which);
+        let cursor = rows.iter().position(|row| row.picked).unwrap_or(0);
+        self.menu = Some(Menu { which, cursor });
+        self.list(cx);
+        window.focus("huddle-menu");
+        cx.notify();
+    }
+
+    pub(crate) fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(menu) = self.menu.take() {
+            window.focus(menu.which.opener());
+        }
+        cx.notify();
+    }
+
+    /// Row `index` of the open menu picked: its device on its piece.
+    pub(crate) fn pick(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(menu) = self.menu else { return };
+        if let Some(row) = self.rows(menu.which).into_iter().nth(index)
+            && let Some(id) = row.id
+        {
+            match row.kind {
+                Which::Camera => {
+                    self.camera = Some(id);
+                    self.camera_state = MediaState::default();
+                    self.camera_since = self.ticks;
                 }
-            }),
-        );
-        div()
-            .flex()
-            .flex_col()
-            .gap(design::space::MD)
-            .child(preview)
-            .child(switches)
-            .child(picker)
+                Which::Microphone => {
+                    self.microphone = Some(id);
+                    self.mic_state = MediaState::default();
+                }
+                Which::Speaker | Which::Sound => {
+                    self.speaker = Some(id);
+                    self.mic_state = MediaState::default();
+                }
+            }
+        }
+        self.close_menu(window, cx);
     }
 
-    /// The meter, mute, the pickers, the recording and the live loop.
-    fn microphone_section(&self, cx: &mut Context<Self>, theme: &Theme) -> Div {
-        let theme = *theme;
-        let meter = match self.muted {
-            true => div()
-                .id("huddle-muted")
-                .h(px(8.))
-                .w_full()
-                .bg(theme.surface_raised),
-            false => div().id("huddle-meter-box").w_full().child({
-                let piece = microphone(SharedString::from(format!(
-                    "huddle-microphone-{}",
-                    self.attempt
-                )))
-                .monitor(self.monitor)
-                .track(&self.recorder)
-                .on_state(cx.listener(|view: &mut Huddle, state: &MediaState, _, cx| {
-                    view.mic_state = state.clone();
-                    cx.notify();
-                }))
-                .h(px(8.))
-                .w_full()
-                .bg(theme.surface_raised)
-                .text_color(theme.primary);
-                let piece = match &self.microphone {
-                    Some(id) => piece.device(id.clone()),
-                    None => piece,
-                };
-                match &self.speaker {
-                    Some(id) => piece.output(id.clone()),
-                    None => piece,
-                }
-            }),
-        };
-        let heard = match (self.muted, trouble("microphone", &self.mic_state)) {
-            (true, _) => "Muted.".to_owned(),
-            (false, Some(line)) => line.to_owned(),
-            (false, None) if self.mic_state.status == MediaStatus::Live => {
-                format!("Listening on {}.", self.mic_state.device)
-            }
-            (false, None) => "Opening the microphone…".to_owned(),
-        };
+    /// The rows of menu `which`: its devices, the system's default first,
+    /// the rest in the host's order; one row saying why when there are
+    /// none.
+    pub(crate) fn rows(&self, which: Which) -> Vec<Row> {
         let audio = self.audio.ready().cloned().unwrap_or_default();
-        let (inputs, outputs) = (audio.inputs.clone(), audio.outputs.clone());
-        let (picked_input, picked_output) = (inputs.clone(), outputs.clone());
-        let live = !self.muted && self.mic_state.status == MediaStatus::Live;
-        let idle = self.recording() == Playback::Idle;
-        let record = design::button(
-            "huddle-record",
-            match idle {
-                true => format!("Record {RECORD_SECONDS} s and play back"),
-                false => "Stop".to_owned(),
-            },
-            &theme,
-            cx.listener(move |view: &mut Huddle, _: &ClickEvent, _, cx| {
-                match idle {
-                    true => view.recorder.record(RECORD_SECONDS),
-                    false => view.recorder.stop(),
-                }
-                cx.notify();
-            }),
-        )
-        .enabled(live || !idle);
-        let phase = match self.recording() {
-            Playback::Idle => "",
-            Playback::Recording => "Recording… say something.",
-            Playback::Playing => "Playing it back…",
-        };
-        div()
-            .flex()
-            .flex_col()
-            .gap(design::space::MD)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(design::space::LG)
-                    .child(labelled(
-                        design::switch(
-                            "huddle-mute",
-                            "Microphone",
-                            !self.muted,
-                            true,
-                            &theme,
-                            cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
-                                view.muted = !view.muted;
-                                view.monitor = false;
-                                view.mic_state = MediaState::default();
-                                cx.notify();
-                            }),
-                        ),
-                        "Microphone",
-                    ))
-                    .child(div().flex_1().child(meter)),
-            )
-            .child(
-                div()
-                    .id("huddle-heard")
-                    .flex()
-                    .items_center()
-                    .gap(design::space::MD)
-                    .text_size(design::text::SECONDARY)
-                    .text_color(theme.muted)
-                    .child(heard)
-                    .when(
-                        !self.muted && trouble("microphone", &self.mic_state).is_some(),
-                        |line| {
-                            line.child(design::button(
-                                "huddle-microphone-retry",
-                                "Try again",
-                                &theme,
-                                cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
-                                    view.retry(cx)
-                                }),
-                            ))
-                        },
-                    ),
-            )
-            .child(picker(
-                "huddle-microphones",
-                "Microphone",
-                &inputs,
-                failure(&self.audio),
+        let (cameras, failed_cameras) = (
+            self.cameras.ready().cloned().unwrap_or_default(),
+            failure(&self.cameras),
+        );
+        let failed_audio = failure(&self.audio);
+        match which {
+            Which::Camera => rows(
+                Which::Camera,
+                &cameras,
+                self.camera.as_deref(),
+                failed_cameras,
+            ),
+            Which::Microphone => rows(
+                Which::Microphone,
+                &audio.inputs,
                 self.microphone.as_deref(),
-                &theme,
-                cx.listener(move |view: &mut Huddle, index: &usize, _, cx| {
-                    if let Some(device) = picked_input.get(*index) {
-                        view.microphone = Some(device.id.clone());
-                        view.mic_state = MediaState::default();
-                        cx.notify();
-                    }
-                }),
-            ))
-            .child(picker(
-                "huddle-speakers",
-                "Speaker",
-                &outputs,
-                failure(&self.audio),
+                failed_audio,
+            ),
+            Which::Speaker => rows(
+                Which::Speaker,
+                &audio.outputs,
                 self.speaker.as_deref(),
-                &theme,
-                cx.listener(move |view: &mut Huddle, index: &usize, _, cx| {
-                    if let Some(device) = picked_output.get(*index) {
-                        view.speaker = Some(device.id.clone());
-                        view.mic_state = MediaState::default();
-                        cx.notify();
-                    }
-                }),
-            ))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(design::space::MD)
-                    .child(record)
-                    .child(
-                        div()
-                            .id("huddle-phase")
-                            .text_size(design::text::SECONDARY)
-                            .text_color(theme.muted)
-                            .child(phase),
-                    ),
-            )
-            .child(design::setting_row(
-                "huddle-monitor-row",
-                "Hear myself live",
-                "Wear headphones: through speakers your voice loops back into \
-                 the microphone and howls.",
-                design::switch(
-                    "huddle-monitor",
-                    "Hear myself live",
-                    self.monitor,
-                    live,
-                    &theme,
-                    cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
-                        view.monitor = !view.monitor;
-                        cx.notify();
-                    }),
-                ),
-                &theme,
-            ))
+                failed_audio,
+            ),
+            Which::Sound => {
+                let mut both = rows(
+                    Which::Microphone,
+                    &audio.inputs,
+                    self.microphone.as_deref(),
+                    failed_audio.clone(),
+                );
+                both.extend(rows(
+                    Which::Speaker,
+                    &audio.outputs,
+                    self.speaker.as_deref(),
+                    failed_audio,
+                ));
+                both
+            }
+        }
+    }
+
+    /// The name a picker shows: the picked device's, else the default's.
+    pub(crate) fn shown_device(&self, which: Which) -> String {
+        self.rows(which)
+            .into_iter()
+            .find(|row| row.picked && row.id.is_some())
+            .map_or("System default".into(), |row| row.name)
+    }
+
+    /// The menu's opener's bounds, as layout last put it.
+    pub(crate) fn anchor(&self, which: Which) -> Option<Bounds<Pixels>> {
+        self.anchors
+            .iter()
+            .find(|(at, _)| *at == which)
+            .map(|(_, bounds)| *bounds)
+    }
+
+    pub(crate) fn set_anchor(&mut self, which: Which, bounds: Bounds<Pixels>) {
+        self.anchors.retain(|(at, _)| *at != which);
+        self.anchors.push((which, bounds));
+    }
+
+    /// The microphone piece told its state: a recording's start starts the
+    /// countdown, the chime's end ends the speaker test.
+    pub(crate) fn heard_mic(&mut self, state: &MediaState) {
+        match state.playback {
+            Playback::Recording if self.recording_since.is_none() => {
+                self.recording_since = Some(self.ticks);
+            }
+            Playback::Idle => {
+                self.recording_since = None;
+                self.chiming = false;
+            }
+            _ => {}
+        }
+        if state.playback != Playback::Recording {
+            self.recording_since = None;
+        }
+        self.mic_state = state.clone();
     }
 }
 
-/// What to tell the person about a piece's device, if anything is wrong.
-pub(crate) fn trouble(what: &str, state: &MediaState) -> Option<&'static str> {
-    let camera = what == "camera";
-    Some(match state.status {
-        MediaStatus::Starting | MediaStatus::Live => return None,
-        MediaStatus::Denied if camera => {
-            "Camera access is off for this app. Turn it on in your system's privacy settings, \
-             then try again."
-        }
-        MediaStatus::Denied => {
-            "Microphone access is off for this app. Turn it on in your system's privacy \
-             settings, then try again."
-        }
-        MediaStatus::Busy if camera => "Another app is using the camera.",
-        MediaStatus::Busy => "Another app is using the microphone.",
-        MediaStatus::Gone if camera => "The camera went away.",
-        MediaStatus::Gone => "The microphone went away.",
-        MediaStatus::NoDevice if camera => "No camera found.",
-        MediaStatus::NoDevice => "No microphone found.",
-        MediaStatus::Unsupported => "This build has no camera or microphone support.",
-        MediaStatus::Failed if camera => "The camera did not start.",
-        MediaStatus::Failed => "The microphone did not start.",
-    })
+/// One row of a device menu.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Row {
+    pub(crate) kind: Which,
+    /// `None`: the row that says there is nothing to pick.
+    pub(crate) id: Option<String>,
+    pub(crate) name: String,
+    /// The id beside the name, where another device shares the name.
+    pub(crate) twin: Option<String>,
+    pub(crate) picked: bool,
 }
 
-/// A line in the middle of the preview.
-fn notice(id: &'static str, line: &'static str, theme: &Theme) -> Stateful<Div> {
-    div()
-        .id(id)
-        .size_full()
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .gap(design::space::MD)
-        .p(design::space::LG)
-        .text_color(theme.muted)
-        .child(line)
-}
-
-/// A switch with its name beside it.
-fn labelled(switch: Stateful<Div>, name: &'static str) -> Div {
-    div()
-        .flex()
-        .items_center()
-        .gap(design::space::SM)
-        .child(switch)
-        .child(name)
+fn rows(kind: Which, devices: &[Device], picked: Option<&str>, failed: Option<String>) -> Vec<Row> {
+    if devices.is_empty() {
+        return vec![Row {
+            kind,
+            id: None,
+            name: failed.unwrap_or_else(|| "None found".into()),
+            twin: None,
+            picked: false,
+        }];
+    }
+    let picked = devices
+        .iter()
+        .position(|device| Some(device.id.as_str()) == picked)
+        .or_else(|| devices.iter().position(|device| device.default));
+    let mut ordered: Vec<(usize, &Device)> = devices.iter().enumerate().collect();
+    // the system's default first, the rest as the host listed them
+    ordered.sort_by_key(|(_, device)| !device.default);
+    ordered
+        .into_iter()
+        .map(|(at, device)| Row {
+            kind,
+            id: Some(device.id.clone()),
+            name: device.name.clone(),
+            twin: twin(devices, device),
+            picked: picked == Some(at),
+        })
+        .collect()
 }
 
 /// Why a device list is not there, in the host's words.
@@ -486,79 +446,36 @@ fn failure<T>(list: &Loadable<T>) -> Option<String> {
     }
 }
 
-/// One device picker: the devices one under another (names run long), the
-/// picked one (else the system's default) filled; a radio group, one Tab
-/// stop, the arrows pick. Nothing listed: says why, or that there is none.
-fn picker(
-    id: &'static str,
-    label: &'static str,
-    devices: &[Device],
-    failed: Option<String>,
-    picked: Option<&str>,
-    theme: &Theme,
-    pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
-) -> Div {
-    let theme = *theme;
-    let column = div().flex().flex_col().gap(design::space::XS).child(
-        div()
-            .text_size(design::text::SECONDARY)
-            .font_weight(FontWeight::MEDIUM)
-            .child(label),
-    );
-    if devices.is_empty() {
-        return column.child(design::quiet(failed.unwrap_or("None found".into()), &theme));
-    }
-    let at = devices
-        .iter()
-        .position(|device| Some(device.id.as_str()) == picked)
-        .or_else(|| devices.iter().position(|device| device.default));
-    let active = at.unwrap_or(0);
-    let pick = std::rc::Rc::new(pick);
-    let moved = pick.clone();
-    let rows = devices.iter().enumerate().map(|(index, device)| {
-        let pick = pick.clone();
-        let selected = at == Some(index);
-        let row = div()
-            .id(SharedString::from(format!("{id}-{index}")))
-            .px(design::space::MD)
-            .py(design::space::XS)
-            .text_size(design::text::SECONDARY)
-            .map(|row| match selected {
-                true => row.bg(theme.primary).text_color(theme.primary_foreground),
-                false => row
-                    .text_color(theme.muted)
-                    .hover(move |style| style.text_color(theme.foreground)),
-            })
-            .role(Role::RadioButton)
-            .aria_toggled(selected.into())
-            .on_click(move |_, window, app| pick(&index, window, app))
-            .child(shown(devices, device));
-        design::item(row, Role::RadioButton, index == active)
-    });
-    column.child(
-        design::composite(id, Role::RadioGroup, label)
-            .orientation(design::Orientation::Vertical)
-            .active(active, devices.len())
-            .on_move(move |index, window, app| moved(&index, window, app))
-            .build()
-            .flex()
-            .flex_col()
-            .border_1()
-            .border_color(theme.border)
-            .children(rows),
-    )
-}
-
-/// A device's name, with its id beside it where another device shares
-/// the name (a sound card's devices often do).
-pub(crate) fn shown(devices: &[Device], device: &Device) -> String {
-    match devices
+/// Where another device shares its name (a sound card's devices often
+/// do), the end of its id that tells the two apart: past the last `:`
+/// (`alsa:plughw:CARD=Loopback,DEV=1` is `CARD=Loopback,DEV=1`), at most
+/// 20 characters.
+pub(crate) fn twin(devices: &[Device], device: &Device) -> Option<String> {
+    let shared = devices
         .iter()
         .filter(|other| other.name == device.name)
-        .count()
-    {
-        1 => device.name.clone(),
-        _ => format!("{} · {}", device.name, device.id),
+        .count();
+    (shared > 1).then(|| {
+        let end = device.id.rsplit(':').next().unwrap_or(&device.id);
+        let chars: Vec<char> = end.chars().collect();
+        match chars.len() > 20 {
+            true => format!(
+                "\u{2026}{}",
+                chars[chars.len() - 19..].iter().collect::<String>()
+            ),
+            false => end.to_owned(),
+        }
+    })
+}
+
+/// The accesskit popup kind a picker and a caret announce.
+pub(crate) const MENU_POPUP: accesskit::HasPopup = accesskit::HasPopup::Menu;
+
+impl Render for Huddle {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let size = window.viewport_size();
+        self.viewport = (size.width.into(), size.height.into());
+        ui::render(self, cx)
     }
 }
 
