@@ -15,18 +15,18 @@ version = "0.1.0"
 [workspace.dependencies]
 # ---- sdk-line: modules @ 4339899c (modules#343: block reads list sizes, chain.tx; WIRE_ID bec30594), the rev the app pins. The app refuses
 # a view built against another wire, so this moves when the app's pin moves.
-ducktape-view-guest = { git = "https://github.com/ducktape-industries/modules", rev = "7d0725db7095383dff816b4838ba55c55df7ded9" }
+ducktape-view-guest = { git = "https://github.com/ducktape-industries/modules", rev = "d4c0627b30578c44d31ac0b93dd18d80e5dc5df2" }
 # What a program is written against: the kernel ABI (a copy of core's, never
 # to drift from it), the guest and its mock host, the query derive, the
 # tables, and the describe module.
-abi = { git = "https://github.com/ducktape-industries/modules", rev = "7d0725db7095383dff816b4838ba55c55df7ded9" }
-guest = { git = "https://github.com/ducktape-industries/modules", rev = "7d0725db7095383dff816b4838ba55c55df7ded9" }
-program = { git = "https://github.com/ducktape-industries/modules", rev = "7d0725db7095383dff816b4838ba55c55df7ded9" }
-store = { git = "https://github.com/ducktape-industries/modules", rev = "7d0725db7095383dff816b4838ba55c55df7ded9" }
-describe = { git = "https://github.com/ducktape-industries/modules", rev = "7d0725db7095383dff816b4838ba55c55df7ded9" }
+abi = { git = "https://github.com/ducktape-industries/modules", rev = "d4c0627b30578c44d31ac0b93dd18d80e5dc5df2" }
+guest = { git = "https://github.com/ducktape-industries/modules", rev = "d4c0627b30578c44d31ac0b93dd18d80e5dc5df2" }
+program = { git = "https://github.com/ducktape-industries/modules", rev = "d4c0627b30578c44d31ac0b93dd18d80e5dc5df2" }
+store = { git = "https://github.com/ducktape-industries/modules", rev = "d4c0627b30578c44d31ac0b93dd18d80e5dc5df2" }
+describe = { git = "https://github.com/ducktape-industries/modules", rev = "d4c0627b30578c44d31ac0b93dd18d80e5dc5df2" }
 # The op that gives a key its account: what a live stage's seed sends first
 # (`crates/app/trade/examples/seed.rs`). No program or view here links it.
-identity = { git = "https://github.com/ducktape-industries/modules", rev = "7d0725db7095383dff816b4838ba55c55df7ded9" }
+identity = { git = "https://github.com/ducktape-industries/modules", rev = "d4c0627b30578c44d31ac0b93dd18d80e5dc5df2" }
 # `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
 # the SDK does not re-export.
 # The rev is the one modules names.
