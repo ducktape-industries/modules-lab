@@ -78,3 +78,16 @@ opt-level = 3
 [patch.crates-io]
 rmp-serde = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "b38e8b8feec037f15da484f7f703983ae4f8f0de" }
 gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "b38e8b8feec037f15da484f7f703983ae4f8f0de" }
+
+# live: local patches. The SDK's live tracks (modules `feat/live`) from its
+# worktree on this box, until that branch is pushed and the pins above move
+# to its rev. On that rev the fake-node runner is `rig`, not `live`, which
+# browser-view's example follows here.
+[patch."https://github.com/ducktape-industries/modules"]
+abi = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/sdk/abi" }
+describe = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/sdk/describe" }
+ducktape-view-guest = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/sdk/view-guest" }
+guest = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/sdk/guest" }
+identity = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/system/identity" }
+program = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/sdk/program" }
+store = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/sdk/store" }
