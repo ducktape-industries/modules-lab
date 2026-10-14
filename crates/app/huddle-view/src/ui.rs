@@ -74,6 +74,8 @@ pub(crate) fn render(view: &mut Huddle, cx: &mut Context<Huddle>) -> AnyElement 
         .bg(theme.background)
         .text_color(theme.foreground)
         .text_size(design::text::BODY)
+        // the boards' leading: a label sits 15 px tall over its control
+        .line_height(gpui::relative(1.3))
         .child(screen);
     let open = view.menu.filter(|_| !view.no_support());
     let (label, floating) = match open {
@@ -147,7 +149,8 @@ fn preview(
     }
     let mirrored = !view.unmirrored;
     preview
-        .child(mirror_toggle(mirrored, !off, cx))
+        // nothing to mirror with the camera off or in trouble
+        .child(mirror_toggle(mirrored, !off && !troubled, cx))
         .child(
             div()
                 .absolute()
@@ -290,7 +293,7 @@ fn chip(view: &Huddle, off: bool, theme: &Theme) -> Div {
     let opening = !off
         && view.camera_state.status == MediaStatus::Starting
         && view.ticks.saturating_sub(view.camera_since) >= 2;
-    let mirrored = !view.unmirrored && !off;
+    let mirrored = !view.unmirrored && !off && !trouble(&view.camera_state);
     div()
         .absolute()
         .left(design::space::SM)
@@ -521,7 +524,7 @@ fn mic_trouble(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Statef
                 .text_size(design::text::CAPTION)
                 .text_color(theme.muted)
                 .child(glyph(ALERT, 12.).mt(px(1.)))
-                .child(line),
+                .child(div().flex_1().min_w(px(0.)).child(line)),
         )
         .child(actions(Device::Microphone, state, cx, theme))
 }
@@ -652,10 +655,10 @@ fn monitor(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
                 .text_size(design::text::CAPTION)
                 .text_color(theme.warning)
                 .child(glyph(HEADPHONES, 13.).mt(px(1.)))
-                .child(
+                .child(div().flex_1().min_w(px(0.)).child(
                     "Wear headphones: through speakers your voice loops back into the \
                      microphone and howls.",
-                ),
+                )),
         )
 }
 
@@ -1078,7 +1081,7 @@ fn room_chip(view: &Huddle, speaking: bool) -> Div {
                 .child(glyph(icon, 12.).text_color(color))
         }))
         .child("You")
-        .when(!view.unmirrored && !view.camera_off, |chip| {
+        .when(view.camera_placed() && !view.unmirrored, |chip| {
             chip.child(
                 div()
                     .font_family(design::fonts::FAMILY_MONO)
