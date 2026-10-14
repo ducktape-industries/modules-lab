@@ -12,7 +12,7 @@ moves over as it is.
 | `crates/app/arcade` | the high scores of six classic games: the program |
 | `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, and the boards |
 | `crates/app/browser-view` | a view alone, no program: web pages in tabs on the SDK's `web` piece |
-| `crates/app/huddle-view` | a view alone, no program: check your camera and microphone on the SDK's `camera` and `microphone` pieces |
+| `crates/app/huddle-view` | a view alone, no program: check your camera and microphone, then huddle (alone, for now), on the SDK's `camera` and `microphone` pieces |
 
 The SDK is modules `dev` at the rev the app pins (`Cargo.toml`, `sdk-line`).
 The app refuses a view built against another wire, so the pin moves when the
@@ -178,22 +178,29 @@ runs it in the real app over a fake node; the app must be built with its
 
 ## huddle-view
 
-A view alone, no program: a person checks themselves before a call. Its
-manifest declares `camera` and `microphone` (each gates its piece and its
-device list; the system asks for each apart) and `host` for the log. The
-camera's picture is the host's: the view places the SDK's `camera` piece
-(mirrored unless turned off) and never sees a frame; turning the camera off
-removes the piece, and the host releases the camera with it. The
-microphone's level is a meter the host draws (`microphone` piece), so a
-level never wakes the view. "Record 5 s and play back" asks the host to
-record five seconds and play them on the picked speaker, so nothing loops
-through the speakers; "Hear myself live" loops the microphone straight to
-the speaker, off until switched on, with the headphones warning beside it.
-Pickers list what `camera.devices` and `microphone.devices` answer; a
-refused, busy, vanished or missing device says so and offers Try again
-(the piece under a new id, so the host opens its device again). A host
-without camera and microphone support refuses both lists
-`media_unsupported`, and the view says so instead of placing pieces.
+A view alone, no program: a person checks themselves, then joins a huddle.
+Its manifest declares `camera` and `microphone` (each gates its piece and
+its device list; the system asks for each apart), `clock` for the room's
+clock and the recording's countdown, `host` for the title and the log, and
+`link` for the settings page a refused device opens (macOS).
+
+The device check is a big picture of yourself (the SDK's `camera` piece,
+the host's picture, mirrored unless turned off) with the mirror, mute and
+camera toggles over it, and a column: the camera, microphone and speaker
+pickers (each a menu, read again whenever it opens), the microphone's level
+(a meter the host draws, so a level never wakes the view), Test (the host's
+chime on the speaker), "Record 5 s and play back", "Hear myself live" with
+the headphones warning, and Join. Turning the camera off or muting removes
+the piece, and the host releases the device with it.
+
+The room is your tile (the picture covering it, a green ring while you
+speak, your muted mark) and a bar with the microphone and camera, each with
+its device menu, and Leave; M mutes, V turns the camera off. Calls with
+other people are not connected yet, and the room says so. A refused, busy,
+vanished or missing device says so in a card with what fixes it (Try
+again opens the piece under a new id). A host without camera and microphone
+support refuses both lists `media_unsupported`, and the view says so instead
+of placing pieces.
 
 ```sh
 DUCKTAPE_APP=/path/to/app/target/debug/ducktape-app cargo run -p huddle-view --example live
