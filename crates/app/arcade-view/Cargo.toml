@@ -13,6 +13,8 @@ crate-type = ["cdylib", "rlib"]
 ducktape-view-guest.workspace = true
 gpui.workspace = true
 serde.workspace = true
+# what versus says on its live tracks
+borsh.workspace = true
 # the program's types, linked with `module` off
 arcade.workspace = true
 # `Reads`: which tables a query reads, asked of each block's change; and

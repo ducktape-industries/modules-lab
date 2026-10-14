@@ -7,6 +7,7 @@ use ducktape_view_guest::prelude::*;
 use program::role::Identity;
 
 use crate::games::Game;
+use crate::versus::Versus;
 use crate::{Arcade, Post};
 
 /// The rows a board shows.
@@ -157,8 +158,9 @@ impl Arcade {
         self.run_clock(cx);
     }
 
-    /// Asks for the clock at the running game's period, drops it when no
-    /// game runs, and asks again when the period changes.
+    /// Asks for the clock at the running game's period, or a versus
+    /// round's, drops it when none runs, and asks again when the period
+    /// changes. A versus round runs on off screen: the other side plays on.
     fn run_clock(&mut self, cx: &mut Context<Self>) {
         let running = self
             .play
@@ -166,7 +168,9 @@ impl Arcade {
             .filter(|play| !play.paused && !self.hidden)
             .and_then(|play| play.game.ready())
             .filter(|game| !game.over());
-        let period = running.and_then(Game::period);
+        let period = running
+            .and_then(Game::period)
+            .or_else(|| self.versus.as_ref().and_then(Versus::period));
         if self.clock.as_ref().map(|(running, _)| *running) == period {
             return;
         }
@@ -181,6 +185,9 @@ impl Arcade {
 
     /// One tick of the clock: one step of the running game.
     fn ticked(&mut self, cx: &mut Context<Self>) {
+        if self.versus.is_some() {
+            return self.versus_ticked(cx);
+        }
         let Some(game) = self
             .play
             .as_mut()

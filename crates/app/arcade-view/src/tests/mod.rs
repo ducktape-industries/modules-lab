@@ -23,6 +23,7 @@ mod breakout;
 mod games;
 mod invaders;
 mod snake;
+mod versus;
 
 /// The account the reader is seated as.
 pub(crate) const READER: u64 = 7;
@@ -234,7 +235,7 @@ pub(crate) fn shows(cx: &TestAppContext, texts: &[&str]) {
 }
 
 #[test]
-fn the_manifest_names_the_program_identity_and_the_clock() {
+fn the_manifest_names_the_program_identity_the_clock_and_live() {
     assert_eq!(<Arcade as View>::NAME, "Arcade");
     assert_eq!(<Arcade as View>::TARGETS, [arcade::MODULE, "identity"]);
     assert_eq!(
@@ -243,7 +244,8 @@ fn the_manifest_names_the_program_identity_and_the_clock() {
             Capability::Module,
             Capability::Op,
             Capability::Host,
-            Capability::Clock
+            Capability::Clock,
+            Capability::Live
         ]
     );
 }

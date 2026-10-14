@@ -15,8 +15,15 @@
 //! a second before its first repeat): a held arrow slides the piece again
 //! after 160 ms and then a cell every 32 ms, a held ↓ drops a row every
 //! other tick, and a turn, a drop or a hold does not repeat.
+//!
+//! In versus a well also trades garbage ([`Garbage`]): rows cleared at
+//! once send the other side 2 → 1, 3 → 2, 4 → 4 rows, a Tetris after a
+//! Tetris one more; what is sent cancels the garbage queued here first; a
+//! lock that clears nothing lets every queued row rise from the floor, and
+//! a block pushed out of the top ends the game.
 use std::collections::VecDeque;
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use ducktape_view_guest::Canvas;
 use ducktape_view_guest::prelude::*;
 
@@ -64,6 +71,12 @@ const DAS: u32 = 10;
 const ARR: u32 = 2;
 /// The ticks a row of a held ↓: NES's soft drop.
 const SOFT: u32 = 2;
+/// Versus: the rows sent for one to four rows cleared at once.
+const SENDS: [u8; 5] = [0, 0, 1, 2, 4];
+/// Versus: what a Tetris right after a Tetris sends on top.
+const BACK_TO_BACK: u8 = 1;
+/// Versus: the most rows one attack carries, a Tetris back to back.
+pub(crate) const MOST_SENT: u8 = SENDS[4] + BACK_TO_BACK;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Piece {
@@ -74,7 +87,13 @@ pub(crate) enum Piece {
     Z,
     J,
     L,
+    /// A block of a row of garbage the other side sent in versus. It lies
+    /// in the well and never falls: the bag never deals it.
+    Garbage,
 }
+
+/// What a well holds: a cell's block, if any, rows top first.
+pub(crate) type Well = [[Option<Piece>; COLS as usize]; ROWS as usize];
 
 const PIECES: [Piece; 7] = [
     Piece::I,
@@ -97,6 +116,7 @@ impl Piece {
             Piece::Z => ([(0, 0), (1, 0), (1, 1), (2, 1)], 3),
             Piece::J => ([(0, 0), (0, 1), (1, 1), (2, 1)], 3),
             Piece::L => ([(2, 0), (0, 1), (1, 1), (2, 1)], 3),
+            Piece::Garbage => unreachable!("garbage never falls, so it has no shape"),
         }
     }
 
@@ -120,8 +140,104 @@ impl Piece {
             Piece::Z => theme.danger,
             Piece::J => theme.muted,
             Piece::L => theme.warning.opacity(0.55),
+            Piece::Garbage => theme.faint,
         }
     }
+}
+
+/// Versus: rows of garbage, each full but for one hole, all in one column.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub(crate) struct Attack {
+    pub(crate) lines: u8,
+    pub(crate) hole: u8,
+}
+
+impl Attack {
+    /// Whether the other side's attack is one a well could have sent: at
+    /// least a row, at most [`MOST_SENT`], its hole in the well.
+    pub(crate) fn fair(self) -> bool {
+        (1..=MOST_SENT).contains(&self.lines) && i32::from(self.hole) < COLS
+    }
+}
+
+/// One well's side of versus: the garbage on its way in and the attacks
+/// its clears make.
+pub(crate) struct Garbage {
+    /// The other side's attacks, oldest first, to rise on a lock that
+    /// clears nothing.
+    pub(crate) incoming: VecDeque<Attack>,
+    /// This well's attacks, oldest first, for the view to send.
+    pub(crate) outgoing: Vec<Attack>,
+    /// The last lock that cleared rows cleared four.
+    tetris: bool,
+    /// Where an attack's hole goes. Never the bag's own: a draw from it
+    /// would deal this side other pieces than the other side's.
+    holes: Rng,
+}
+
+impl Garbage {
+    pub(crate) fn new(seed: u64) -> Garbage {
+        Garbage {
+            incoming: VecDeque::new(),
+            outgoing: Vec::new(),
+            tetris: false,
+            holes: Rng::new(seed),
+        }
+    }
+
+    /// The rows queued to rise.
+    pub(crate) fn queued(&self) -> u32 {
+        self.incoming
+            .iter()
+            .map(|attack| u32::from(attack.lines))
+            .sum()
+    }
+
+    /// A lock that cleared `cleared` rows: they attack, cancelling what is
+    /// queued here first and sending the rest; a lock that cleared none
+    /// lets every queued row rise. Whether a block went out of the top.
+    fn trade(&mut self, cleared: usize, well: &mut Well) -> bool {
+        if cleared == 0 {
+            let attacks: Vec<_> = self.incoming.drain(..).collect();
+            return rise(well, &attacks);
+        }
+        let back_to_back = cleared == 4 && self.tetris;
+        self.tetris = cleared == 4;
+        let mut lines = SENDS[cleared] + if back_to_back { BACK_TO_BACK } else { 0 };
+        while lines > 0
+            && let Some(first) = self.incoming.front_mut()
+        {
+            let cancelled = lines.min(first.lines);
+            first.lines -= cancelled;
+            lines -= cancelled;
+            if first.lines == 0 {
+                self.incoming.pop_front();
+            }
+        }
+        if lines > 0 {
+            let hole = self.holes.below(COLS as u64) as u8;
+            self.outgoing.push(Attack { lines, hole });
+        }
+        false
+    }
+}
+
+/// `attacks`' rows push the well up from the floor, each full of garbage
+/// but for its attack's hole; the oldest rose first, so it lies highest.
+/// Whether a block went out of the top.
+fn rise(well: &mut Well, attacks: &[Attack]) -> bool {
+    let rows: Vec<u8> = attacks
+        .iter()
+        .flat_map(|attack| std::iter::repeat_n(attack.hole, usize::from(attack.lines)))
+        .collect();
+    let risen = rows.len().min(ROWS as usize);
+    let out = well[..risen].iter().flatten().any(Option::is_some);
+    well.rotate_left(risen);
+    for (row, hole) in well[ROWS as usize - risen..].iter_mut().zip(rows) {
+        *row = [Some(Piece::Garbage); COLS as usize];
+        row[usize::from(hole)] = None;
+    }
+    out
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,8 +252,8 @@ enum Move {
 }
 
 pub(crate) struct Tetris {
-    /// The settled blocks, rows top first.
-    pub(crate) well: [[Option<Piece>; COLS as usize]; ROWS as usize],
+    /// The settled blocks.
+    pub(crate) well: Well,
     pub(crate) piece: Piece,
     pub(crate) turn: u8,
     /// The top left corner of the falling piece's box.
@@ -168,6 +284,8 @@ pub(crate) struct Tetris {
     pub(crate) level: u64,
     score: u64,
     over: bool,
+    /// The garbage this well trades in versus; none alone.
+    pub(crate) versus: Option<Garbage>,
 }
 
 impl Tetris {
@@ -193,10 +311,20 @@ impl Tetris {
             level: 0,
             score: 0,
             over: false,
+            versus: None,
         };
         tetris.next = std::array::from_fn(|_| tetris.draw_bag());
         tetris.spawn();
         tetris
+    }
+
+    /// A versus well: dealt from `seed` as the other side's is, its
+    /// attacks' holes drawn from `holes`.
+    pub(crate) fn versus(seed: u64, holes: u64) -> Tetris {
+        Tetris {
+            versus: Some(Garbage::new(holes)),
+            ..Tetris::new(seed)
+        }
     }
 
     /// The next piece from the bag, which is filled again, shuffled, when
@@ -319,6 +447,12 @@ impl Tetris {
         self.score += CLEARED[cleared] * (self.level + 1);
         self.lines += cleared as u64;
         self.level = self.lines / 10;
+        if let Some(garbage) = &mut self.versus
+            && garbage.trade(cleared, &mut self.well)
+        {
+            self.over = true;
+            return;
+        }
         self.spawn();
     }
 
@@ -490,10 +624,25 @@ impl Tetris {
         ]
     }
 
+    /// The well with the piece falling in it, as versus shows it to the
+    /// other side: a byte a cell, rows top first, 0 empty and else a
+    /// block's [`Piece`] as `1 + its place` in [`BLOCKS`].
+    pub(crate) fn cells(&self) -> Vec<u8> {
+        let mut well = self.well;
+        if !self.over {
+            for (x, y) in self.falling() {
+                well[y as usize][x as usize] = Some(self.piece);
+            }
+        }
+        well.iter()
+            .flatten()
+            .map(|cell| cell.map_or(0, |piece| piece as u8 + 1))
+            .collect()
+    }
+
     /// The well, `cell` px a cell: the settled blocks, where the piece
     /// would land, and the piece.
     pub(crate) fn draw(&self, cell: f32, theme: &Theme) -> Canvas {
-        let (width, height) = (COLS as f32 * cell, ROWS as f32 * cell);
         let block = |x: i32, y: i32| {
             square(
                 x as f32 * cell + 1.,
@@ -502,17 +651,7 @@ impl Tetris {
                 cell - 2.,
             )
         };
-        let mut drawn = canvas()
-            .w(px(width))
-            .h(px(height))
-            .rect(square(0., 0., width, height), theme.surface);
-        for (y, row) in (0..).zip(&self.well) {
-            for (x, settled) in (0..).zip(row) {
-                if let Some(piece) = settled {
-                    drawn = drawn.rect(block(x, y), piece.color(theme));
-                }
-            }
-        }
+        let mut drawn = draw_well(&self.well, cell, theme);
         if self.over {
             return drawn;
         }
@@ -557,6 +696,57 @@ impl Tetris {
         };
         piece(drawn, held, cell, 0., color)
     }
+}
+
+/// Every block a cell may hold, in [`Tetris::cells`]' order.
+const BLOCKS: [Piece; 8] = [
+    Piece::I,
+    Piece::O,
+    Piece::T,
+    Piece::S,
+    Piece::Z,
+    Piece::J,
+    Piece::L,
+    Piece::Garbage,
+];
+
+/// The well [`Tetris::cells`] wrote, if `cells` is one: a byte a cell of
+/// the well, each a block or 0.
+pub(crate) fn read_cells(cells: &[u8]) -> Option<Well> {
+    if cells.len() != (COLS * ROWS) as usize {
+        return None;
+    }
+    let mut well = [[None; COLS as usize]; ROWS as usize];
+    for (at, cell) in well.iter_mut().flatten().zip(cells) {
+        *at = match cell {
+            0 => None,
+            block => Some(*BLOCKS.get(usize::from(block - 1))?),
+        };
+    }
+    Some(well)
+}
+
+/// `well`'s settled blocks, `cell` px a cell, on the well's ground.
+pub(crate) fn draw_well(well: &Well, cell: f32, theme: &Theme) -> Canvas {
+    let (width, height) = (COLS as f32 * cell, ROWS as f32 * cell);
+    let mut drawn = canvas()
+        .w(px(width))
+        .h(px(height))
+        .rect(square(0., 0., width, height), theme.surface);
+    for (y, row) in (0..).zip(well) {
+        for (x, settled) in (0..).zip(row) {
+            if let Some(piece) = settled {
+                let at = square(
+                    x as f32 * cell + 1.,
+                    y as f32 * cell + 1.,
+                    cell - 2.,
+                    cell - 2.,
+                );
+                drawn = drawn.rect(at, piece.color(theme));
+            }
+        }
+    }
+    drawn
 }
 
 /// The key's move, if it is one.
@@ -1014,6 +1204,157 @@ mod tests {
         tetris.tick();
         assert_eq!(tetris.piece, after[0]);
         assert_eq!(tetris.next[..2], after[1..]);
+    }
+
+    /// The attacks `garbage` made, emptied.
+    fn sent(garbage: &mut Garbage) -> Vec<u8> {
+        garbage
+            .outgoing
+            .drain(..)
+            .map(|attack| attack.lines)
+            .collect()
+    }
+
+    #[test]
+    fn rows_cleared_send_by_the_table_and_a_tetris_after_a_tetris_one_more() {
+        let mut garbage = Garbage::new(1);
+        let mut well = [[None; COLS as usize]; ROWS as usize];
+        let mut sends = Vec::new();
+        for cleared in [1, 2, 3, 4, 4, 0, 4, 2, 4] {
+            garbage.trade(cleared, &mut well);
+            sends.push(sent(&mut garbage));
+        }
+        let none = Vec::new();
+        assert_eq!(
+            sends,
+            [
+                none.clone(),
+                vec![1],
+                vec![2],
+                vec![4],
+                vec![5],
+                none,
+                vec![5],
+                vec![1],
+                vec![4]
+            ],
+            "a lock that clears nothing keeps the Tetrises back to back; one of two rows breaks them"
+        );
+        assert!(well.iter().flatten().all(Option::is_none));
+    }
+
+    #[test]
+    fn what_is_sent_cancels_the_garbage_queued_first() {
+        let mut garbage = Garbage::new(1);
+        let mut well = [[None; COLS as usize]; ROWS as usize];
+        garbage
+            .incoming
+            .extend([Attack { lines: 3, hole: 0 }, Attack { lines: 2, hole: 9 }]);
+        garbage.trade(4, &mut well);
+        assert!(sent(&mut garbage).is_empty(), "four cancel four");
+        assert_eq!(garbage.incoming, [Attack { lines: 1, hole: 9 }]);
+        garbage.trade(3, &mut well);
+        assert_eq!(sent(&mut garbage), [1], "two cancel one and send one");
+        assert!(garbage.incoming.is_empty());
+    }
+
+    #[test]
+    fn queued_garbage_rises_on_a_lock_that_clears_nothing_holes_and_all() {
+        let mut tetris = Tetris::versus(1, 1);
+        tetris.piece = Piece::O;
+        tetris.at = (3, 0);
+        let garbage = tetris.versus.as_mut().expect("versus");
+        garbage
+            .incoming
+            .extend([Attack { lines: 1, hole: 2 }, Attack { lines: 2, hole: 7 }]);
+        tetris.tap("space");
+        tetris.tick();
+        let rows = |tetris: &Tetris, y: usize| {
+            tetris.well[y]
+                .iter()
+                .map(|cell| match cell {
+                    None => '.',
+                    Some(Piece::Garbage) => 'G',
+                    Some(_) => 'O',
+                })
+                .collect::<String>()
+        };
+        let bottom: Vec<String> = (ROWS as usize - 5..ROWS as usize)
+            .map(|y| rows(&tetris, y))
+            .collect();
+        assert_eq!(
+            bottom,
+            [
+                "....OO....",
+                "....OO....",
+                "GG.GGGGGGG",
+                "GGGGGGG.GG",
+                "GGGGGGG.GG",
+            ],
+            "the O pushed up three, the oldest row highest"
+        );
+        assert!(tetris.versus.as_ref().expect("versus").incoming.is_empty());
+        assert!(!tetris.over());
+    }
+
+    #[test]
+    fn garbage_that_pushes_a_block_out_of_the_top_ends_the_game() {
+        let mut tetris = Tetris::versus(1, 1);
+        tetris.piece = Piece::O;
+        tetris.at = (3, 0);
+        // a block in the top row, away from where pieces come in
+        tetris.well[0][0] = Some(Piece::I);
+        tetris.well[1][0] = Some(Piece::I);
+        let garbage = tetris.versus.as_mut().expect("versus");
+        garbage.incoming.push_back(Attack { lines: 1, hole: 0 });
+        tetris.tap("space");
+        tetris.tick();
+        assert!(tetris.over());
+        assert!(!tetris.tick(), "an ended game does not move");
+    }
+
+    #[test]
+    fn two_versus_wells_of_one_seed_deal_alike_whatever_garbage_they_trade() {
+        let (mut ours, mut theirs) = (Tetris::versus(42, 1), Tetris::versus(42, 2));
+        let mut dealt = (Vec::new(), Vec::new());
+        for drop in 0..21 {
+            // ours takes a row of garbage, which rises on the drop, or
+            // attacks, by turns; theirs does neither
+            let garbage = ours.versus.as_mut().expect("versus");
+            if drop % 2 == 0 {
+                garbage.incoming.push_back(Attack { lines: 1, hole: 3 });
+            } else {
+                garbage.trade(3, &mut ours.well);
+                assert_eq!(sent(garbage), [2]);
+            }
+            for (tetris, dealt) in [(&mut ours, &mut dealt.0), (&mut theirs, &mut dealt.1)] {
+                tetris.well = [[None; COLS as usize]; ROWS as usize];
+                tetris.tap("space");
+                tetris.tick();
+                dealt.push(tetris.piece);
+            }
+        }
+        assert!(!ours.over() && !theirs.over());
+        assert_eq!(dealt.0, dealt.1);
+    }
+
+    #[test]
+    fn a_well_read_back_from_its_cells_is_the_well_with_the_piece_in_it() {
+        let mut tetris = Tetris::versus(3, 3);
+        tetris.well[ROWS as usize - 1] = [Some(Piece::Garbage); COLS as usize];
+        tetris.well[ROWS as usize - 1][4] = None;
+        tetris.well[ROWS as usize - 2][0] = Some(Piece::Z);
+        let cells = tetris.cells();
+        assert_eq!(cells.len(), 200, "a byte a cell");
+        let mut shown = tetris.well;
+        for (x, y) in tetris.falling() {
+            shown[y as usize][x as usize] = Some(tetris.piece);
+        }
+        assert_eq!(read_cells(&cells), Some(shown));
+        assert_eq!(read_cells(&cells[1..]), None, "a short well is no well");
+        let mut past = cells.clone();
+        past[0] = 9;
+        assert_eq!(read_cells(&past), None, "no block is 9");
     }
 
     #[test]

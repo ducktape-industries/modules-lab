@@ -125,6 +125,7 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "arcade",
+ "borsh",
  "ducktape-view-guest",
  "gpui-pre",
  "program",

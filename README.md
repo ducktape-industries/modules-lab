@@ -9,8 +9,8 @@ moves over as it is.
 |---|---|
 | `crates/app/trade` | spot markets for practice funds: the program, its types on the wire and its tables |
 | `crates/app/trade-view` | its view: a trading terminal on the view SDK as it is |
-| `crates/app/arcade` | the high scores of six classic games: the program |
-| `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, and the boards |
+| `crates/app/arcade` | the high scores of six classic games, and the door to Tetris versus's live room: the program |
+| `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, the boards, and Tetris versus over live tracks |
 | `crates/app/browser-view` | a view alone, no program: web pages in tabs on the SDK's `web` piece |
 
 The SDK is modules `dev` at the rev the app pins (`Cargo.toml`, `sdk-line`).
@@ -98,15 +98,23 @@ best on the game's board. `Query::Top` answers a game's board, highest
 first, at most 50 rows; `Query::Bests` an account's best of every game. A
 key that holds no account posts nothing.
 
+Tetris versus never touches the chain: the two views talk through the
+node's live tracks in the room `versus`. The node lets an account into a
+room only as the module's program granted it, in a row the program writes;
+`Op::OpenVersus` writes the room's one row, every account may publish and
+subscribe to every track, and writes the same row each time. The view
+sends it when the node first refuses it for want of the row, then asks
+again, once.
+
 **Nothing checks a score.** The games run in the view, on the reader's
 machine, and the view says what the score was: anyone can post any number.
 The boards are practice, a place to compare, not proof of anything.
 
 ## arcade-view
 
-A hub of six cards, each a button with the game's name, a line of what it
-is, a still picture and the reader's best; pressed, the game starts with
-its board taking the keys. A game is its board, a panel with the score,
+A hub of seven cards, the six games and Tetris versus, each a button with
+the game's name, a line of what it is, a still picture and the reader's
+best; pressed, the game starts with its board taking the keys. A game is its board, a panel with the score,
 the reader's best and the game's own facts (Tetris's level, lines, hold
 and next three pieces; Snake's length; 2048's best tile; Minesweeper's
 mines left and time; Breakout's stage, lives and items on; Invaders' lives
@@ -147,6 +155,27 @@ game runs: the hub, a paused game and an ended one ask for nothing, and a
 game pauses when the view leaves the screen. Tetris, Snake, Breakout and
 Invaders read a key on their next tick; 2048 and Minesweeper act on it at
 once.
+
+The seventh card, Tetris versus (`versus.rs`), opens a lobby: who is
+waiting in the room, each a row with a button that challenges them, or
+accepts their challenge, or takes one back. A side waits by keeping
+`wait/<me>` up, asks by putting `ask/<me>/<them>/<nonce>` up (the nonce
+drawn from the id the host mints as the lobby opens), and accepting is
+asking back. Once each has asked the other both start, dealt from both
+asks' accounts and nonces, so on the same pieces. The `ask` track goes on
+to carry, in order, what the side says: an attack (rows and the column of
+their hole), its top-out, a rematch. Its well goes out on
+`board/<me>/<nonce>`, a byte a cell, newest wins, whenever it moves, and
+the other side draws it small beside its own. Rows cleared at once send 2 →
+1, 3 → 2, 4 → 4, a Tetris after a Tetris one more; what a side sends
+cancels the garbage queued against it first; a lock that clears nothing
+lets every queued row rise from the floor, and a block pushed out of the
+top tops the well out. The holes come from a draw of their own, so
+garbage never changes a side's pieces. A round ends at a top-out, won or
+lost; both pressing Rematch deal the next round, each track going on in a
+new group. A side whose `ask` track ends mid-match (its app gone, or it
+left) hands the other the win. Versus posts no score: the boards are the
+single games'.
 
 ## browser-view
 

@@ -11,16 +11,17 @@ use ducktape_view_guest::{AnyElement, Div, FontWeight, Stateful};
 
 use crate::data::Row;
 use crate::games::{Game, seed};
+use crate::tetris::Tetris;
 use crate::{Arcade, Play, Post, breakout, invaders, merge, mines, snake, tetris};
 
 /// The bar over the board, the panel's width and the room around a board.
-const BAR_H: Pixels = px(44.);
-const PANEL_W: f32 = 216.;
+pub(crate) const BAR_H: Pixels = px(44.);
+pub(crate) const PANEL_W: f32 = 216.;
 const GUTTER: f32 = 16.;
 
 /// Every key a game or the screen reads: the board keeps them from the
 /// panes around it.
-const KEYS: [&str; 16] = [
+pub(crate) const KEYS: [&str; 16] = [
     "up", "down", "left", "right", "space", "enter", "escape", "p", "w", "a", "s", "d", "x", "z",
     "f", "c",
 ];
@@ -124,7 +125,7 @@ impl Arcade {
     }
 
     /// What the bar and the panel leave a board.
-    fn room(&self) -> (f32, f32) {
+    pub(crate) fn room(&self) -> (f32, f32) {
         (
             self.viewport.0 - PANEL_W - 2. * GUTTER,
             self.viewport.1 - f32::from(BAR_H) - 2. * GUTTER,
@@ -474,28 +475,7 @@ impl Arcade {
             .child(fact("Your best", best))
             .children(facts)
             .children(match game {
-                Some(Game::Tetris(tetris)) => {
-                    let boxed = |label: &'static str, drawn| {
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(design::space::XS)
-                            .child(
-                                div()
-                                    .text_size(design::text::CAPTION)
-                                    .text_color(theme.muted)
-                                    .child(label),
-                            )
-                            .child(drawn)
-                    };
-                    Some(
-                        div()
-                            .flex()
-                            .gap(design::space::LG)
-                            .child(boxed("Hold", tetris.draw_hold(16., &theme)))
-                            .child(boxed("Next", tetris.draw_next(16., &theme))),
-                    )
-                }
+                Some(Game::Tetris(tetris)) => Some(pieces(tetris, &theme)),
                 _ => None,
             })
             .children(game.map(|game| design::quiet(game.keys(), &theme)))
@@ -543,6 +523,28 @@ impl Arcade {
             )
             .child(rows)
     }
+}
+
+/// Tetris's Hold and Next, side by side under their captions.
+pub(crate) fn pieces(tetris: &Tetris, theme: &Theme) -> Div {
+    let boxed = |label: &'static str, drawn| {
+        div()
+            .flex()
+            .flex_col()
+            .gap(design::space::XS)
+            .child(
+                div()
+                    .text_size(design::text::CAPTION)
+                    .text_color(theme.muted)
+                    .child(label),
+            )
+            .child(drawn)
+    };
+    div()
+        .flex()
+        .gap(design::space::LG)
+        .child(boxed("Hold", tetris.draw_hold(16., theme)))
+        .child(boxed("Next", tetris.draw_next(16., theme)))
 }
 
 /// One row of the top ten: the rank, the name and the score; the reader's
@@ -605,7 +607,7 @@ fn draw(game: &Game, room: (f32, f32), theme: &Theme) -> AnyElement {
 }
 
 /// The whole pixels a cell of a `cols` x `rows` grid takes in `room`.
-fn cell(room: (f32, f32), (cols, rows): (i32, i32)) -> f32 {
+pub(crate) fn cell(room: (f32, f32), (cols, rows): (i32, i32)) -> f32 {
     (room.0 / cols as f32)
         .min(room.1 / rows as f32)
         .floor()
