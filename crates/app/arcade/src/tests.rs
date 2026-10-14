@@ -1,6 +1,7 @@
 //! The op once as meant and once as an attack: each refusal leaves the
 //! store exactly as it was. The harness is the [`Arcade`] module over a
 //! [`MockHost`]; the accounts that post each sign the env of their op.
+use guest::live::Grant;
 use guest::{Env, Error, MockHost, Module, QueryCtx, code};
 
 use crate::{Arcade, Entry, GAMES, MAX_TOP, MODULE, Op, Query, Reply, describe};
@@ -27,14 +28,20 @@ impl Hall {
         self.store.query(self.env())
     }
 
+    /// Sends `op` as `who`. A refusal has left the store as it found it,
+    /// or this panics.
+    #[track_caller]
+    fn send(&mut self, who: u64, op: Op) -> Result<(), Error> {
+        let signed = self.env().signed(who.to_be_bytes(), Some(who));
+        let ctx = self.store.exec(signed);
+        self.store.attempt(|| Arcade::execute(&ctx, op))
+    }
+
     /// Posts `score` of `game` as `who`. A refusal has left the store as
     /// it found it, or this panics.
     #[track_caller]
     fn post(&mut self, who: u64, game: u8, score: u64) -> Result<(), Error> {
-        let signed = self.env().signed(who.to_be_bytes(), Some(who));
-        let ctx = self.store.exec(signed);
-        self.store
-            .attempt(|| Arcade::execute(&ctx, Op::Score { game, score }))
+        self.send(who, Op::Score { game, score })
     }
 
     #[track_caller]
@@ -162,6 +169,41 @@ fn a_game_that_is_not_there_is_refused() {
 }
 
 #[test]
+fn open_versus_grants_everyone_the_room_once_and_leaves_the_scores_be() {
+    let mut hall = Hall::default();
+    hall.ok(ADA, TETRIS, 1_200);
+    let scores = hall.store.borrow().state.clone();
+    hall.send(BO, Op::OpenVersus).expect("opened");
+    let ctx = hall.store.exec(hall.env());
+    let row: Option<Grant> = ctx.record(b"live/versus/*").expect("a row");
+    assert_eq!(row, Some(Grant::all()));
+    let opened = hall.store.borrow().state.clone();
+    let added: Vec<_> = opened
+        .keys()
+        .filter(|key| !scores.contains_key(*key))
+        .collect();
+    assert_eq!(added.len(), 1, "the grant row alone");
+    assert!(
+        scores
+            .iter()
+            .all(|(key, value)| opened.get(key) == Some(value))
+    );
+    // again: the same row, nothing new
+    hall.send(CY, Op::OpenVersus).expect("opened again");
+    assert_eq!(hall.store.borrow().state, opened);
+    assert_eq!(hall.bests(ADA), [1_200, 0, 0, 0, 0, 0]);
+}
+
+#[test]
+fn a_key_that_holds_no_account_opens_no_room() {
+    let hall = Hall::default();
+    let unheld = hall.env().signed([9u8; 32], None);
+    let ctx = hall.store.exec(unheld);
+    let refusal = hall.store.refused(|| Arcade::execute(&ctx, Op::OpenVersus));
+    assert_eq!(refusal.code, code::UNAUTHORIZED);
+}
+
+#[test]
 fn an_op_reads_as_a_person_would_say_it() {
     use ::describe::{Value, field};
     let said = describe(&Op::Score {
@@ -181,4 +223,7 @@ fn an_op_reads_as_a_person_would_say_it() {
     assert_eq!(invaders.title, "Post a score in Invaders");
     let nowhere = describe(&Op::Score { game: 9, score: 1 });
     assert_eq!(nowhere.title, "Post a score in game 9");
+    let opened = describe(&Op::OpenVersus);
+    assert_eq!(opened.title, "Open Tetris versus to everyone");
+    assert!(opened.fields.is_empty());
 }

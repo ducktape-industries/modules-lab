@@ -2,8 +2,9 @@
 //! games themselves run in the view and never touch the chain; an account
 //! posts the score a game ended on, and the program keeps each account's
 //! best of each game and ranks them. Nothing checks a score: the client
-//! says it, so a board is practice, not proof. The layout, in reading
-//! order:
+//! says it, so a board is practice, not proof. Tetris versus is played
+//! over the node's live tracks, off the chain: the program only opens its
+//! room ([`Op::OpenVersus`]). The layout, in reading order:
 //!
 //! - `lib.rs` (here): the games, the types on the wire, all borsh, and
 //!   [`describe()`]
@@ -40,12 +41,20 @@ pub const GAMES: [&str; 6] = [
 /// The most rows one [`Query::Top`] answers.
 pub const MAX_TOP: u32 = 50;
 
+/// The live room Tetris versus is played in: the view's tracks there pass
+/// through the node, never the chain.
+pub const VERSUS: &str = "versus";
+
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum Op {
     /// The score a game of the sender's ended on. It becomes the sender's
     /// best of that game when it is higher; a score at or under the best
     /// changes nothing.
     Score { game: u8, score: u64 },
+    /// Opens the [`VERSUS`] room to every account on the chain: anyone may
+    /// publish and subscribe to any track in it. The row it writes is the
+    /// same each time, so sending it again changes nothing.
+    OpenVersus,
 }
 
 /// A read. Each variant names the reply that answers it, so a view asks it
@@ -98,6 +107,7 @@ pub fn describe(op: &Op) -> describe::Description {
                 ],
             )
         }
+        Op::OpenVersus => ("Open Tetris versus to everyone".to_owned(), Vec::new()),
     };
     describe::Description { title, fields }
 }
@@ -108,5 +118,5 @@ describe::export!(Op, describe);
 /// enum only grows at its end. Append a new variant here; never reorder.
 #[test]
 fn op_variants_only_append() {
-    assert_eq!(describe::variants::<Op>(), ["Score"]);
+    assert_eq!(describe::variants::<Op>(), ["Score", "OpenVersus"]);
 }

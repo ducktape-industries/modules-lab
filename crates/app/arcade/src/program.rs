@@ -4,7 +4,7 @@
 use guest::{Error, ExecCtx, Module, Program, QueryCtx};
 
 use crate::queries::{bests, top};
-use crate::rules::score;
+use crate::rules::{open_versus, score};
 use crate::{MODULE, Op, Query, Reply};
 
 pub struct Arcade;
@@ -18,13 +18,15 @@ impl Program for Arcade {
 
 impl Module for Arcade {
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
-        // a score is an account's: a key that holds none posts nothing
+        // a score is an account's, and so is a live room's door: a key that
+        // holds none posts nothing and opens nothing
         let account = ctx.sender_account()?;
         match op {
             Op::Score {
                 game,
                 score: posted,
             } => score(ctx, account, game, posted),
+            Op::OpenVersus => open_versus(ctx),
         }
     }
 
