@@ -189,9 +189,10 @@ the host's picture, mirrored unless turned off) with the mirror, mute and
 camera toggles over it, and a column: the camera, microphone and speaker
 pickers (each a menu, read again whenever it opens), the microphone's level
 (a meter the host draws, so a level never wakes the view), Test (the host's
-chime on the speaker), "Record 5 s and play back", "Hear myself live" with
-the headphones warning, and Join. Turning the camera off or muting removes
-the piece, and the host releases the device with it.
+chime on the speaker, `microphone.chime`: apart from the microphone, so it
+works muted), "Record 5 s and play back", "Hear myself live" with the
+headphones warning, and Join. Turning the camera off or muting removes the
+piece, and the host releases the device with it.
 
 The room is your tile (the picture covering it, a green ring while you
 speak, your muted mark) and a bar with the microphone and camera, each with

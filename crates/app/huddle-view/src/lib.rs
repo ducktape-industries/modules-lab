@@ -101,9 +101,12 @@ pub struct Huddle {
     attempt: u32,
     #[serde(skip)]
     pub(crate) recorder: MicHandle,
-    /// The speaker test asked, until its playback ends.
+    /// The speaker test asked, until the host answers that it sounded.
     #[serde(skip)]
     pub(crate) chiming: bool,
+    /// Why the last speaker test did not sound, as the host said.
+    #[serde(skip)]
+    pub(crate) speaker_fault: Option<String>,
     #[serde(skip)]
     pub(crate) menu: Option<Menu>,
     /// Where layout put each menu's opener, in window pixels: a menu hangs
@@ -180,7 +183,6 @@ impl Huddle {
         self.camera_state = MediaState::default();
         self.mic_state = MediaState::default();
         self.camera_since = self.ticks;
-        self.chiming = false;
         self.recording_since = None;
         self.list(cx);
         cx.notify();
@@ -231,7 +233,6 @@ impl Huddle {
     pub(crate) fn toggle_mute(&mut self, cx: &mut Context<Self>) {
         self.muted = !self.muted;
         self.monitor = false;
-        self.chiming = false;
         self.recording_since = None;
         self.mic_state = MediaState::default();
         cx.notify();
@@ -377,21 +378,31 @@ impl Huddle {
         self.anchors.push((which, bounds));
     }
 
+    /// The speaker test: the host's chime on the picked speaker, apart
+    /// from the microphone (it works muted), "Playing…" until the host
+    /// answers that it sounded.
+    pub(crate) fn chime(&mut self, cx: &mut Context<Self>) {
+        self.chiming = true;
+        self.speaker_fault = None;
+        let chimed = cx.host().ask::<MicrophoneChime>(self.speaker.clone());
+        cx.land(chimed, |view, chimed, cx| {
+            view.chiming = false;
+            view.speaker_fault = chimed.err().map(|refused| refused.message);
+            cx.notify();
+        })
+        .detach();
+        cx.notify();
+    }
+
     /// The microphone piece told its state: a recording's start starts the
-    /// countdown, the chime's end ends the speaker test.
+    /// countdown.
     pub(crate) fn heard_mic(&mut self, state: &MediaState) {
         match state.playback {
             Playback::Recording if self.recording_since.is_none() => {
                 self.recording_since = Some(self.ticks);
             }
-            Playback::Idle => {
-                self.recording_since = None;
-                self.chiming = false;
-            }
-            _ => {}
-        }
-        if state.playback != Playback::Recording {
-            self.recording_since = None;
+            Playback::Recording => {}
+            _ => self.recording_since = None,
         }
         self.mic_state = state.clone();
     }

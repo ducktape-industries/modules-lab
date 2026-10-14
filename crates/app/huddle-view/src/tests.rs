@@ -4,7 +4,7 @@
 //! capabilities (a piece the manifest leaves out fails the test).
 use ducktape_view_guest::Entity;
 use ducktape_view_guest::methods::{
-    AudioDevices, CameraDevices, ClockTicks, Device, LinkOpen, MicrophoneDevices,
+    AudioDevices, CameraDevices, ClockTicks, Device, LinkOpen, MicrophoneChime, MicrophoneDevices,
 };
 use ducktape_view_guest::testing::{StreamSender, TestAppContext};
 use ducktape_view_guest::wire::{Fit, MediaState, MediaStatus, MicCommand, Node, Playback};
@@ -257,28 +257,63 @@ fn record_then_play_back() {
     assert_eq!(mic_piece(&cx).unwrap().4, [MicCommand::Stop]);
 }
 
-/// Test plays the host's chime on the speaker, says so while it sounds,
-/// and waits for a live, unmuted microphone (the chime rides its piece).
+/// Test asks the host for its chime on the picked speaker
+/// (`microphone.chime`), apart from the microphone piece, and says
+/// "Playing…" until the host answers that it sounded.
 #[test]
 fn the_speaker_test_chimes() {
-    let (mut cx, ..) = opened();
-    assert!(disabled(&cx, "huddle-speaker-test"), "no microphone yet");
-    let key = mic_key(&cx);
-    cx.simulate_media_state(&key, live("Built-in Microphone"));
-    cx.simulate_click("huddle-speaker-test");
-    assert_eq!(mic_piece(&cx).unwrap().4, [MicCommand::Chime]);
-    assert!(cx.has_text("Playing…"));
-    cx.simulate_media_state(
-        &key,
-        MediaState {
-            playback: Playback::Playing,
-            ..live("Built-in Microphone")
-        },
+    let (mut cx, view, _) = opened();
+    cx.host().never::<MicrophoneChime>();
+    assert!(
+        !disabled(&cx, "huddle-speaker-test"),
+        "no microphone needed"
     );
+    cx.update(&view, |view, _, cx| {
+        view.speaker = Some("alsa:headphones".into());
+        cx.notify();
+    });
+    cx.simulate_click("huddle-speaker-test");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.host().requests::<MicrophoneChime>(),
+        [Some("alsa:headphones".to_owned())]
+    );
+    assert!(
+        mic_piece(&cx).unwrap().4.is_empty(),
+        "the piece is not asked"
+    );
+    assert!(cx.has_text("Playing…"));
+    assert!(disabled(&cx, "huddle-speaker-test"), "one chime at a time");
     assert!(disabled(&cx, "huddle-record"), "one sound at a time");
-    cx.simulate_media_state(&key, live("Built-in Microphone"));
-    assert!(cx.has_text("Test"));
-    assert!(!disabled(&cx, "huddle-record"));
+}
+
+/// Test works while muted (the microphone let go) and while the
+/// microphone is in trouble: the host's answer ends "Playing…", and its
+/// refusal is said under the speaker.
+#[test]
+fn test_works_while_muted() {
+    let (mut cx, ..) = opened();
+    cx.host().handle::<MicrophoneChime>(|_| Ok(()));
+    cx.simulate_click("huddle-mic");
+    assert!(mic_piece(&cx).is_none(), "muted: no microphone piece");
+    assert!(!disabled(&cx, "huddle-speaker-test"));
+    cx.simulate_click("huddle-speaker-test");
+    cx.run_until_parked();
+    assert_eq!(cx.host().requests::<MicrophoneChime>(), [None]);
+    assert!(!cx.has_text("Playing…"), "answered: the chime has sounded");
+    assert!(!disabled(&cx, "huddle-speaker-test"));
+    // unmuted, the microphone refused: the speaker still tests, and says
+    // when it does not play
+    cx.simulate_click("huddle-mic");
+    let key = mic_key(&cx);
+    cx.simulate_media_state(&key, status(MediaStatus::Denied));
+    cx.host()
+        .refuse::<MicrophoneChime>("host_fault", "no such speaker");
+    assert!(!disabled(&cx, "huddle-speaker-test"));
+    cx.simulate_click("huddle-speaker-test");
+    cx.run_until_parked();
+    assert_eq!(cx.host().requests::<MicrophoneChime>().len(), 2);
+    assert!(cx.has_text("Test failed: no such speaker."));
 }
 
 /// The live loop is off until switched on, only while the microphone is
@@ -301,10 +336,14 @@ fn the_live_loop_waits_for_its_switch_and_mute_lets_the_microphone_go() {
     assert!(mic_piece(&cx).unwrap().3);
     cx.simulate_click("huddle-mic");
     assert!(mic_piece(&cx).is_none(), "muted: the microphone is let go");
-    assert!(cx.has_text("Unmute to test your microphone and speaker."));
-    for control in ["huddle-record", "huddle-monitor", "huddle-speaker-test"] {
+    assert!(cx.has_text("Unmute to test your microphone."));
+    for control in ["huddle-record", "huddle-monitor"] {
         assert!(disabled(&cx, control), "{control} waits for the microphone");
     }
+    assert!(
+        !disabled(&cx, "huddle-speaker-test"),
+        "the speaker is apart"
+    );
     cx.simulate_click("huddle-mic");
     assert!(!mic_piece(&cx).unwrap().3, "the loop stays off");
 }
