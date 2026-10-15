@@ -1,0 +1,32 @@
+[package]
+name = "tetris-bot"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+# A Tetris versus player with an account of its own: a client of the node's
+# live lane, as the app is one, never a view.
+[dependencies]
+# the rules, the deal, the track names and what a side says, as the view
+# has them
+arcade-view = { path = "../../app/arcade-view" }
+# the module and the room versus is played in
+arcade.workspace = true
+borsh.workspace = true
+# the live wire and the key scheme of core d6bdc3e10: the rev garage's node
+# runs and the app pins
+live-wire = { git = "https://github.com/ducktape-industries/ducktape", rev = "d6bdc3e107b14f442e09506789f79efe7b28a895" }
+keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "d6bdc3e107b14f442e09506789f79efe7b28a895" }
+# `/v1/status` decodes into the node's own types
+core-abi = { package = "abi", git = "https://github.com/ducktape-industries/ducktape", rev = "d6bdc3e107b14f442e09506789f79efe7b28a895" }
+# the device key, signed with as the app signs
+commonware-cryptography = "2026.9.0"
+commonware-codec = "2026.9.0"
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1", features = ["macros", "net", "rt", "time"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+
+[dev-dependencies]
+keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "d6bdc3e107b14f442e09506789f79efe7b28a895", features = ["testkit"] }
+tokio = { version = "1", features = ["test-util"] }
