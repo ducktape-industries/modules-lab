@@ -101,10 +101,12 @@ key that holds no account posts nothing.
 Tetris versus never touches the chain: the two views talk through the
 node's live tracks in the room `versus`. The node lets an account into a
 room only as the module's program granted it, in a row the program writes;
-`Op::OpenVersus` writes the room's one row, every account may publish and
-subscribe to every track, and writes the same row each time. The view
-sends it when the node first refuses it for want of the row, then asks
-again, once.
+`Op::OpenVersus` writes the room's one row, and the same row each time:
+every account may subscribe to every track, and publish only the tracks
+named by its own number (`wait/{account}`, `ask/{account}/*`,
+`board/{account}/*`), so no one plays as another. The view sends it on
+the node's first `not_granted`; the node holds the view's asks until the
+row's block, and the view asks nothing again.
 
 **Nothing checks a score.** The games run in the view, on the reader's
 machine, and the view says what the score was: anyone can post any number.
