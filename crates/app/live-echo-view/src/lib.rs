@@ -17,10 +17,10 @@
 //! `not_granted` is shown, not retried.
 use std::collections::BTreeMap;
 
-use ducktape_view_guest::live::{Received, Track, subscribe};
-use ducktape_view_guest::prelude::*;
 use live_echo::{LOBBY, LiveEcho, Op};
 use serde::{Deserialize, Serialize};
+use view::live::{Received, Track, subscribe};
+use view::prelude::*;
 
 /// The name every reader's track starts with; the rest is its account.
 const ECHO: &str = "echo/";
@@ -86,15 +86,15 @@ impl View for Echo {
     const NAME: &'static str = "Live echo";
     const DESCRIPTION: &'static str = "Lines typed in the lobby, live, by account.";
     const ICON: &'static str = "icons/radio.svg";
-    // `live`: the tracks; `host`: the session; `module` and `op`: the
+    // `live`: the tracks; `host`: the session; `program` and `op`: the
     // program's blocks and the op that opens the lobby
     const CAPABILITIES: &'static [Capability] = &[
         Capability::Live,
         Capability::Host,
-        Capability::Module,
+        Capability::Program,
         Capability::Op,
     ];
-    const TARGETS: &'static [&'static str] = &[live_echo::MODULE];
+    const TARGETS: &'static [&'static str] = &[live_echo::PROGRAM];
     const MIN_WINDOW_WIDTH: u32 = 320;
 
     fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {

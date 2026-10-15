@@ -1,21 +1,19 @@
-//! The program (its name and types, which a view names it by) and the
-//! module: the one op, which writes the room's grant.
-use guest::live::{Grant, grant};
-use guest::{Error, ExecCtx, Module, Program, QueryCtx, invalid};
+//! The program: its name and types, which a view names it by, and the one
+//! op, which writes the room's grant.
+use ::program::live::{Grant, grant};
+use ::program::{Error, ExecCtx, Program, QueryCtx, invalid};
 
-use crate::{MAX_ROOM, MODULE, Op};
+use crate::{MAX_ROOM, Op, PROGRAM};
 
 pub struct LiveEcho;
 
 impl Program for LiveEcho {
-    const NAME: &'static str = MODULE;
+    const NAME: &'static str = PROGRAM;
     type Op = Op;
     /// Nothing to ask: the program keeps no state of its own.
     type Query = ();
     type Reply = ();
-}
 
-impl Module for LiveEcho {
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         // a room is opened by an account: a key that holds none opens nothing
         ctx.sender_account()?;
@@ -40,5 +38,5 @@ impl Module for LiveEcho {
     }
 }
 
-#[cfg(feature = "module")]
-guest::export!(LiveEcho);
+#[cfg(feature = "program")]
+::program::export!(LiveEcho);

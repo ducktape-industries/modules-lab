@@ -1,12 +1,12 @@
-//! The `live-echo` module: the program behind the live echo view. It keeps
+//! The `live-echo` program: the one behind the live echo view. It keeps
 //! nothing of its own. Its one op opens a room: it writes the live grant
 //! that lets every account on the chain publish and subscribe to every
 //! track of the room through its node. The lines themselves never touch
 //! the chain; they are live tracks the view publishes.
 //!
 //! - `lib.rs` (here): the op and [`describe()`]
-//! - `program.rs`: [`LiveEcho`], the program and the module
-//! - `tests.rs`: the module natively over `guest::MockHost`
+//! - `program.rs`: [`LiveEcho`], the program
+//! - `tests.rs`: the program natively over `::program::MockHost`
 mod program;
 #[cfg(test)]
 mod tests;
@@ -15,13 +15,13 @@ pub use program::LiveEcho;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-pub const MODULE: &str = "live-echo";
+pub const PROGRAM: &str = "live-echo";
 
 /// The room the view talks in.
 pub const LOBBY: &str = "lobby";
 
 /// The longest room name an op opens: the host stamps the chain and the
-/// module in front of it, and the whole namespace is at most 192 bytes.
+/// program in front of it, and the whole namespace is at most 192 bytes.
 pub const MAX_ROOM: usize = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -32,7 +32,7 @@ pub enum Op {
 }
 
 /// An op as a person reads it: a title and its fields. The source of the
-/// `ducktape.describe` module this module ships (`make wasm-describes`).
+/// `ducktape.describe` module this program ships (`make wasm-describes`).
 pub fn describe(op: &Op) -> describe::Description {
     use describe::{Value, field};
     match op {

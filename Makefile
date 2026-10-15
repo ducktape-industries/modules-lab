@@ -10,7 +10,7 @@ RELEASE := $(BUILD_TARGET)/wasm32-unknown-unknown/release
 
 # The view gate (wasm-opt, then the ABI check) is modules' own, run out of
 # the SDK checkout cargo fetched at the pinned rev.
-SDK_TOOLS = $(shell $(CARGO) metadata --format-version 1 | python3 -c 'import json, os, sys; print(os.path.join(next(os.path.dirname(p["manifest_path"]) for p in json.load(sys.stdin)["packages"] if p["name"] == "ducktape-view-guest"), "..", "..", "..", "tools"))')
+SDK_TOOLS = $(shell $(CARGO) metadata --format-version 1 | python3 -c 'import json, os, sys; print(os.path.join(next(os.path.dirname(p["manifest_path"]) for p in json.load(sys.stdin)["packages"] if p["name"] == "view"), "..", "..", "..", "tools"))')
 
 # An app checkout at the rev that pins the same SDK line, and the debug
 # build of it that holds `--render-tree`.
@@ -25,7 +25,7 @@ WASM_RUSTFLAGS := --remap-path-prefix=$(CURDIR)=/build --remap-path-prefix=$(CAR
 
 WASM_BUILD := RUSTFLAGS="$(WASM_RUSTFLAGS)" $(CARGO) build --release --target wasm32-unknown-unknown
 
-# A program is a cdylib its view also links, with `module` off; in one
+# A program is a cdylib its view also links, with `program` off; in one
 # target dir each build would rebuild the crate for the other. So a program
 # builds in a target dir of its own, and its describe module in another.
 program_wasm = $(BUILD_TARGET)/$1/$2/wasm32-unknown-unknown/release/$(subst -,_,$2).wasm
@@ -55,7 +55,7 @@ test:
 ## (qa's `view-pack`).
 wasm-programs:
 	@mkdir -p $(RELEASE)
-	@$(foreach p,$(PROGRAMS),$(WASM_BUILD) --target-dir $(BUILD_TARGET)/programs/$(p) -p $(p) --features module && cp $(call program_wasm,programs,$(p)) $(RELEASE)/ || exit 1;)
+	@$(foreach p,$(PROGRAMS),$(WASM_BUILD) --target-dir $(BUILD_TARGET)/programs/$(p) -p $(p) --features program && cp $(call program_wasm,programs,$(p)) $(RELEASE)/ || exit 1;)
 
 ## builds every program's describe module (the `alloc` and `describe`
 ## exports, no imports) into $(RELEASE)/<name>.describe.wasm, ABI-checked.

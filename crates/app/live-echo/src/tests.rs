@@ -1,14 +1,14 @@
 //! The op once as meant and once as an attack: a refusal leaves the store
 //! exactly as it was.
-use guest::live::{Grant, key};
-use guest::{Env, Error, MockHost, Module};
+use ::program::live::{Grant, key};
+use ::program::{Env, Error, MockHost, Program};
 
-use crate::{LOBBY, LiveEcho, MAX_ROOM, MODULE, Op};
+use crate::{LOBBY, LiveEcho, MAX_ROOM, Op, PROGRAM};
 
 const ADA: u64 = 1;
 
 fn env() -> Env {
-    MockHost::env(MODULE)
+    MockHost::env(PROGRAM)
 }
 
 /// `who`'s `Open { room }`, signed with an account or, `None`, without.

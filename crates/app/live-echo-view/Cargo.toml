@@ -10,7 +10,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-ducktape-view-guest.workspace = true
+view.workspace = true
 serde.workspace = true
-# the program's types, linked with `module` off: the op that opens the lobby
+# the program's types, linked with `program` off: the op that opens the lobby
 live-echo.workspace = true

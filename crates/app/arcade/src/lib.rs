@@ -13,7 +13,7 @@
 //!   every query
 //! - `rules.rs`: what the op checks and writes
 //! - `queries.rs`: one function per question
-//! - `tests.rs`: the module natively over `guest::MockHost`
+//! - `tests.rs`: the module natively over `::program::MockHost`
 mod program;
 mod queries;
 mod rules;
@@ -25,7 +25,7 @@ pub use program::Arcade;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-pub const MODULE: &str = "arcade";
+pub const PROGRAM: &str = "arcade";
 
 /// A game is named on the wire by its place here.
 pub const GAMES: [&str; 6] = [

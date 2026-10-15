@@ -6,9 +6,9 @@
 //! the next step; two turns may wait, so a quick U-turn is not lost.
 use std::collections::VecDeque;
 
-use ducktape_view_guest::Canvas;
-use ducktape_view_guest::prelude::*;
 use gpui::point;
+use view::Canvas;
+use view::prelude::*;
 
 use crate::games::{Fact, Rng, square};
 

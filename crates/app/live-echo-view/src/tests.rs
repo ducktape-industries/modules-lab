@@ -2,11 +2,9 @@
 //! [`Relay`] that answers `live.*` as one node would, and one alone on a
 //! host that refuses the lobby until it is opened. Every frame is held to
 //! the host's sanitizer and accessibility audit.
-use ducktape_view_guest::methods::{
-    Changes, HostSession, LivePublishTrack, LiveTracks, Session, Submit, refusal,
-};
-use ducktape_view_guest::testing::{Relay, TestAppContext};
 use live_echo::{LOBBY, LiveEcho, Op};
+use view::methods::{Changes, HostSession, LivePublishTrack, LiveTracks, Session, Submit, refusal};
+use view::testing::{Relay, TestAppContext};
 
 use crate::Echo;
 

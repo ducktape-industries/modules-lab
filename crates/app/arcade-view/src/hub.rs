@@ -1,7 +1,7 @@
 //! The hub: a card for each game, each a button with the game's name, a
 //! line of what it is, a still picture of it, and the reader's best.
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Canvas, Div, FontWeight, Stateful};
+use view::prelude::*;
+use view::{Canvas, Div, FontWeight, Stateful};
 
 use crate::{Arcade, breakout, invaders, merge, mines, snake, tetris};
 
