@@ -109,6 +109,7 @@ fn the_room_is_named_on_the_chain_as_the_app_names_it() {
             identity: "identity".into(),
             blobs: "blobs".into(),
             awaits: "awaits".into(),
+            egress: None,
             halo: "halo".into(),
         },
     };
