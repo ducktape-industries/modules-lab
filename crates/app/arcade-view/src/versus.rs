@@ -16,9 +16,11 @@
 //!   own, a byte a cell, the newest wins (datagram mode, a group a round).
 //!
 //! Both sides deal from both asks' accounts and nonces, so both get the
-//! same pieces. A side whose `ask` track ends while the match is on
-//! (`publisher_gone` when its app went, `track_ended` when it left) has
-//! left, and the other wins.
+//! same pieces. Of the other side's `ask` track a side acts only on its
+//! current round's group, and in it only past the newest object it acted
+//! on. A side whose `ask` track ends while the match is on, for any reason
+//! the node gives (`publisher_gone` when its app went, `track_ended` when
+//! it left), has left, and the other wins.
 //!
 //! The node lets an account into the room only once the program wrote its
 //! grant row, and holds what the lobby asks till then: the first `Waiting`
@@ -30,6 +32,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ::identity::Identity;
 use arcade::Op;
 use borsh::{BorshDeserialize, BorshSerialize};
+use program::code;
 use view::live::{DEFAULT_PRIORITY, Received, Track, subscribe};
 use view::prelude::*;
 use view::{AnyElement, Div, FontWeight, Stateful};
@@ -113,6 +116,9 @@ pub struct Match {
     pub again: (bool, bool),
     /// The other side left: no other round.
     pub gone: bool,
+    /// The newest `(group, object)` of the other side's `ask` track acted
+    /// on: what a replay of its group (a re-open) says again is behind it.
+    heard: Option<(u64, u32)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,6 +195,7 @@ impl Match {
             end: None,
             again: (false, false),
             gone: false,
+            heard: None,
         };
         (play, vec![Effect::Show])
     }
@@ -218,8 +225,20 @@ impl Match {
         effects
     }
 
-    /// What the other side said on its `ask` track.
-    pub fn heard(&mut self, said: Said) -> Vec<Effect> {
+    /// What the other side said on its `ask` track, object `object` of
+    /// group `group`. Each side numbers its groups by the round, so only
+    /// the current round's group counts, and in it only what is past the
+    /// newest object acted on: a re-open replays the node's latest group,
+    /// which right after a rematch is still the last round's. A word of the
+    /// next round heard before the other side's rematch is lost with it:
+    /// groups are independent streams, and a lost attack beats a misapplied
+    /// one.
+    pub fn heard(&mut self, group: u64, object: u32, said: Said) -> Vec<Effect> {
+        let newer = self.heard.is_none_or(|heard| (group, object) > heard);
+        if group != self.round || !newer {
+            return Vec::new();
+        }
+        self.heard = Some((group, object));
         match said {
             Said::Attack(attack) if self.running() && attack.fair() => {
                 self.tetris.receive(attack);
@@ -238,7 +257,8 @@ impl Match {
         }
     }
 
-    /// The other side's `ask` track ended: it left, and this side wins.
+    /// The other side's `ask` track ended, for whatever reason the node
+    /// gave: it left, and this side wins.
     pub fn left(&mut self) {
         self.gone = true;
         self.win();
@@ -568,22 +588,33 @@ impl Arcade {
             return;
         };
         match said {
-            Ok(Received::Object { value, .. }) => {
-                let effects = game.play.heard(value);
+            Ok(Received::Object {
+                group,
+                object,
+                value,
+            }) => {
+                let effects = game.play.heard(group, object, value);
                 versus.act(effects, &cx.host());
             }
+            // a re-open (`Opened`) replays the node's latest group: what the
+            // match acted on already is behind its newest `(group, object)`,
+            // so nothing built from it starts over
             Ok(Received::Waiting | Received::Opened { .. } | Received::GroupEnd { .. }) => return,
-            Err(refusal)
-                if refusal.code == refusal::PUBLISHER_GONE
-                    || refusal.code == refusal::TRACK_ENDED =>
-            {
+            // a body that does not decode, the one item that does not end
+            // the subscription
+            Err(refusal) if refusal.code == code::UNEXPECTED_REPLY => {
+                return cx.log_refused("what the other side said", &refusal);
+            }
+            // any other refusal is the subscription's last item: `publisher_gone`
+            // when their app went, `track_ended` when they left,
+            // `unknown_track` when they were gone before it was asked
+            Err(_) => {
                 game.play.left();
                 // nobody is left to play again: this side's challenge ends
                 // with the match, or it reads as a fresh one when they
                 // come back
                 versus.ask = None;
             }
-            Err(refusal) => return cx.log_refused("what the other side said", &refusal),
         }
         self.settle(cx);
         cx.notify();

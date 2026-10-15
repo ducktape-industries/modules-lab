@@ -243,6 +243,9 @@ struct Wire {
     published: HashMap<String, Publication>,
     /// The subscription each alias in a data header names.
     aliases: HashMap<Alias, String>,
+    /// The objects heard so far of each group a subscription is in: a
+    /// group comes in slices, and an object's number is its place in it.
+    heard: HashMap<(Alias, u64), u32>,
     frames: Vec<WsFrame>,
 }
 
@@ -254,6 +257,7 @@ impl Wire {
             requests: HashMap::new(),
             published: HashMap::new(),
             aliases: HashMap::new(),
+            heard: HashMap::new(),
             frames: Vec::new(),
         };
         let request = wire.request(Kind::Watch);
@@ -371,17 +375,25 @@ impl Wire {
         let control = match frame {
             WsFrame::Control(control) => control,
             WsFrame::Group {
-                header, objects, ..
+                header,
+                objects,
+                end,
             } => {
                 let Some(name) = self.aliases.get(&header.alias) else {
                     return Ok(());
                 };
-                for object in objects {
-                    match borsh::from_slice(&object) {
-                        Ok(said) => bot.heard(name, said),
+                let key = (header.alias, header.group);
+                let first = self.heard.get(&key).copied().unwrap_or(0);
+                for (object, body) in (first..).zip(&objects) {
+                    match borsh::from_slice(body) {
+                        Ok(said) => bot.heard(name, header.group, object, said),
                         Err(error) => crate::log(format!("{name} said what no side says: {error}")),
                     }
                 }
+                match end {
+                    true => self.heard.remove(&key),
+                    false => self.heard.insert(key, first + objects.len() as u32),
+                };
                 return Ok(());
             }
             // this side subscribes to no datagram track
@@ -405,6 +417,9 @@ impl Wire {
             Control::Subscribed { request, alias, .. } => {
                 if let Some(Kind::Subscribe(name)) = self.requests.get(&request) {
                     self.aliases.insert(alias, name.clone());
+                    // a fresh opening: the node replays its group from the
+                    // first object
+                    self.heard.retain(|(heard, _), _| *heard != alias);
                 }
             }
             Control::Announce { track, by, up, .. } if track.namespace == self.namespace => {
@@ -413,6 +428,8 @@ impl Wire {
             Control::Ended { request, reason } => match self.requests.remove(&request) {
                 Some(Kind::Subscribe(name)) => {
                     self.aliases.retain(|_, held| *held != name);
+                    self.heard
+                        .retain(|(alias, _), _| self.aliases.contains_key(alias));
                     bot.ended(&name);
                 }
                 Some(Kind::Publish(name)) => {

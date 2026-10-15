@@ -1,6 +1,7 @@
 //! The client against a fake node on the other end of an in-process
 //! websocket: the node's half of the handshake checks the proof as the
 //! node does (`KeyScheme::verify`), then speaks the room and a match.
+use arcade_view::tetris::Attack;
 use arcade_view::versus::{Said, ask_track};
 use commonware_codec::DecodeExt as _;
 use live_wire::{Challenge, End, Mode};
@@ -118,6 +119,45 @@ fn the_room_is_named_on_the_chain_as_the_app_names_it() {
     assert_eq!(namespace(&read.chain()), "garage#ab01ff10/arcade/versus");
     // a name that is no chain label stands alone, as `ChainId::of` leaves it
     assert_eq!(status("Lab_1").chain(), "Lab_1");
+}
+
+#[test]
+fn a_group_heard_in_slices_numbers_its_objects_on() {
+    let mut bot = Bot::new(ME, Level::Normal);
+    let mut wire = Wire::new(NAMESPACE.into());
+    bot.announced(ask_track(9, ME, "abc"), 9, true);
+    for out in bot.out.drain(..) {
+        wire.out(out);
+    }
+    let request = wire
+        .requests
+        .iter()
+        .find_map(|(request, kind)| matches!(kind, Kind::Subscribe(_)).then_some(*request))
+        .expect("their ask subscribed");
+    let subscribed = Control::Subscribed {
+        request,
+        alias: 7,
+        by: 9,
+        mode: Mode::Stream,
+        latest: None,
+    };
+    wire.heard(WsFrame::Control(subscribed), &mut bot).unwrap();
+    // group 0 in two slices: an attack, then their top-out, object 1
+    let slice = |said: Said| WsFrame::Group {
+        header: GroupHeader { alias: 7, group: 0 },
+        objects: vec![borsh::to_vec(&said).unwrap()],
+        end: false,
+    };
+    let attack = Said::Attack(Attack { lines: 2, hole: 1 });
+    wire.heard(slice(attack), &mut bot).unwrap();
+    wire.heard(slice(Said::Out), &mut bot).unwrap();
+    assert!(
+        bot.log
+            .iter()
+            .any(|line| line.contains("against account 9: won")),
+        "{:?}",
+        bot.log
+    );
 }
 
 #[tokio::test]

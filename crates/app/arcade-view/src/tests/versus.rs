@@ -4,8 +4,8 @@
 //! The room's grant is the relay's to give: held, the lobby waits for it;
 //! taken back, the lobby stops.
 use view::methods::{
-    HostLog, LiveAnnounce, LiveMode, LivePublishTrack, LiveTracks, Method, Publishing, Watching,
-    refusal,
+    HostLog, LiveAnnounce, LiveItem, LiveMode, LivePublishTrack, LiveSubscribeTrack, LiveTracks,
+    Method, Publishing, Watching, refusal,
 };
 use view::testing::Relay;
 
@@ -307,9 +307,12 @@ fn a_side_that_goes_mid_match_hands_the_other_the_win_and_no_rematch() {
 }
 
 /// Ada alone on her fake host, in a match account 2 asked for: the room's
-/// list is the test's to feed.
+/// list and what account 2 says are the test's to feed.
 struct Alone {
     ada: Opened,
+    said: StreamSender<LiveSubscribeTrack>,
+    /// The id of ada's subscription to account 2's `ask/`.
+    hearing: u64,
     /// The ids of ada's `ask/` and `board/` publications.
     ask: u64,
     board: u64,
@@ -318,6 +321,7 @@ struct Alone {
 fn alone() -> Alone {
     let mut ada = opened(World::default(), Some(1));
     let tracks = ada.cx.host().stream::<LiveTracks>();
+    let said = ada.cx.host().stream::<LiveSubscribeTrack>();
     ada.cx.simulate_click("arcade-card-versus");
     ada.cx.run_until_parked();
     // account 2 waits and asks; ada accepts
@@ -332,23 +336,32 @@ fn alone() -> Alone {
     ada.cx.run_until_parked();
     ada.cx.simulate_click("versus-player-2");
     // the challenge and the match publish in the click's frame
-    let published = |prefix: &str| {
-        ada.cx
-            .last_frame()
-            .requests
+    let asked = |kind: &str, prefix: &str| {
+        let named = |request: &wire::Request| match request.kind.as_str() {
+            LivePublishTrack::KIND => LivePublishTrack::decode_request(&request.payload)
+                .is_ok_and(|publish| publish.track.name.starts_with(prefix)),
+            LiveSubscribeTrack::KIND => LiveSubscribeTrack::decode_request(&request.payload)
+                .is_ok_and(|subscribe| subscribe.track.name.starts_with(prefix)),
+            _ => false,
+        };
+        let requests = &ada.cx.last_frame().requests;
+        let found = requests
             .iter()
-            .find(|request| {
-                request.kind == LivePublishTrack::KIND
-                    && LivePublishTrack::decode_request(&request.payload)
-                        .is_ok_and(|publish| publish.track.name.starts_with(prefix))
-            })
-            .map(|request| request.id)
-            .expect("ada publishes it")
+            .find(|request| request.kind == kind && named(request));
+        found.map(|request| request.id).expect("ada asked it")
     };
-    let (ask, board) = (published("ask/1/2/"), published("board/1/"));
+    let ask = asked(LivePublishTrack::KIND, "ask/1/2/");
+    let board = asked(LivePublishTrack::KIND, "board/1/");
+    let hearing = asked(LiveSubscribeTrack::KIND, "ask/2/1/");
     ada.cx.run_until_parked();
     assert!(ada.ticks.subscribed(), "the round runs");
-    Alone { ada, ask, board }
+    Alone {
+        ada,
+        said,
+        hearing,
+        ask,
+        board,
+    }
 }
 
 impl Alone {
@@ -361,6 +374,42 @@ impl Alone {
             done: false,
         });
         self.ada.cx.run_until_parked();
+    }
+
+    /// Account 2's `ask/` track (re)opened, the node replaying `latest`.
+    fn opened(&mut self, latest: Option<u64>) {
+        self.said.send(LiveItem::Opened {
+            by: 2,
+            mode: LiveMode::Stream,
+            latest,
+        });
+        self.ada.cx.run_until_parked();
+    }
+
+    /// Account 2 says `said`, object `object` of group `group`.
+    fn says(&mut self, group: u64, object: u32, said: Said) {
+        self.said.send(LiveItem::Object {
+            group,
+            object,
+            body: borsh::to_vec(&said).unwrap(),
+        });
+        self.ada.cx.run_until_parked();
+    }
+
+    /// The host's word on ada's subscription to account 2's `ask/`.
+    fn refuse(&mut self, code: &str, done: bool) {
+        self.ada.cx.simulate_event(wire::Event::Response {
+            id: self.hearing,
+            result: Err(view::host::Error::new(code, code)),
+            done,
+        });
+        self.ada.cx.run_until_parked();
+    }
+
+    fn queued(&mut self) -> u32 {
+        game(&mut self.ada, |game| {
+            game.tetris.versus.as_ref().unwrap().queued()
+        })
     }
 
     fn still_running(&mut self) {
@@ -444,17 +493,20 @@ fn the_match_step_alone_counts_an_attack_heard_and_deals_the_next_round_once_bot
     let (mut play, shown) = Match::new(2, 1, basis(2, "b", 1, "a"));
     assert_eq!(shown, [Effect::Show]);
     let attack = Attack { lines: 3, hole: 4 };
-    assert_eq!(play.heard(Said::Attack(attack)), []);
+    assert_eq!(play.heard(0, 0, Said::Attack(attack)), []);
     let garbage = play.tetris.versus.as_ref().expect("a versus well");
     assert_eq!((garbage.queued(), garbage.received), (3, 3));
     // they top out: this side won, and wants another
-    assert_eq!(play.heard(Said::Out), []);
+    assert_eq!(play.heard(0, 1, Said::Out), []);
     assert_eq!(play.end, Some(End::Won));
     assert_eq!(play.tick(), [], "nothing steps after the round");
     assert_eq!(play.rematch(), [Effect::Say(Said::Rematch)]);
     assert_eq!(play.rematch(), [], "asked once");
     // theirs deals round 1, from its number
-    assert_eq!(play.heard(Said::Rematch), [Effect::NewRound, Effect::Show]);
+    assert_eq!(
+        play.heard(0, 2, Said::Rematch),
+        [Effect::NewRound, Effect::Show]
+    );
     assert_eq!(
         (play.round, play.end, play.again),
         (1, None, (false, false))
@@ -468,4 +520,65 @@ fn the_match_step_alone_counts_an_attack_heard_and_deals_the_next_round_once_bot
     play.left();
     assert_eq!((play.end, play.gone), (Some(End::Won), true));
     assert_eq!(play.rematch(), []);
+}
+
+#[test]
+fn a_reopened_ask_track_replays_what_was_heard_and_nothing_queues_twice() {
+    let mut alone = alone();
+    let attack = Said::Attack(Attack { lines: 2, hole: 3 });
+    alone.opened(None);
+    alone.says(0, 0, attack);
+    assert_eq!(alone.queued(), 2);
+    // the host opened the track anew: the node replays its latest group
+    alone.opened(Some(0));
+    alone.says(0, 0, attack);
+    assert_eq!(alone.queued(), 2, "the replay queues nothing again");
+    alone.says(0, 1, attack);
+    assert_eq!(alone.queued(), 4, "what is new still counts");
+}
+
+#[test]
+fn a_replay_of_the_last_round_ends_nothing_in_the_next() {
+    let mut alone = alone();
+    // round 0: account 2 tops out; both ask for another
+    alone.opened(None);
+    alone.says(0, 0, Said::Out);
+    assert_eq!(game(&mut alone.ada, |game| game.end), Some(End::Won));
+    alone.ada.tick(tetris::ENDING as usize);
+    alone.ada.cx.simulate_click("versus-again");
+    alone.ada.cx.run_until_parked();
+    alone.says(0, 1, Said::Rematch);
+    assert_eq!(game(&mut alone.ada, |game| game.round), 1);
+    // a re-open early in round 1: the node's latest group is still round
+    // 0's, which an empty group 1 passed over
+    alone.opened(Some(0));
+    alone.says(0, 0, Said::Attack(Attack { lines: 2, hole: 3 }));
+    alone.says(0, 1, Said::Out);
+    alone.says(0, 2, Said::Rematch);
+    alone.still_running();
+    assert_eq!(alone.queued(), 0);
+    // round 1's own words count
+    alone.says(1, 0, Said::Out);
+    assert_eq!(game(&mut alone.ada, |game| game.end), Some(End::Won));
+}
+
+#[test]
+fn an_ask_track_refused_for_any_reason_hands_this_side_the_win() {
+    for code in [
+        refusal::UNKNOWN_TRACK,
+        refusal::NOT_GRANTED,
+        refusal::LIVE_UNAVAILABLE,
+    ] {
+        let mut alone = alone();
+        alone.refuse(code, true);
+        assert_eq!(
+            game(&mut alone.ada, |game| (game.end, game.gone)),
+            (Some(End::Won), true),
+            "{code}"
+        );
+    }
+    // a body that does not decode is not the end of it
+    let mut alone = alone();
+    alone.refuse(program::code::UNEXPECTED_REPLY, false);
+    alone.still_running();
 }

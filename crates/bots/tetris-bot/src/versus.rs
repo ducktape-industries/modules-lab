@@ -184,12 +184,13 @@ impl Bot {
         self.ended_round();
     }
 
-    /// What the other side said on its ask track `name`.
-    pub fn heard(&mut self, name: &str, said: Said) {
+    /// What the other side said on its ask track `name`: object `object`
+    /// of group `group`.
+    pub fn heard(&mut self, name: &str, group: u64, object: u32, said: Said) {
         let Some(game) = self.game.as_mut().filter(|game| game.theirs == name) else {
             return;
         };
-        let effects = game.play.heard(said);
+        let effects = game.play.heard(group, object, said);
         self.act(effects);
         self.ended_round();
     }
@@ -439,7 +440,7 @@ mod tests {
     fn a_round_won_or_lost_asks_for_another_and_both_asking_deals_it() {
         let mut bot = matched();
         let ask = game(&mut bot).ask.clone();
-        bot.heard("ask/9/13/abc", Said::Out);
+        bot.heard("ask/9/13/abc", 0, 0, Said::Out);
         assert_eq!(game(&mut bot).play.end, Some(End::Won));
         assert_eq!(
             bot.out,
@@ -451,7 +452,7 @@ mod tests {
         );
         assert!(bot.log[0].starts_with("round 0 against account 9: won, score 0"));
         bot.out.clear();
-        bot.heard("ask/9/13/abc", Said::Rematch);
+        bot.heard("ask/9/13/abc", 0, 1, Said::Rematch);
         assert_eq!(
             bot.out[0],
             Out::EndGroup {
