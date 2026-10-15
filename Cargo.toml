@@ -13,20 +13,20 @@ edition = "2024"
 version = "0.1.0"
 
 [workspace.dependencies]
-# ---- sdk-line: programs @ 94802dfe (programs `feat/live`: dev b3b4b562 with the live tracks, an ask waits for its grant, the halo role; WIRE_ID 10e9a7c0), the rev the app pins. The app refuses
+# ---- sdk-line: programs @ 9712a0f2 (programs `feat/live`: dev b3b4b562 with the live tracks, an ask waits for its grant, the halo role, `{account}` in a grant pattern; WIRE_ID 10e9a7c0), the rev the app pins. The app refuses
 # a view built against another wire, so this moves when the app's pin moves.
-view = { git = "https://github.com/ducktape-industries/programs", rev = "94802dfe24e2ab03316a2acb517a04a044d5dc9e" }
+view = { git = "https://github.com/ducktape-industries/programs", rev = "9712a0f2ec8c75d7556d4ea4c17162c93e419b5d" }
 # What a program is written against: the kernel ABI (a copy of core's, never
 # to drift from it), the program SDK and its mock host, the tables, and the
 # describe module.
-abi = { git = "https://github.com/ducktape-industries/programs", rev = "94802dfe24e2ab03316a2acb517a04a044d5dc9e" }
-program = { git = "https://github.com/ducktape-industries/programs", rev = "94802dfe24e2ab03316a2acb517a04a044d5dc9e" }
-store = { git = "https://github.com/ducktape-industries/programs", rev = "94802dfe24e2ab03316a2acb517a04a044d5dc9e" }
-describe = { git = "https://github.com/ducktape-industries/programs", rev = "94802dfe24e2ab03316a2acb517a04a044d5dc9e" }
+abi = { git = "https://github.com/ducktape-industries/programs", rev = "9712a0f2ec8c75d7556d4ea4c17162c93e419b5d" }
+program = { git = "https://github.com/ducktape-industries/programs", rev = "9712a0f2ec8c75d7556d4ea4c17162c93e419b5d" }
+store = { git = "https://github.com/ducktape-industries/programs", rev = "9712a0f2ec8c75d7556d4ea4c17162c93e419b5d" }
+describe = { git = "https://github.com/ducktape-industries/programs", rev = "9712a0f2ec8c75d7556d4ea4c17162c93e419b5d" }
 # The op that gives a key its account: what a live stage's seed sends first
 # (`crates/app/trade/examples/seed.rs`), and the profiles arcade-view reads
 # names from.
-identity = { git = "https://github.com/ducktape-industries/programs", rev = "94802dfe24e2ab03316a2acb517a04a044d5dc9e" }
+identity = { git = "https://github.com/ducktape-industries/programs", rev = "9712a0f2ec8c75d7556d4ea4c17162c93e419b5d" }
 # `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
 # the SDK does not re-export.
 # The rev is the one modules names.
@@ -86,4 +86,4 @@ gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", 
 # core's `blob` and with it core's abi: one abi in the graph, the programs
 # copy, as the app patches it.
 [patch."https://github.com/ducktape-industries/ducktape"]
-abi = { git = "https://github.com/ducktape-industries/programs", rev = "94802dfe24e2ab03316a2acb517a04a044d5dc9e", package = "abi" }
+abi = { git = "https://github.com/ducktape-industries/programs", rev = "9712a0f2ec8c75d7556d4ea4c17162c93e419b5d", package = "abi" }
