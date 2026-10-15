@@ -1,6 +1,6 @@
 //! Tetris, 2048, Minesweeper and Breakout on the fake host: what each asks
 //! of the clock, and that a key or a press reaches its board.
-use ducktape_view_guest::{MouseButton, MouseDownEvent, Point, px};
+use view::{MouseButton, MouseDownEvent, Point, px};
 
 use super::*;
 use crate::mines::{self, Mark};
@@ -225,7 +225,7 @@ const FIELD_AT: (f32, f32) = (40., 80.);
 /// A cell's pixels in the desk's pane: what the bar and the panel leave,
 /// on sixteen cells.
 fn field_cell() -> f32 {
-    let (width, height) = ducktape_view_guest::testing::VIEWPORT;
+    let (width, height) = view::testing::VIEWPORT;
     let room = (width - 216. - 32., height - 44. - 32.);
     (room.0 / 16.).min(room.1 / 16.).floor()
 }

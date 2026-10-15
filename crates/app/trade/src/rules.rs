@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
-use guest::{
+use ::program::{
     Error, ExecCtx, QueryCtx, capacity, code, corrupt, invalid, not_found, unauthorized,
     wrong_state,
 };

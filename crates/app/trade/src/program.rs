@@ -2,22 +2,20 @@
 //! module: every op and every query, each handed to its function in
 //! `rules.rs` or `queries.rs`.
 
-use guest::{Error, ExecCtx, Module, Program, QueryCtx};
+use ::program::{Error, ExecCtx, Program, QueryCtx};
 
 use crate::queries::{balances, book, candles, fills, orders, stats, trades};
 use crate::rules::{cancel, cancel_all, found, fund, place};
-use crate::{MODULE, Op, Query, Reply};
+use crate::{Op, PROGRAM, Query, Reply};
 
 pub struct Trade;
 
 impl Program for Trade {
-    const NAME: &'static str = MODULE;
+    const NAME: &'static str = PROGRAM;
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
-}
 
-impl Module for Trade {
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
         found(ctx, params)
     }
@@ -60,5 +58,5 @@ impl Module for Trade {
     }
 }
 
-#[cfg(feature = "module")]
-guest::export!(Trade);
+#[cfg(feature = "program")]
+::program::export!(Trade);

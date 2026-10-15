@@ -5,9 +5,9 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Div, Paged, Stateful};
 use trade::{ASSETS, Balance, Fill, MARKETS, Op, Order, OrderState, Side, UNIT};
+use view::prelude::*;
+use view::{Div, Paged, Stateful};
 
 use crate::chart::sided;
 use crate::{Panel, TABS_H, Trade, format, nothing, tabs};
