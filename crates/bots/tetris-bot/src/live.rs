@@ -200,7 +200,22 @@ where
             "the node refused this key a live session: {}",
             code.as_str()
         ))),
-        _ => Err(Stop::Lost("the node did not welcome the proof".into())),
+        Control::Hello(_)
+        | Control::Challenge(_)
+        | Control::Proof(_)
+        | Control::Publish { .. }
+        | Control::Unpublish { .. }
+        | Control::Subscribe { .. }
+        | Control::Unsubscribe { .. }
+        | Control::Watch { .. }
+        | Control::Unwatch { .. }
+        | Control::Published { .. }
+        | Control::Subscribed { .. }
+        | Control::Subscribers { .. }
+        | Control::Announce { .. }
+        | Control::Ended { .. }
+        | Control::Waiting { .. }
+        | Control::GoAway { .. } => Err(Stop::Lost("the node did not welcome the proof".into())),
     }
 }
 
@@ -411,20 +426,19 @@ impl Wire {
                 }
                 None => {}
             },
+            // the room grants it nothing yet: the node holds the request and
+            // answers it on the block that does, so the bot waits with it
+            Control::Waiting { code, .. } => crate::log(format!(
+                "{}: the versus room is not open yet; waiting for its grant",
+                code.as_str()
+            )),
             Control::Refused { request, code } => {
-                if code == Code::NotGranted {
-                    return Err(Stop::Refused(
-                        "not_granted: the arcade program wrote no grant that lets this account into the versus room".into(),
-                    ));
-                }
                 match self.requests.get(&request).cloned() {
                     // an object dropped; the track goes on
-                    Some(Kind::Publish(name)) if matches!(code, Code::TooLarge | Code::Rate) => {
-                        crate::log(format!(
-                            "the node dropped an object of {name}: {}",
-                            code.as_str()
-                        ))
-                    }
+                    Some(Kind::Publish(name)) if code == Code::TooLarge => crate::log(format!(
+                        "the node dropped an object of {name}: {}",
+                        code.as_str()
+                    )),
                     Some(Kind::Subscribe(name)) => {
                         self.requests.remove(&request);
                         bot.ended(&name);
@@ -441,7 +455,18 @@ impl Wire {
             Control::GoAway { in_ms } => {
                 return Err(Stop::Lost(format!("the node goes away for {in_ms} ms")));
             }
-            _ => {}
+            Control::Hello(_)
+            | Control::Challenge(_)
+            | Control::Proof(_)
+            | Control::Welcome(_)
+            | Control::Publish { .. }
+            | Control::Unpublish { .. }
+            | Control::Subscribe { .. }
+            | Control::Unsubscribe { .. }
+            | Control::Watch { .. }
+            | Control::Unwatch { .. }
+            | Control::Subscribers { .. }
+            | Control::Announce { .. } => {}
         }
         Ok(())
     }

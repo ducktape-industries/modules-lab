@@ -294,10 +294,17 @@ async fn a_challenge_from_the_room_is_a_match_over_the_wire() {
     };
     assert_eq!(track.name, "wait/13");
 
-    // a room it may not enter ends the session for good
+    // a room not open yet: the node holds its wait, and it waits with it
     let code = Code::NotGranted;
-    tell(&mut node, Control::Refused { request, code }).await;
-    assert!(matches!(session.await.unwrap(), Stop::Refused(why) if why.starts_with("not_granted")));
+    tell(&mut node, Control::Waiting { request, code }).await;
+    tell(&mut node, Control::Published { request, alias: 4 }).await;
+    // the room's grant taken back ends the room's list, and the session
+    let revoked = Control::Ended {
+        request: room,
+        reason: End::GrantRevoked,
+    };
+    tell(&mut node, revoked).await;
+    assert!(matches!(session.await.unwrap(), Stop::Lost(why) if why.ends_with("GrantRevoked")));
 }
 
 #[tokio::test(start_paused = true)]
