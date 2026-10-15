@@ -14,9 +14,9 @@
 //! microphone mark go off). The menus list what `camera.devices` and
 //! `microphone.devices` answer, read again whenever a menu opens (no host
 //! tells the view of a device plugged in).
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Bounds, accesskit};
 use serde::{Deserialize, Serialize};
+use view::prelude::*;
+use view::{Bounds, accesskit};
 
 mod ui;
 

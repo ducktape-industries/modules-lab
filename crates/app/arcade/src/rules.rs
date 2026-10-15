@@ -1,6 +1,6 @@
 //! What [`Op::Score`](crate::Op) checks and writes: it reads first, then
 //! writes, so a refused op leaves the store as it found it.
-use guest::{Error, ExecCtx, not_found};
+use ::program::{Error, ExecCtx, not_found};
 
 use crate::GAMES;
 use crate::state::{BEST, BOARD, highest_first};

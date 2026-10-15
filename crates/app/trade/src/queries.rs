@@ -1,6 +1,6 @@
 //! One function per [`Query`](crate::Query), each named by [`Trade::query`](crate::Trade)'s
 //! match and each a bounded read of the tables in `state.rs`.
-use guest::{Error, QueryCtx, Range, corrupt, invalid, not_found};
+use ::program::{Error, QueryCtx, Range, corrupt, invalid, not_found};
 use store::{PageRequest, PageResponse};
 
 use crate::rules::{add, market};

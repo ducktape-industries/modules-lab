@@ -1,7 +1,7 @@
 # modules-lab — experiments written against the modules SDK, out of tree.
 #
 # A crate here keeps the shape of modules' `crates/app/*` (a view is a cdylib
-# for wasm32-unknown-unknown on `ducktape-view-guest`), so one that earns its
+# for wasm32-unknown-unknown on `view`), so one that earns its
 # place moves over as it is.
 
 [workspace]
@@ -13,23 +13,22 @@ edition = "2024"
 version = "0.1.0"
 
 [workspace.dependencies]
-# ---- sdk-line: modules @ 4339899c (modules#343: block reads list sizes, chain.tx; WIRE_ID bec30594), the rev the app pins. The app refuses
+# ---- sdk-line: programs @ 94f1bdd0 (poc/huddle-app: #363 dd4d1d85 plus the camera and microphone pieces; WIRE_ID d36e91ddb688269c), the rev the app pins. The app refuses
 # a view built against another wire, so this moves when the app's pin moves.
-ducktape-view-guest = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
+view = { git = "https://github.com/ducktape-industries/programs", rev = "94f1bdd0855ed33b39669ce47dd9ad21f21d8469" }
 # What a program is written against: the kernel ABI (a copy of core's, never
-# to drift from it), the guest and its mock host, the query derive, the
+# to drift from it), the program SDK and its mock host, the query derive, the
 # tables, and the describe module.
-abi = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
-guest = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
-program = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
-store = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
-describe = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
+abi = { git = "https://github.com/ducktape-industries/programs", rev = "94f1bdd0855ed33b39669ce47dd9ad21f21d8469" }
+program = { git = "https://github.com/ducktape-industries/programs", rev = "94f1bdd0855ed33b39669ce47dd9ad21f21d8469" }
+store = { git = "https://github.com/ducktape-industries/programs", rev = "94f1bdd0855ed33b39669ce47dd9ad21f21d8469" }
+describe = { git = "https://github.com/ducktape-industries/programs", rev = "94f1bdd0855ed33b39669ce47dd9ad21f21d8469" }
 # The op that gives a key its account: what a live stage's seed sends first
 # (`crates/app/trade/examples/seed.rs`). No program or view here links it.
-identity = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
+identity = { git = "https://github.com/ducktape-industries/programs", rev = "94f1bdd0855ed33b39669ce47dd9ad21f21d8469" }
 # `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
 # the SDK does not re-export.
-# The rev is the one modules names.
+# The rev is the one programs names.
 gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpui-pre", rev = "b38e8b8feec037f15da484f7f703983ae4f8f0de", default-features = false }
 
 # ---- here
@@ -67,7 +66,7 @@ opt-level = 3
 opt-level = 3
 [profile.release.package.huddle-view]
 opt-level = 3
-[profile.release.package.ducktape-view-guest]
+[profile.release.package.view]
 opt-level = 3
 [profile.release.package.view-wire]
 opt-level = 3
@@ -80,3 +79,9 @@ opt-level = 3
 [patch.crates-io]
 rmp-serde = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "b38e8b8feec037f15da484f7f703983ae4f8f0de" }
 gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "b38e8b8feec037f15da484f7f703983ae4f8f0de" }
+
+# The SDK's fake node (`view`'s `live`) links programs' blobs crate, which links
+# core's `blob` and with it core's abi: one abi in the graph, the programs
+# copy, as the app patches it.
+[patch."https://github.com/ducktape-industries/ducktape"]
+abi = { git = "https://github.com/ducktape-industries/programs", rev = "94f1bdd0855ed33b39669ce47dd9ad21f21d8469", package = "abi" }

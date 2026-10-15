@@ -5,8 +5,8 @@
 //!
 //! The board takes the keys: it is focused as the game starts, and every
 //! key the games read stops there.
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{AnyElement, Div, FontWeight, Stateful};
+use view::prelude::*;
+use view::{AnyElement, Div, FontWeight, Stateful};
 
 use crate::data::Row;
 use crate::games::{Game, seed};

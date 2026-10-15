@@ -5,8 +5,8 @@
 //! cards and chips after them, so a piece keeps its path (the host keys
 //! its device by it) whatever is drawn over it; the root always goes
 //! through the one menu overlay for the same reason.
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{
+use view::prelude::*;
+use view::{
     Anchor, AnchoredPositionMode, AnyElement, Bounds, Div, Edges, FontWeight, Point, Stateful, Svg,
 };
 
@@ -167,7 +167,7 @@ fn preview(
         .child(chip(view, off, theme))
 }
 
-fn camera_piece(view: &Huddle, fit: Fit, cx: &mut Context<Huddle>) -> ducktape_view_guest::Camera {
+fn camera_piece(view: &Huddle, fit: Fit, cx: &mut Context<Huddle>) -> view::Camera {
     let piece = camera(view.camera_key())
         .mirror(!view.unmirrored)
         .fit(fit)
@@ -181,7 +181,7 @@ fn camera_piece(view: &Huddle, fit: Fit, cx: &mut Context<Huddle>) -> ducktape_v
     }
 }
 
-fn mic_piece(view: &Huddle, cx: &mut Context<Huddle>) -> ducktape_view_guest::Microphone {
+fn mic_piece(view: &Huddle, cx: &mut Context<Huddle>) -> view::Microphone {
     let piece = microphone(view.mic_key())
         .monitor(view.monitor && view.screen == Screen::Check)
         .track(&view.recorder)
@@ -430,7 +430,7 @@ fn picker(
     icon: &'static str,
     cx: &mut Context<Huddle>,
     theme: &Theme,
-) -> ducktape_view_guest::Sensor {
+) -> view::Sensor {
     let theme = *theme;
     let open = view.menu.is_some_and(|menu| menu.which == which);
     let name = view.shown_device(which);
@@ -472,11 +472,7 @@ fn picker(
 }
 
 /// `opener` in a sensor: where layout puts it is where its menu hangs.
-fn anchor(
-    which: Which,
-    opener: impl IntoElement,
-    cx: &mut Context<Huddle>,
-) -> ducktape_view_guest::Sensor {
+fn anchor(which: Which, opener: impl IntoElement, cx: &mut Context<Huddle>) -> view::Sensor {
     sensor(format!("{}-at", which.opener()), opener).on_bounds(cx.listener(
         move |view: &mut Huddle, bounds: &Bounds<Pixels>, _, cx| {
             view.set_anchor(which, *bounds);
@@ -878,8 +874,8 @@ fn actions(device: Device, state: &MediaState, cx: &mut Context<Huddle>, theme: 
     let settings = state.status == MediaStatus::Denied && state.settings;
     let missing = state.status == MediaStatus::NoDevice;
     let link = match camera {
-        true => ducktape_view_guest::wire::media::SETTINGS_CAMERA,
-        false => ducktape_view_guest::wire::media::SETTINGS_MICROPHONE,
+        true => view::wire::media::SETTINGS_CAMERA,
+        false => view::wire::media::SETTINGS_MICROPHONE,
     };
     div()
         .flex()

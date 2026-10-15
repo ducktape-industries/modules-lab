@@ -10,13 +10,14 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-ducktape-view-guest.workspace = true
+view.workspace = true
 gpui.workspace = true
 serde.workspace = true
-# the program's types, linked with `module` off
+# the program's types, linked with `program` off
 arcade.workspace = true
-# `Reads`: which tables a query reads, asked of each block's change; and
-# `role::Identity`, the program a board's names are asked of
+# `Reads`: which tables a query reads, asked of each block's change
 program.workspace = true
+# the identity program a board's names are asked of: its types, its exports off
+identity.workspace = true
 # identity's questions and answers (`abi::role::identity`)
 abi.workspace = true

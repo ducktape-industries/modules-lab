@@ -4,13 +4,13 @@
 //! sign the env of their op.
 use std::collections::BTreeMap;
 
-use guest::{Env, Error, MockHost, Module, QueryCtx, code};
+use ::program::{Env, Error, MockHost, Program, QueryCtx, code};
 use store::PageRequest;
 
 use crate::state::{BALANCES, BOOK, Funds, OPEN, ORDERS, newest_first, rank};
 use crate::{
     ASSETS, Balance, Bar, Book, Candle, Fill, History, LOT, Level, MARKETS, MAX_BARS, MAX_CANCELS,
-    MAX_FILLS, MAX_ROWS, MODULE, Op, Order, OrderState, Query, Reply, SPANS, Side, Stats, Trade,
+    MAX_FILLS, MAX_ROWS, Op, Order, OrderState, PROGRAM, Query, Reply, SPANS, Side, Stats, Trade,
     Traded, UNIT, describe,
 };
 
@@ -81,7 +81,7 @@ impl Desk {
         Env {
             height: self.height,
             time: self.time,
-            ..MockHost::env(MODULE)
+            ..MockHost::env(PROGRAM)
         }
     }
 

@@ -303,7 +303,7 @@ impl Node {
     /// An applied op's first line says so (`preconfirmed applied <hex>`).
     fn submit(&self, op: &Op) -> Result<(), String> {
         let payload = borsh::to_vec(op).expect("an op encodes");
-        let said = String::from_utf8(self.run(&["submit", trade::MODULE], &payload))
+        let said = String::from_utf8(self.run(&["submit", trade::PROGRAM], &payload))
             .expect("the node's answer is text");
         let first = said.lines().next().unwrap_or_default();
         match first.split_whitespace().any(|word| word == "applied") {
@@ -332,7 +332,7 @@ impl Node {
     }
 
     fn stats(&self) -> Vec<trade::Stats> {
-        match self.query(trade::MODULE, &Query::Stats) {
+        match self.query(trade::PROGRAM, &Query::Stats) {
             Reply::Stats(stats) => stats,
             reply => panic!("Stats answered {reply:?}"),
         }
@@ -378,7 +378,7 @@ fn main() {
                 println!("bot: {op:?} {refusal}");
             }
         };
-        let Reply::Balances(balances) = node.query(trade::MODULE, &Query::Balances { owner })
+        let Reply::Balances(balances) = node.query(trade::PROGRAM, &Query::Balances { owner })
         else {
             panic!("Balances answers with the balances");
         };
@@ -389,7 +389,7 @@ fn main() {
         }
         let page = PageRequest::first(PageRequest::MAX_LIMIT);
         let open = match node.query(
-            trade::MODULE,
+            trade::PROGRAM,
             &Query::Orders {
                 owner,
                 open: true,

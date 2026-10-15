@@ -2,12 +2,12 @@
 //! would and reads what the host would get. Every frame it sends is held
 //! to the host's sanitizer and accessibility audit, and to the view's
 //! capabilities (a piece the manifest leaves out fails the test).
-use ducktape_view_guest::Entity;
-use ducktape_view_guest::methods::{
+use view::Entity;
+use view::methods::{
     AudioDevices, CameraDevices, ClockTicks, Device, LinkOpen, MicrophoneChime, MicrophoneDevices,
 };
-use ducktape_view_guest::testing::{StreamSender, TestAppContext};
-use ducktape_view_guest::wire::{Fit, MediaState, MediaStatus, MicCommand, Node, Playback};
+use view::testing::{StreamSender, TestAppContext};
+use view::wire::{Fit, MediaState, MediaStatus, MicCommand, Node, Playback};
 
 use crate::{Huddle, RECORD_SECONDS};
 
@@ -403,7 +403,7 @@ fn a_refusal_opens_the_settings_where_the_host_can() {
     cx.simulate_click("huddle-camera-settings");
     assert_eq!(
         cx.host().requests::<LinkOpen>(),
-        [ducktape_view_guest::wire::media::SETTINGS_CAMERA.to_owned()]
+        [view::wire::media::SETTINGS_CAMERA.to_owned()]
     );
 }
 
@@ -480,11 +480,11 @@ fn the_room_mutes_by_key_and_shows_who_speaks() {
 fn a_host_without_media_says_so() {
     let mut cx = TestAppContext::new();
     cx.host().refuse::<CameraDevices>(
-        ducktape_view_guest::methods::refusal::MEDIA_UNSUPPORTED,
+        view::methods::refusal::MEDIA_UNSUPPORTED,
         "this build has no camera or microphone",
     );
     cx.host().refuse::<MicrophoneDevices>(
-        ducktape_view_guest::methods::refusal::MEDIA_UNSUPPORTED,
+        view::methods::refusal::MEDIA_UNSUPPORTED,
         "this build has no camera or microphone",
     );
     let _ticks = cx.host().stream::<ClockTicks>();
