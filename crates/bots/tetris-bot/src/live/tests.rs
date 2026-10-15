@@ -398,3 +398,17 @@ async fn the_socket_is_kept_alive_and_a_silent_one_ends() {
         Stop::Lost("the live socket went quiet".into())
     );
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_node_going_away_names_the_wait_before_the_next_session() {
+    let (bot, mut node) = linked().await;
+    let session = tokio::spawn(run(bot, NAMESPACE.into(), ME, Level::Normal));
+    let Control::Watch { .. } = control(&mut node).await else {
+        panic!("the room watched first");
+    };
+    tell(&mut node, Control::GoAway { in_ms: 1500 }).await;
+    assert_eq!(
+        session.await.unwrap(),
+        Stop::GoAway(Duration::from_millis(1500))
+    );
+}

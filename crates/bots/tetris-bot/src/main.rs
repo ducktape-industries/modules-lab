@@ -8,8 +8,9 @@
 //! another, and waits again when the other side leaves. The key is the
 //! account's device key as the app keeps it in a file: the ed25519 seed,
 //! 32 bytes. A lost session is opened again after a wait that doubles with
-//! each failure; a node that will not let the account play ends the
-//! process, non-zero.
+//! each failure, and one the node sent away (`GoAway`) after the wait it
+//! named; a node that will not let the account play ends the process,
+//! non-zero.
 use std::process::ExitCode;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -89,6 +90,15 @@ async fn serve(rpc: &str, key: &ed25519::PrivateKey, level: Level) -> String {
         let opened = tokio::time::Instant::now();
         let why = match live::session(rpc, key, level).await {
             live::Stop::Refused(why) => return why,
+            // not a failure: the node said when to come back
+            live::Stop::GoAway(wait) => {
+                log(format!(
+                    "the node goes away; reconnecting in {} ms",
+                    wait.as_millis()
+                ));
+                tokio::time::sleep(wait).await;
+                continue;
+            }
             live::Stop::Lost(why) => why,
         };
         if opened.elapsed() >= HEALTHY {

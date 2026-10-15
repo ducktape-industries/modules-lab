@@ -37,6 +37,9 @@ const HELLO_WAIT: Duration = Duration::from_secs(5);
 pub enum Stop {
     /// The path broke or the node went away: another session may open.
     Lost(String),
+    /// The node is going away and said when to come back: another session
+    /// opens after that wait.
+    GoAway(Duration),
     /// The node will not let this account play: another session would be
     /// refused the same way.
     Refused(String),
@@ -464,7 +467,7 @@ impl Wire {
                 }
             }
             Control::GoAway { in_ms } => {
-                return Err(Stop::Lost(format!("the node goes away for {in_ms} ms")));
+                return Err(Stop::GoAway(Duration::from_millis(u64::from(in_ms))));
             }
             Control::Hello(_)
             | Control::Challenge(_)
