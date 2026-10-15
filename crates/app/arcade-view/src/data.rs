@@ -54,6 +54,7 @@ impl Arcade {
         } else if self.session.connected && !prev.connected {
             self.changed(None, cx);
         }
+        self.versus_session(&prev, cx);
     }
 
     /// A block of the program landed: the bests and the board are asked
@@ -101,9 +102,15 @@ impl Arcade {
     }
 
     /// The host said whether the view is on screen: off it, a running game
-    /// pauses, and stays paused until the reader goes on.
+    /// pauses, and stays paused until the reader goes on. A versus round
+    /// runs on, the other side playing, and lets go of its keys.
     fn visibility(&mut self, visible: bool, cx: &mut Context<Self>) {
         self.hidden = !visible;
+        if self.hidden
+            && let Some(game) = self.versus.as_mut().and_then(|versus| versus.game.as_mut())
+        {
+            game.let_go();
+        }
         if self.hidden
             && let Some(play) = &mut self.play
             && play.game.ready().is_some_and(|game| !game.over())

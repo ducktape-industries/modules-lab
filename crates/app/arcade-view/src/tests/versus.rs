@@ -4,8 +4,8 @@
 //! The room's grant is the relay's to give: held, the lobby waits for it;
 //! taken back, the lobby stops.
 use view::methods::{
-    HostLog, LiveAnnounce, LiveItem, LiveMode, LivePublishTrack, LiveSubscribeTrack, LiveTracks,
-    Method, Publishing, Watching, refusal,
+    HostLog, HostSession, LiveAnnounce, LiveItem, LiveMode, LivePublishTrack, LiveSubscribeTrack,
+    LiveTracks, Method, Publishing, Watching, refusal,
 };
 use view::testing::Relay;
 
@@ -581,4 +581,100 @@ fn an_ask_track_refused_for_any_reason_hands_this_side_the_win() {
     let mut alone = alone();
     alone.refuse(program::code::UNEXPECTED_REPLY, false);
     alone.still_running();
+}
+
+/// The session `side`'s host says next.
+fn seat(side: &mut Opened, session: view::methods::Session) {
+    side.cx.host().stream::<HostSession>().send(session);
+    side.cx.run_until_parked();
+}
+
+/// The names of every track `side` asked to publish, in order.
+fn published(side: &Opened) -> Vec<String> {
+    let asked = side.cx.host().requests::<LivePublishTrack>();
+    asked
+        .into_iter()
+        .map(|publish| publish.track.name)
+        .collect()
+}
+
+#[test]
+fn an_open_the_program_refused_is_asked_again_on_the_next_waiting() {
+    let mut ada = opened(World::default(), Some(1));
+    let tracks = ada.cx.host().stream::<LiveTracks>();
+    ada.world.borrow_mut().refusal = Some("the node is not connected".into());
+    ada.cx.simulate_click("arcade-card-versus");
+    ada.cx.run_until_parked();
+    tracks.send(Watching::Waiting);
+    ada.cx.run_until_parked();
+    shows(
+        &ada.cx,
+        &["The arcade could not open the versus room: the node is not connected"],
+    );
+    // the session comes back, the room's list is told it waits again
+    ada.world.borrow_mut().refusal = None;
+    seat(&mut ada, session(Some(1)));
+    tracks.send(Watching::Waiting);
+    ada.cx.run_until_parked();
+    assert_eq!(ada.ops(), [Op::OpenVersus, Op::OpenVersus]);
+    assert!(!ada.cx.has_text("could not open"), "{:?}", ada.cx.texts());
+    // while that one stands, a burst of `Waiting`s sends nothing more
+    tracks.send(Watching::Waiting);
+    ada.cx.run_until_parked();
+    assert_eq!(ada.ops().len(), 2);
+    // a reconnect asks the room again, and may be told it still waits
+    let away = view::methods::Session {
+        connected: false,
+        ..session(Some(1))
+    };
+    seat(&mut ada, away);
+    seat(&mut ada, session(Some(1)));
+    tracks.send(Watching::Waiting);
+    ada.cx.run_until_parked();
+    assert_eq!(ada.ops().len(), 3);
+}
+
+const SEAT_ONE: &str = "Versus is played from an account: seat one to wait here.";
+
+#[test]
+fn versus_follows_the_seated_account_into_the_lobby() {
+    // opened with no account: nothing published, then one is seated
+    let mut side = opened(World::default(), None);
+    side.cx.simulate_click("arcade-card-versus");
+    side.cx.run_until_parked();
+    shows(
+        &side.cx,
+        &["Versus is played from an account: seat one to wait here."],
+    );
+    assert_eq!(published(&side), Vec::<String>::new());
+    seat(&mut side, session(Some(1)));
+    assert_eq!(published(&side), ["wait/1"]);
+    assert!(!side.cx.has_text(SEAT_ONE), "{:?}", side.cx.texts());
+    // another account: the lobby is joined anew as it
+    seat(&mut side, session(Some(3)));
+    assert_eq!(published(&side), ["wait/1", "wait/3"]);
+    assert_eq!(side.cx.host().requests::<LiveTracks>().len(), 2);
+    // none: nothing of the last one's stays up
+    let room = side.cx.host().stream::<LiveTracks>();
+    let mine = side.cx.host().stream::<LivePublishTrack>();
+    assert!(room.subscribed() && mine.subscribed());
+    seat(&mut side, session(None));
+    assert!(!room.subscribed() && !mine.subscribed());
+    shows(&side.cx, &[SEAT_ONE]);
+}
+
+#[test]
+fn a_round_off_screen_runs_on_and_lets_go_of_the_keys_it_held() {
+    let mut alone = alone();
+    let at = |side: &mut Opened| game(side, |game| game.tetris.at.0);
+    let start = at(&mut alone.ada);
+    press(&mut alone.ada, "left");
+    alone.ada.tick(1);
+    assert_eq!(at(&mut alone.ada), start - 1, "a tap's step");
+    alone.ada.visible.send(false);
+    alone.ada.cx.run_until_parked();
+    // no key comes up off screen: the arrow held does not slide on
+    alone.ada.tick(30);
+    assert!(alone.ada.ticks.subscribed(), "the round runs on");
+    assert_eq!(at(&mut alone.ada), start - 1);
 }

@@ -23,10 +23,15 @@
 //! it left), has left, and the other wins.
 //!
 //! The node lets an account into the room only once the program wrote its
-//! grant row, and holds what the lobby asks till then: the first `Waiting`
-//! sends `Op::OpenVersus`, once, and the lobby's asks go through on the
-//! block that writes the row: nothing is asked again. A `not_granted` is
-//! the grant taken back, and stops versus.
+//! grant row, and holds what the lobby asks till then: a `Waiting` sends
+//! `Op::OpenVersus`, one at a time, and the lobby's asks go through on the
+//! block that writes the row: nothing is asked again. An open the program
+//! refused is sent again on the next `Waiting` (a reconnect is told it
+//! again). A `not_granted` is the grant taken back, and stops versus.
+//!
+//! Versus is played as the account the session seats: another account, or
+//! none, leaves the lobby and joins it anew. A round runs on while the view
+//! is off screen, the keys it held let go.
 use std::collections::{BTreeMap, BTreeSet};
 
 use ::identity::Identity;
@@ -71,8 +76,10 @@ pub(crate) struct Versus {
     pub(crate) game: Option<Playing>,
     /// What identity calls each account met; its number until it answers.
     names: BTreeMap<u64, String>,
-    /// The program was asked to open the room: once, on the first
-    /// `Waiting`.
+    /// The program was asked to open the room and did not refuse: the
+    /// `Waiting`s the room's list and `wait/<me>` hear meanwhile send
+    /// nothing more. A refused open, a lobby joined anew and a reconnect
+    /// clear it.
     knocked: bool,
     /// Why the lobby stopped, in a line.
     note: Option<String>,
@@ -98,6 +105,14 @@ pub(crate) struct Playing {
     pub(crate) their_well: Option<Well>,
     /// Shift is down, as the board last heard the modifiers.
     shift: bool,
+}
+
+impl Playing {
+    /// The view went off screen: no key it holds will be heard coming up.
+    pub(crate) fn let_go(&mut self) {
+        self.play.tetris.let_go();
+        self.shift = false;
+    }
 }
 
 /// A match as both sides play it, this view and `tetris-bot` alike: this
@@ -383,17 +398,23 @@ impl Arcade {
         cx.notify();
     }
 
-    /// The lobby: the room followed, `wait/<me>` up, and a nonce minted
-    /// for this side's asks.
+    /// The lobby: what ran before dropped, then, for a seated account, the
+    /// room followed, `wait/<me>` up, and a nonce minted for its asks.
     fn join(&mut self, cx: &mut Context<Self>) {
-        let (Some(me), Some(versus)) = (self.session.account, &mut self.versus) else {
+        let Some(versus) = &mut self.versus else {
             return;
         };
         versus.room.clear();
+        versus.watch = None;
+        versus.waiting = None;
         versus.game = None;
         versus.ask = None;
         versus.nonce = None;
         versus.note = None;
+        versus.knocked = false;
+        let Some(me) = self.session.account else {
+            return;
+        };
         versus.watch = Some(
             cx.follow::<LiveTracks>(arcade::VERSUS.into(), |view, item, cx| match item {
                 Ok(Watching::Waiting) => view.knock(cx),
@@ -441,8 +462,8 @@ impl Arcade {
         }
     }
 
-    /// The room is not open yet: the program is asked to open it, once, and
-    /// the asks wait for its row.
+    /// The room is not open yet: the program is asked to open it, unless
+    /// it is asked already, and the asks wait for its row.
     fn knock(&mut self, cx: &mut Context<Self>) {
         let Some(versus) = &mut self.versus else {
             return;
@@ -450,9 +471,12 @@ impl Arcade {
         if std::mem::replace(&mut versus.knocked, true) {
             return;
         }
+        versus.note = None;
         let submit = cx.host().ask::<Submit<arcade::Arcade>>(Op::OpenVersus);
         versus.waits.push(cx.land(submit, |view, opened, cx| {
             if let (Some(versus), Err(refused)) = (&mut view.versus, opened) {
+                // the next `Waiting` asks again
+                versus.knocked = false;
                 versus.note = Some(format!(
                     "The arcade could not open the versus room: {}",
                     refused.message
@@ -460,6 +484,21 @@ impl Arcade {
                 cx.notify();
             }
         }));
+    }
+
+    /// The session moved from `prev`: another account, or none, joins the
+    /// lobby anew; a reconnect asks the room again, and a room still not
+    /// open is asked open again on the `Waiting` it is told.
+    pub(crate) fn versus_session(&mut self, prev: &Session, cx: &mut Context<Self>) {
+        let Some(versus) = &mut self.versus else {
+            return;
+        };
+        if self.session.account != prev.account {
+            self.join(cx);
+            self.settle(cx);
+        } else if self.session.connected && !prev.connected {
+            versus.knocked = false;
+        }
     }
 
     /// A `live.*` the node refused, the grant taken back too: it stops the
