@@ -111,8 +111,6 @@ impl View for Arcade {
         arcade::MODULE,
         <program::role::Identity as ducktape_view_guest::methods::Program>::NAME,
     ];
-    // a board beside the 216 px panel
-    const MIN_WINDOW_WIDTH: u32 = 560;
 
     fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         self.watch(cx);

@@ -1638,8 +1638,8 @@ mod tests {
         // the three windows as the view's pane, less the bar: the cell,
         // the group's left edge and top, and versus's other well's left
         // edge; then the panes the app leaves the view in those windows
-        // (its sidebar and title bar off), the narrowest the app lays the
-        // view out at, a narrower one, and the tests' own pane
+        // (its sidebar and title bar off; 700 wide leaves 480, the least
+        // the view asks for), one between, and the tests' own pane
         let placed = [
             ((1600., 956.), false, Some((40., 439., 57., None))),
             ((1600., 956.), true, Some((40., 218., 57., Some(1178.)))),
