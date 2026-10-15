@@ -21,8 +21,9 @@
 //! left, and the other wins.
 //!
 //! The node lets an account into the room only once the program wrote its
-//! grant row: the first `live.*` the node refuses `not_granted` sends
-//! `Op::OpenVersus`, and when it lands the lobby asks again, once.
+//! grant row, and holds what the lobby asks till then: the first
+//! `not_granted` sends `Op::OpenVersus`, once, and the lobby's asks go
+//! through on the block that writes the row: nothing is asked again.
 use std::collections::{BTreeMap, BTreeSet};
 
 use ::identity::Identity;
@@ -66,9 +67,12 @@ pub(crate) struct Versus {
     pub(crate) game: Option<Match>,
     /// What identity calls each account met; its number until it answers.
     names: BTreeMap<u64, String>,
-    /// Whether the program was asked to open the room: once, on the first
-    /// refusal for want of a grant.
-    door: Door,
+    /// The program was asked to open the room: once, on the first
+    /// `not_granted`.
+    knocked: bool,
+    /// The node let this side into the room (its first announce): a
+    /// `not_granted` from now on is the grant taken back.
+    inside: bool,
     /// Why the lobby stopped, in a line.
     note: Option<String>,
     /// The element the next render gives the keyboard to.
@@ -76,14 +80,6 @@ pub(crate) struct Versus {
     /// The answers the screen waits for (a nonce, a name, the room's
     /// opening): they go with it.
     waits: Vec<Task<()>>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum Door {
-    #[default]
-    Unasked,
-    Opening,
-    Opened,
 }
 
 /// A match: this side's well, and what it hears and sees of the other's.
@@ -123,6 +119,11 @@ impl Versus {
     pub(crate) fn period(&self) -> Option<i64> {
         let game = self.game.as_ref()?;
         (game.end.is_none() || game.tetris.animating()).then_some(tetris::PERIOD)
+    }
+
+    /// `refusal` says the room is not open yet: the ask waits for its grant.
+    fn waits_for_the_room(&self, refusal: &Error) -> bool {
+        refusal.code == refusal::NOT_GRANTED && !self.inside
     }
 
     fn name(&self, account: u64) -> String {
@@ -274,46 +275,35 @@ impl Arcade {
         }
     }
 
-    /// A `live.*` the node refused. For want of a grant the program is
-    /// asked to open the room, once, and the lobby asks again when it has;
-    /// anything else stops the lobby, with why.
+    /// A `live.*` the node refused. While the room is not open yet the
+    /// program is asked to open it, once, and the asks wait for its row;
+    /// anything else, the grant taken back too, stops the lobby, with why.
     fn refused(&mut self, refusal: Error, cx: &mut Context<Self>) {
         let Some(versus) = &mut self.versus else {
             return;
         };
-        match versus.door {
-            Door::Unasked if refusal.code == refusal::NOT_GRANTED => {
-                versus.door = Door::Opening;
+        if versus.waits_for_the_room(&refusal) {
+            if !std::mem::replace(&mut versus.knocked, true) {
                 let submit = cx.host().ask::<Submit<arcade::Arcade>>(Op::OpenVersus);
                 versus.waits.push(cx.land(submit, |view, opened, cx| {
-                    let Some(versus) = &mut view.versus else {
-                        return;
-                    };
-                    versus.door = Door::Opened;
-                    match opened {
-                        Ok(_) => view.join(cx),
-                        Err(refused) => {
-                            versus.note = Some(format!(
-                                "The arcade could not open the versus room: {}",
-                                refused.message
-                            ));
-                            cx.notify();
-                        }
+                    if let (Some(versus), Err(refused)) = (&mut view.versus, opened) {
+                        versus.note = Some(format!(
+                            "The arcade could not open the versus room: {}",
+                            refused.message
+                        ));
+                        cx.notify();
                     }
                 }));
             }
-            // the op's landing asks again
-            Door::Opening => {}
-            _ => {
-                versus.watch = None;
-                versus.waiting = None;
-                versus.ask = None;
-                versus.game = None;
-                versus.note = Some(format!("Versus stopped: {}", refusal.message));
-                self.settle(cx);
-                cx.notify();
-            }
+            return;
         }
+        versus.watch = None;
+        versus.waiting = None;
+        versus.ask = None;
+        versus.game = None;
+        versus.note = Some(format!("Versus stopped: {}", refusal.message));
+        self.settle(cx);
+        cx.notify();
     }
 
     /// A track came up or went down in the room.
@@ -323,6 +313,7 @@ impl Arcade {
             return;
         };
         let LiveAnnounce { name, by, up, .. } = announce;
+        versus.inside = true;
         if up {
             versus.room.insert(name, by);
         } else {
