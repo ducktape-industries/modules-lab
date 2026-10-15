@@ -1,26 +1,87 @@
 //! Tetris: the seven pieces fall into a well ten wide and twenty deep; a
-//! full row clears. As the NES counts it: a row cleared at level L is 40 x
-//! (L + 1), two 100, three 300 and four 1,200 times the same; a cell of soft
-//! drop is 1 and a cell of hard drop 2. Ten rows clear a level, and the
-//! level sets how many ticks a row of fall takes, 48 at level 0 down to
-//! one from level 29. The tick is 16 ms, a frame: the pieces come from a
+//! full row clears. The tick is 16 ms, a frame: the pieces come from a
 //! shuffled bag of the seven, each once a bag, and the queue shows the
-//! next five. A key is read on the next tick. The rest is the Tetris Guideline's: a turn that does not fit
-//! tries SRS's kicks, the I its own; a piece that lands locks after half a
-//! second, which a move or a turn on the ground starts again, 15 times a
-//! piece at most (the 16th locks it); a hard drop locks at once; C or
-//! Shift puts the piece in hold and takes the one there, or the next, once
-//! a piece.
+//! next five. A key is read on the next tick. The rest is the Tetris
+//! Guideline's: a turn that does not fit tries SRS's kicks, the I its own;
+//! a piece that lands locks after half a second, which a move or a turn on
+//! the ground starts again, 15 times a piece at most (the 16th locks it); a
+//! hard drop locks at once; C or Shift puts the piece in hold and takes the
+//! one there, or the next, once a piece.
 //! A held key repeats on the game's own count, never the keyboard's (half
 //! a second before its first repeat): a held arrow slides the piece again
 //! after 160 ms and then a cell every 32 ms, a held ↓ drops a row every
 //! other tick, and a turn, a drop or a hold does not repeat.
 //!
-//! In versus a well also trades garbage ([`Garbage`]): rows cleared at
-//! once send the other side 2 → 1, 3 → 2, 4 → 4 rows, a Tetris after a
-//! Tetris one more; what is sent cancels the garbage queued here first; a
-//! lock that clears nothing lets every queued row rise from the floor, and
-//! a block pushed out of the top ends the game.
+//! The level sets how many ticks a row of fall takes, 48 at level 0 down to
+//! one from level 29, as the NES has it. Alone, ten rows cleared raise it.
+//! In versus it is the whole minutes the round has run, counted in the
+//! round's own ticks (3,750 a minute), so both wells fall alike whatever
+//! each cleared: Tetris 99 speeds everyone up over time ("piece gravity
+//! begins to increase over time", tetris.wiki/Tetris_99) but publishes no
+//! curve, and a level a minute is ours.
+//!
+//! # A lock ([`Clear`])
+//! - **T-spin**, the Guideline's three corners (tetris.wiki/T-Spin): the
+//!   piece is a T, the last move that moved it was a turn (a slide, a row of
+//!   fall or soft drop, or a hard drop that moved undoes that), and three of
+//!   the four corners of its 3×3 box are blocks, the walls or the floor. It
+//!   is a mini when the two corners on the side the T points to are not
+//!   both filled, unless the turn landed on SRS's last kick, the 1×2 one,
+//!   which makes it a full T-spin.
+//! - **Combo** (tetris.wiki/Combo): locks that each clear rows, one after
+//!   another; the second is combo 1. A lock that clears nothing, a T-spin's
+//!   included, ends it.
+//! - **Back-to-back** (tetris.wiki/Scoring, T-Spin, Line_clear): a Tetris or
+//!   a T-spin that clears rows, a mini's included, after another with no
+//!   other line clear between. A Single, Double or Triple breaks the chain;
+//!   a lock that clears nothing does not.
+//! - **All clear** (tetris.wiki/Perfect_clear): the well is empty after the
+//!   clear.
+//!
+//! # Attack, Tetris 99's (tetris.wiki/Tetris_99)
+//!
+//! | a lock | rows sent |
+//! |---|---|
+//! | Single, Double, Triple, Tetris | 0, 1, 2, 4 |
+//! | T-spin Single, Double, Triple | 2, 4, 6 |
+//! | Mini T-spin Single, Double | 0, 1 |
+//! | back-to-back | +1 |
+//! | combo 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 and on | +0, +1, +1, +2, +2, +3, +3, +4, +4, +4, +5 |
+//! | all clear | +4 |
+//!
+//! The combo row is also tetris.wiki/Combo's Tetris 99 column. The most one
+//! lock sends is 16, a T-spin Triple back to back at combo 10 that empties
+//! the well. Not taken: Tetris 99's targeting and badges (a 1-on-1 match
+//! has neither), Puyo Puyo Tetris's all clear of 10 and its combo table
+//! (tetris.wiki/Combo's Guideline Standard column), and tetris.wiki/Garbage's
+//! back-to-back of +2 for a T-spin Double or a Tetris and +3 for a Triple.
+//!
+//! # Garbage ([`Garbage`])
+//! What a lock sends cancels the rows queued here first, oldest first, and
+//! the rest rises in the other well (tetris.wiki/Garbage). A lock that clears
+//! nothing raises at most 8 of the queued rows from the floor, oldest
+//! first, each full but for its attack's hole; the rest waits for the next.
+//! The 8 is TETR.IO's custom rooms' garbage cap, "only N lines allowed to
+//! enter per piece placed that did not clear lines"
+//! (tetris.wiki/TETR.IO/Seasonal_Events names the setting; its default of 8
+//! is TETR.IO's own and not on the wiki). The Guideline sets no cap; Tetris
+//! 99 caps the queue at 12 instead and loses the rest, not taken. A block
+//! pushed out of the top ends the game.
+//!
+//! # Score, the Guideline's (tetris.wiki/Scoring), alone and in versus
+//! Each lock's points times the level before it, plus one: the Guideline
+//! counts levels from 1 and this game from 0.
+//!
+//! | a lock | points |
+//! |---|---|
+//! | Single, Double, Triple, Tetris | 100, 300, 500, 800 |
+//! | T-spin with no rows, Single, Double, Triple | 400, 800, 1,200, 1,600 |
+//! | Mini T-spin with no rows, Single, Double | 100, 200, 400 |
+//! | back-to-back | the clear's × 1.5 |
+//! | combo n | + 50 × n |
+//! | all clear of 1, 2, 3, 4 rows; of a back-to-back Tetris | + 800, 1,200, 1,800, 2,000; 3,200 |
+//!
+//! A cell of soft drop is 1 and of hard drop 2, never times the level.
 use std::collections::VecDeque;
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -39,8 +100,8 @@ pub const PERIOD: i64 = 16;
 const GRAVITY: [u32; 29] = [
     48, 43, 38, 33, 28, 23, 18, 13, 8, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
 ];
-/// What one to four rows cleared at once score at level 0.
-const CLEARED: [u64; 5] = [0, 40, 100, 300, 1200];
+/// The ticks of a minute: a level of versus.
+const MINUTE: u64 = 60_000 / PERIOD as u64;
 /// The keys that may wait for a tick.
 const WAITING: usize = 8;
 /// The pieces the queue shows coming.
@@ -75,12 +136,34 @@ const DAS: u32 = 10;
 const ARR: u32 = 2;
 /// The ticks a row of a held ↓: NES's soft drop.
 const SOFT: u32 = 2;
-/// Versus: the rows sent for one to four rows cleared at once.
+/// The kick of SRS's tables a turn that makes any T-spin a full one lands
+/// on: the last, the 1×2.
+const LAST_KICK: u8 = 4;
+/// A lock's points at level 1 and the rows it sends, by the rows it clears:
+/// plain, a mini T-spin's and a T-spin's. A T is three rows tall, so a
+/// T-spin clears at most three; a mini at most two, as a row its empty
+/// front corner lies in cannot clear.
+const POINTS: [u64; 5] = [0, 100, 300, 500, 800];
+const MINI_POINTS: [u64; 3] = [100, 200, 400];
+const SPIN_POINTS: [u64; 4] = [400, 800, 1200, 1600];
 const SENDS: [u8; 5] = [0, 0, 1, 2, 4];
-/// Versus: what a Tetris right after a Tetris sends on top.
+const MINI_SENDS: [u8; 3] = [0, 0, 1];
+const SPIN_SENDS: [u8; 4] = [0, 2, 4, 6];
+/// What a combo adds, by its count; the last from there on.
+const COMBO_SENDS: [u8; 11] = [0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 5];
+const COMBO_POINTS: u64 = 50;
 const BACK_TO_BACK: u8 = 1;
-/// Versus: the most rows one attack carries, a Tetris back to back.
-pub(crate) const MOST_SENT: u8 = SENDS[4] + BACK_TO_BACK;
+const ALL_CLEAR: u8 = 4;
+/// An all clear's points by the rows that cleared, and a back-to-back
+/// Tetris's.
+const ALL_CLEAR_POINTS: [u64; 5] = [0, 800, 1200, 1800, 2000];
+const ALL_CLEAR_BACK_TO_BACK: u64 = 3200;
+/// The most rows one lock sends: a T-spin Triple back to back at the
+/// combo's top that empties the well.
+pub(crate) const MOST_SENT: u8 =
+    SPIN_SENDS[3] + BACK_TO_BACK + COMBO_SENDS[COMBO_SENDS.len() - 1] + ALL_CLEAR;
+/// The most queued rows a lock that clears nothing raises.
+const RISE: u8 = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Piece {
@@ -164,6 +247,76 @@ impl Attack {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Spin {
+    Mini,
+    Full,
+}
+
+/// What one lock did, as the module's rules name it: the one record the
+/// score, the garbage and the screen's effects read.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Clear {
+    /// The rows it cleared, 0 to 4.
+    pub rows: u8,
+    pub spin: Option<Spin>,
+    /// A Tetris or a T-spin that cleared rows after another, with no other
+    /// line clear between.
+    pub back_to_back: bool,
+    /// Its count among locks clearing rows one after another: 0 the
+    /// first; 0 too for a lock that cleared nothing.
+    pub combo: u32,
+    /// The well was empty after it.
+    pub perfect: bool,
+    /// Versus: the rows of its attack that cancelled rows queued here, and
+    /// that went to the other side; the queued rows that rose, for a lock
+    /// that cleared nothing.
+    pub cancelled: u8,
+    pub sent: u8,
+    pub rose: u8,
+}
+
+impl Clear {
+    /// The rows it attacks with, before any cancel.
+    pub fn attack(&self) -> u8 {
+        if self.rows == 0 {
+            return 0;
+        }
+        let rows = usize::from(self.rows);
+        let lines = match self.spin {
+            None => SENDS[rows],
+            Some(Spin::Mini) => MINI_SENDS[rows],
+            Some(Spin::Full) => SPIN_SENDS[rows],
+        };
+        let combo = COMBO_SENDS[(self.combo as usize).min(COMBO_SENDS.len() - 1)];
+        lines
+            + combo
+            + if self.back_to_back { BACK_TO_BACK } else { 0 }
+            + if self.perfect { ALL_CLEAR } else { 0 }
+    }
+
+    /// Its points at level 1, the drops' cells aside.
+    fn points(&self) -> u64 {
+        let rows = usize::from(self.rows);
+        let points = match self.spin {
+            None => POINTS[rows],
+            Some(Spin::Mini) => MINI_POINTS[rows],
+            Some(Spin::Full) => SPIN_POINTS[rows],
+        };
+        let points = if self.back_to_back {
+            points * 3 / 2
+        } else {
+            points
+        };
+        let perfect = match (self.perfect, self.back_to_back && rows == 4) {
+            (false, _) => 0,
+            (true, true) => ALL_CLEAR_BACK_TO_BACK,
+            (true, false) => ALL_CLEAR_POINTS[rows],
+        };
+        points + COMBO_POINTS * u64::from(self.combo) + perfect
+    }
+}
+
 /// One well's side of versus: the garbage on its way in and the attacks
 /// its clears make.
 pub struct Garbage {
@@ -172,8 +325,6 @@ pub struct Garbage {
     pub incoming: VecDeque<Attack>,
     /// This well's attacks, oldest first, for the view to send.
     pub outgoing: Vec<Attack>,
-    /// The last lock that cleared rows cleared four.
-    tetris: bool,
     /// Where an attack's hole goes. Never the bag's own: a draw from it
     /// would deal this side other pieces than the other side's.
     holes: Rng,
@@ -188,7 +339,6 @@ impl Garbage {
         Garbage {
             incoming: VecDeque::new(),
             outgoing: Vec::new(),
-            tetris: false,
             holes: Rng::new(seed),
             sent: 0,
             received: 0,
@@ -209,33 +359,49 @@ impl Garbage {
             .sum()
     }
 
-    /// A lock that cleared `cleared` rows: they attack, cancelling what is
-    /// queued here first and sending the rest; a lock that cleared none
-    /// lets every queued row rise. Whether a block went out of the top.
-    fn trade(&mut self, cleared: usize, well: &mut Well) -> bool {
-        if cleared == 0 {
-            let attacks: Vec<_> = self.incoming.drain(..).collect();
-            return rise(well, &attacks);
+    /// A lock, `clear`: its attack cancels what is queued here first and
+    /// the rest goes out; a lock that cleared nothing raises up to [`RISE`]
+    /// of the queued rows. What it cancelled, sent and raised goes into
+    /// `clear`. Whether a block went out of the top.
+    fn trade(&mut self, clear: &mut Clear, well: &mut Well) -> bool {
+        if clear.rows == 0 {
+            let risen = self.take(RISE);
+            clear.rose = risen.iter().map(|attack| attack.lines).sum();
+            return rise(well, &risen);
         }
-        let back_to_back = cleared == 4 && self.tetris;
-        self.tetris = cleared == 4;
-        let mut lines = SENDS[cleared] + if back_to_back { BACK_TO_BACK } else { 0 };
-        while lines > 0
+        let attack = clear.attack();
+        clear.cancelled = self.take(attack).iter().map(|attack| attack.lines).sum();
+        clear.sent = attack - clear.cancelled;
+        if clear.sent > 0 {
+            let hole = self.holes.below(COLS as u64) as u8;
+            self.outgoing.push(Attack {
+                lines: clear.sent,
+                hole,
+            });
+            self.sent += u32::from(clear.sent);
+        }
+        false
+    }
+
+    /// Up to `rows` of the queued rows, oldest first, out of the queue; an
+    /// attack taken in part leaves the rest of its rows first in line.
+    fn take(&mut self, mut rows: u8) -> Vec<Attack> {
+        let mut taken = Vec::new();
+        while rows > 0
             && let Some(first) = self.incoming.front_mut()
         {
-            let cancelled = lines.min(first.lines);
-            first.lines -= cancelled;
-            lines -= cancelled;
+            let lines = rows.min(first.lines);
+            taken.push(Attack {
+                lines,
+                hole: first.hole,
+            });
+            first.lines -= lines;
+            rows -= lines;
             if first.lines == 0 {
                 self.incoming.pop_front();
             }
         }
-        if lines > 0 {
-            let hole = self.holes.below(COLS as u64) as u8;
-            self.outgoing.push(Attack { lines, hole });
-            self.sent += u32::from(lines);
-        }
-        false
+        taken
     }
 }
 
@@ -297,6 +463,17 @@ pub struct Tetris {
     rest: u32,
     /// How often a move or a turn on the ground started `rest` again.
     resets: u32,
+    /// The last move that moved the piece was a turn, which landed on this
+    /// kick of its table.
+    turned: Option<u8>,
+    /// The last lock that cleared rows was a Tetris or a T-spin.
+    chain: bool,
+    /// The combo count of the last lock, if it cleared rows.
+    combo: Option<u32>,
+    /// The last lock's record.
+    pub last: Option<Clear>,
+    /// Ticks since the game was dealt: versus's level.
+    ticks: u64,
     pub lines: u64,
     pub level: u64,
     score: u64,
@@ -324,6 +501,11 @@ impl Tetris {
             fell: 0,
             rest: 0,
             resets: 0,
+            turned: None,
+            chain: false,
+            combo: None,
+            last: None,
+            ticks: 0,
             lines: 0,
             level: 0,
             score: 0,
@@ -376,6 +558,7 @@ impl Tetris {
         self.fell = 0;
         self.rest = 0;
         self.resets = 0;
+        self.turned = None;
         self.over = !self.fits(self.piece, self.turn, self.at);
     }
 
@@ -409,6 +592,7 @@ impl Tetris {
         let fits = self.fits(self.piece, self.turn, to);
         if fits {
             self.at = to;
+            self.turned = None;
         }
         fits
     }
@@ -433,21 +617,48 @@ impl Tetris {
             }
         };
         let (x, y) = self.at;
-        let Some(at) = kicks
-            .into_iter()
-            .map(|(dx, dy)| (x + dx, y - dy))
-            .find(|at| self.fits(self.piece, turn, *at))
+        let Some((kick, at)) = (0..)
+            .zip(kicks)
+            .map(|(kick, (dx, dy))| (kick, (x + dx, y - dy)))
+            .find(|(_, at)| self.fits(self.piece, turn, *at))
         else {
             return false;
         };
         self.turn = turn;
         self.at = at;
+        self.turned = Some(kick);
         true
     }
 
-    /// The piece settles where it is: full rows clear, and the next piece
-    /// comes.
+    /// The T-spin the piece makes, locking where it is.
+    fn spin(&self) -> Option<Spin> {
+        let kick = self.turned.filter(|_| self.piece == Piece::T)?;
+        let (x, y) = self.at;
+        let filled = |(dx, dy): (i32, i32)| {
+            let (x, y) = (x + dx, y + dy);
+            !(0..COLS).contains(&x)
+                || y >= ROWS
+                || (y >= 0 && self.well[y as usize][x as usize].is_some())
+        };
+        // the box's corners clockwise from the top left: a T turned `turn`
+        // times points to corners `turn` and the one after
+        let corners = [(0, 0), (2, 0), (2, 2), (0, 2)].map(filled);
+        if corners.iter().filter(|filled| **filled).count() < 3 {
+            return None;
+        }
+        let turn = usize::from(self.turn);
+        Some(
+            match corners[turn] && corners[(turn + 1) % 4] || kick == LAST_KICK {
+                true => Spin::Full,
+                false => Spin::Mini,
+            },
+        )
+    }
+
+    /// The piece settles where it is: full rows clear, what that was is
+    /// scored and in versus traded, and the next piece comes.
     fn lock(&mut self) {
+        let spin = self.spin();
         for (x, y) in self.falling() {
             self.well[y as usize][x as usize] = Some(self.piece);
         }
@@ -457,16 +668,35 @@ impl Tetris {
             .filter(|row| row.iter().any(Option::is_none))
             .copied()
             .collect();
-        let cleared = ROWS as usize - kept.len();
+        let rows = ROWS as usize - kept.len();
         let mut well = [[None; COLS as usize]; ROWS as usize];
-        well[cleared..].copy_from_slice(&kept);
+        well[rows..].copy_from_slice(&kept);
         self.well = well;
-        self.score += CLEARED[cleared] * (self.level + 1);
-        self.lines += cleared as u64;
-        self.level = self.lines / 10;
-        if let Some(garbage) = &mut self.versus
-            && garbage.trade(cleared, &mut self.well)
-        {
+        let difficult = rows == 4 || rows > 0 && spin.is_some();
+        let combo = (rows > 0).then(|| self.combo.map_or(0, |combo| combo + 1));
+        let mut clear = Clear {
+            rows: rows as u8,
+            spin,
+            back_to_back: difficult && self.chain,
+            combo: combo.unwrap_or(0),
+            perfect: rows > 0 && self.well.iter().flatten().all(Option::is_none),
+            ..Clear::default()
+        };
+        self.combo = combo;
+        if rows > 0 {
+            self.chain = difficult;
+        }
+        self.score += clear.points() * (self.level + 1);
+        self.lines += rows as u64;
+        let out = match &mut self.versus {
+            Some(garbage) => garbage.trade(&mut clear, &mut self.well),
+            None => {
+                self.level = self.lines / 10;
+                false
+            }
+        };
+        self.last = Some(clear);
+        if out {
             self.over = true;
             return;
         }
@@ -504,6 +734,9 @@ impl Tetris {
             Move::Drop => {
                 let rows = self.landing() - self.at.1;
                 self.at.1 += rows;
+                if rows > 0 {
+                    self.turned = None;
+                }
                 self.score += 2 * rows as u64;
                 self.lock();
                 return true;
@@ -589,8 +822,12 @@ impl Tetris {
     }
 
     /// One frame: the keys that waited, then gravity's count, or the lock
-    /// delay's on the ground.
+    /// delay's on the ground. In versus the frame counts toward the level.
     pub fn tick(&mut self) -> bool {
+        self.ticks += 1;
+        if self.versus.is_some() {
+            self.level = self.ticks / MINUTE;
+        }
         let mut moved = false;
         while let Some(held) = self.moves.pop_front() {
             if self.over {
@@ -616,6 +853,7 @@ impl Tetris {
             if self.fell >= self.gravity() {
                 self.fell = 0;
                 self.at.1 += 1;
+                self.turned = None;
                 moved = true;
             }
         }
@@ -1217,7 +1455,7 @@ mod tests {
     }
 
     #[test]
-    fn a_full_row_clears_and_scores_by_the_level() {
+    fn a_full_row_clears_and_scores_a_single() {
         let mut tetris = with(Piece::I);
         // the bottom row full but for the four cells the I lies in
         for x in 4..COLS as usize {
@@ -1227,8 +1465,8 @@ mod tests {
         tetris.at = (0, 3);
         tetris.tap("space");
         tetris.tick();
-        // the drop's 15 rows at 2 and one row at level 0
-        assert_eq!(tetris.score(), 2 * 15 + 40);
+        // the drop's 15 rows at 2 and a Single at level 0
+        assert_eq!(tetris.score(), 2 * 15 + 100);
         assert_eq!(tetris.lines, 1);
         // the row above came down
         assert_eq!(tetris.well[ROWS as usize - 1][9], Some(Piece::Z));
@@ -1240,7 +1478,7 @@ mod tests {
     }
 
     #[test]
-    fn four_rows_at_once_score_1200_a_level_and_ten_rows_raise_it() {
+    fn four_rows_at_once_score_a_tetris_and_ten_rows_raise_the_level() {
         let mut tetris = with(Piece::I);
         tetris.lines = 8;
         tetris.level = 0;
@@ -1254,7 +1492,8 @@ mod tests {
         tetris.at = (-2, 0);
         tetris.tap("space");
         tetris.tick();
-        assert_eq!(tetris.score(), 2 * 16 + 1200);
+        // a Tetris that empties the well: an all clear too
+        assert_eq!(tetris.score(), 2 * 16 + 800 + 2000);
         assert_eq!((tetris.lines, tetris.level), (12, 1));
         assert!(tetris.well.iter().flatten().all(Option::is_none));
     }
@@ -1481,53 +1720,6 @@ mod tests {
     }
 
     #[test]
-    fn rows_cleared_send_by_the_table_and_a_tetris_after_a_tetris_one_more() {
-        let mut garbage = Garbage::new(1);
-        let mut well = [[None; COLS as usize]; ROWS as usize];
-        let mut sends = Vec::new();
-        for cleared in [1, 2, 3, 4, 4, 0, 4, 2, 4] {
-            garbage.trade(cleared, &mut well);
-            sends.push(sent(&mut garbage));
-        }
-        let none = Vec::new();
-        assert_eq!(
-            sends,
-            [
-                none.clone(),
-                vec![1],
-                vec![2],
-                vec![4],
-                vec![5],
-                none,
-                vec![5],
-                vec![1],
-                vec![4]
-            ],
-            "a lock that clears nothing keeps the Tetrises back to back; one of two rows breaks them"
-        );
-        assert!(well.iter().flatten().all(Option::is_none));
-    }
-
-    #[test]
-    fn what_is_sent_cancels_the_garbage_queued_first() {
-        let mut garbage = Garbage::new(1);
-        let mut well = [[None; COLS as usize]; ROWS as usize];
-        garbage.receive(Attack { lines: 3, hole: 0 });
-        garbage.receive(Attack { lines: 2, hole: 9 });
-        garbage.trade(4, &mut well);
-        assert!(sent(&mut garbage).is_empty(), "four cancel four");
-        assert_eq!(garbage.incoming, [Attack { lines: 1, hole: 9 }]);
-        garbage.trade(3, &mut well);
-        assert_eq!(sent(&mut garbage), [1], "two cancel one and send one");
-        assert!(garbage.incoming.is_empty());
-        assert_eq!(
-            (garbage.sent, garbage.received),
-            (1, 5),
-            "sent counts what left, received what came, cancelled or not"
-        );
-    }
-
-    #[test]
     fn queued_garbage_rises_on_a_lock_that_clears_nothing_holes_and_all() {
         let mut tetris = Tetris::versus(1, 1);
         tetris.piece = Piece::O;
@@ -1593,7 +1785,11 @@ mod tests {
             if drop % 2 == 0 {
                 garbage.incoming.push_back(Attack { lines: 1, hole: 3 });
             } else {
-                garbage.trade(3, &mut ours.well);
+                let mut triple = Clear {
+                    rows: 3,
+                    ..Clear::default()
+                };
+                garbage.trade(&mut triple, &mut ours.well);
                 assert_eq!(sent(garbage), [2]);
             }
             for (tetris, dealt) in [(&mut ours, &mut dealt.0), (&mut theirs, &mut dealt.1)] {
@@ -1726,6 +1922,407 @@ mod tests {
                 .fold((f32::MAX, 0f32), |(l, m), gap| (l.min(*gap), m.max(*gap)));
             assert!(least >= GUTTER && most - least <= 2., "{case}: {gaps:?}");
         }
+    }
+
+    /// A well of `rows`, its bottom rows as text, `#` a block.
+    fn well_of(rows: &[&str]) -> Well {
+        let mut well = [[None; COLS as usize]; ROWS as usize];
+        for (row, text) in well[ROWS as usize - rows.len()..].iter_mut().zip(rows) {
+            for (cell, at) in row.iter_mut().zip(text.chars()) {
+                if at == '#' {
+                    *cell = Some(Piece::O);
+                }
+            }
+        }
+        well
+    }
+
+    /// A piece, its turn and its box's top left corner.
+    type Placed = (Piece, u8, (i32, i32));
+
+    /// The I upright in the first column, at the top.
+    const I_UP: Placed = (Piece::I, 1, (-2, 0));
+    /// The O at the top, which falls to the floor of an empty well.
+    const O_TOP: Placed = (Piece::O, 0, (3, 0));
+    /// Four rows the I upright clears, a block over them to keep the well
+    /// from emptying.
+    const TETRIS: [&str; 5] = [
+        ".........#",
+        ".#########",
+        ".#########",
+        ".#########",
+        ".#########",
+    ];
+    const SINGLE: [&str; 1] = [".#########"];
+    /// A T-spin Double's slot under an overhang: the T upright beside it,
+    /// pointing left, turns back into it pointing down, three corners
+    /// filled and both of those it points to.
+    const TSD: [&str; 3] = [".....#....", "###...####", "####.#####"];
+    const TSD_T: Placed = (Piece::T, 3, (3, 17));
+    /// The same slot over rows that do not fill: a T-spin with no rows.
+    const TSZ: [&str; 3] = [".....#....", "###...###.", "####.####."];
+    /// A mini: the T flat in the corner turns upright against the wall on
+    /// SRS's second kick; of the two corners it points to one is filled.
+    const MINI: [&str; 2] = ["...#######", ".#########"];
+    const MINI_T: Placed = (Piece::T, 0, (0, 17));
+
+    /// `placed` in a well of `rows`, `keys` tapped a tick each, then
+    /// dropped: the lock's record.
+    fn lock_in(tetris: &mut Tetris, rows: &[&str], placed: Placed, keys: &[&str]) -> Clear {
+        let (piece, turn, at) = placed;
+        tetris.well = well_of(rows);
+        (tetris.piece, tetris.turn, tetris.at, tetris.turned) = (piece, turn, at, None);
+        tetris.last = None;
+        for key in keys.iter().chain(&["space"]) {
+            tetris.tap(key);
+            tetris.tick();
+        }
+        tetris.last.expect("a lock")
+    }
+
+    #[test]
+    fn a_t_turned_into_a_slot_with_three_corners_filled_is_a_t_spin_double() {
+        let mut tetris = with(Piece::T);
+        let clear = lock_in(&mut tetris, &TSD, TSD_T, &["z"]);
+        assert_eq!((clear.rows, clear.spin), (2, Some(Spin::Full)));
+        assert_eq!(clear.attack(), 4);
+        assert_eq!(tetris.score(), 1200, "at level 1, its drop moved nothing");
+        // set in the slot, not turned into it: a Double
+        let mut set = with(Piece::T);
+        let clear = lock_in(&mut set, &TSD, (Piece::T, 2, (3, 17)), &[]);
+        assert_eq!((clear.rows, clear.spin, clear.attack()), (2, None, 1));
+        assert_eq!(set.score(), 300);
+    }
+
+    #[test]
+    fn only_a_t_turned_with_three_corners_filled_spins() {
+        let spin = |rows: &[&str], placed: Placed| {
+            let mut tetris = with(Piece::T);
+            lock_in(&mut tetris, rows, placed, &["up"])
+        };
+        // the T turned upright where it locks, the corner over its left
+        // gone: two corners filled
+        let two = spin(
+            &["..........", "..........", "#.########"],
+            (Piece::T, 0, (0, 17)),
+        );
+        assert_eq!((two.rows, two.spin), (1, None));
+        // a J turned where a T would make a mini
+        let j = spin(&MINI, (Piece::J, 0, (0, 17)));
+        assert_eq!((j.rows, j.spin), (1, None));
+    }
+
+    #[test]
+    fn a_t_spin_with_one_of_the_corners_it_points_to_filled_is_a_mini() {
+        let mut tetris = with(Piece::T);
+        let clear = lock_in(&mut tetris, &MINI, MINI_T, &["up"]);
+        assert_eq!((clear.rows, clear.spin), (1, Some(Spin::Mini)));
+        assert_eq!(clear.attack(), 0);
+        assert_eq!(tetris.score(), 200);
+        // on the floor, which fills the two corners behind a T pointing up:
+        // turned back from upright, it kicks a cell right and one down
+        let floor = ["#..#......", "#...######"];
+        let mut tetris = with(Piece::T);
+        let clear = lock_in(&mut tetris, &floor, (Piece::T, 1, (0, 17)), &["z"]);
+        assert_eq!((clear.rows, clear.spin), (1, Some(Spin::Mini)));
+    }
+
+    #[test]
+    fn a_turn_onto_srs_last_kick_makes_the_t_spin_full_with_one_corner_it_points_to() {
+        // the T flat over a shaft at the wall: only the last kick, one
+        // left and two down, takes it in, upright, pointing right
+        let rows = [
+            "#.........",
+            "..........",
+            ".#########",
+            "..########",
+            "..########",
+        ];
+        let mut tetris = with(Piece::T);
+        tetris.well = well_of(&rows);
+        (tetris.turn, tetris.at) = (0, (0, 15));
+        tetris.tap("up");
+        tetris.tick();
+        assert_eq!(
+            (tetris.turn, tetris.at, tetris.turned),
+            (1, (-1, 17), Some(LAST_KICK))
+        );
+        tetris.tap("space");
+        tetris.tick();
+        let clear = tetris.last.expect("a lock");
+        assert_eq!(
+            (clear.rows, clear.spin, clear.attack()),
+            (2, Some(Spin::Full), 4)
+        );
+    }
+
+    #[test]
+    fn a_turn_counts_as_the_last_move_until_a_slide_a_row_of_fall_or_a_drop_moves_the_t() {
+        // upright against the wall at the floor: three corners filled, the
+        // wall's two and one of the two it points to
+        let rows = ["#.........", "..........", "#.########"];
+        let spin = |placed: Placed, keys: &[&str]| {
+            let mut tetris = with(Piece::T);
+            lock_in(&mut tetris, &rows, placed, keys).spin
+        };
+        assert_eq!(
+            spin((Piece::T, 0, (0, 17)), &["up"]),
+            Some(Spin::Mini),
+            "turned where it locks"
+        );
+        assert_eq!(
+            spin((Piece::T, 0, (0, 15)), &["up", "down", "down"]),
+            None,
+            "soft dropped"
+        );
+        assert_eq!(
+            spin((Piece::T, 0, (0, 15)), &["up"]),
+            None,
+            "hard dropped two rows"
+        );
+        // turned, then slid in the open
+        let mut slid = with(Piece::T);
+        slid.at = (4, 5);
+        slid.tap("up");
+        slid.tick();
+        assert_eq!(slid.turned, Some(0));
+        slid.tap("left");
+        slid.tick();
+        assert_eq!(slid.turned, None, "slid");
+        // turned, then two rows of gravity's
+        let mut tetris = with(Piece::T);
+        tetris.well = well_of(&rows);
+        (tetris.turn, tetris.at) = (0, (0, 15));
+        tetris.tap("up");
+        while tetris.last.is_none() {
+            tetris.tick();
+        }
+        assert_eq!(
+            tetris.last.map(|clear| (clear.rows, clear.spin)),
+            Some((1, None))
+        );
+    }
+
+    #[test]
+    fn locks_clearing_rows_one_after_another_add_the_combo_table_and_one_clearing_nothing_ends_it()
+    {
+        let mut tetris = Tetris::versus(1, 1);
+        let mut sent = Vec::new();
+        for _ in 0..13 {
+            sent.push(lock_in(&mut tetris, &SINGLE, I_UP, &[]).sent);
+        }
+        assert_eq!(
+            sent,
+            [0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 5],
+            "Singles, combo 0 to 12"
+        );
+        let score = tetris.score();
+        // a T-spin with no rows ends it too
+        lock_in(&mut tetris, &TSZ, TSD_T, &["z"]);
+        assert_eq!(tetris.score() - score, 400);
+        let clear = lock_in(&mut tetris, &SINGLE, I_UP, &[]);
+        assert_eq!((clear.combo, clear.sent), (0, 0));
+        let score = tetris.score();
+        let clear = lock_in(&mut tetris, &SINGLE, I_UP, &[]);
+        assert_eq!((clear.combo, clear.sent), (1, 1));
+        assert_eq!(
+            tetris.score() - score,
+            100 + 50 + 2 * 16,
+            "a Single, combo 1, the drop"
+        );
+    }
+
+    #[test]
+    fn tetrises_and_t_spins_clearing_rows_chain_back_to_back_and_only_another_clear_breaks_it() {
+        let mut tetris = Tetris::versus(1, 1);
+        // a lock that clears nothing between two clears keeps the combo out
+        let mut lock = |rows: &[&str], placed, keys: &[&str]| {
+            let clear = lock_in(&mut tetris, rows, placed, keys);
+            lock_in(&mut tetris, &[], O_TOP, &[]);
+            (clear.back_to_back, clear.sent)
+        };
+        let chain = [
+            lock(&TETRIS, I_UP, &[]),
+            lock(&TETRIS, I_UP, &[]),
+            lock(&SINGLE, I_UP, &[]),
+            lock(&TETRIS, I_UP, &[]),
+            lock(&TSD, TSD_T, &["z"]),
+            lock(&TSZ, TSD_T, &["z"]),
+            lock(&MINI, MINI_T, &["up"]),
+            lock(&TETRIS, I_UP, &[]),
+        ];
+        assert_eq!(
+            chain,
+            [
+                (false, 4),
+                (true, 5),
+                (false, 0),
+                (false, 4),
+                (true, 5),
+                (false, 0),
+                (true, 1),
+                (true, 5),
+            ],
+            "a Single breaks the chain; a T-spin Double goes on from a Tetris; a T-spin with no rows, as a lock clearing nothing, keeps it; a mini goes on with it"
+        );
+        let score = tetris.score();
+        lock_in(&mut tetris, &TSD, TSD_T, &["z"]);
+        assert_eq!(
+            tetris.score() - score,
+            1200 * 3 / 2,
+            "a T-spin Double back to back"
+        );
+    }
+
+    #[test]
+    fn an_all_clear_sends_four_more_and_scores_its_bonus_by_the_rows() {
+        let mut tetris = with(Piece::I);
+        let clear = lock_in(&mut tetris, &TETRIS[1..], I_UP, &[]);
+        assert_eq!((clear.perfect, clear.attack()), (true, 8));
+        assert_eq!(tetris.score(), 2 * 16 + 800 + 2000);
+        lock_in(&mut tetris, &[], O_TOP, &[]);
+        let score = tetris.score();
+        let clear = lock_in(&mut tetris, &TETRIS[1..], I_UP, &[]);
+        assert_eq!(
+            (clear.perfect, clear.back_to_back, clear.attack()),
+            (true, true, 9)
+        );
+        assert_eq!(tetris.score() - score, 2 * 16 + 800 * 3 / 2 + 3200);
+        // a block left over: no all clear
+        let clear = lock_in(&mut tetris, &TETRIS, I_UP, &[]);
+        assert!(!clear.perfect);
+        let clear = lock_in(&mut tetris, &SINGLE[..], I_UP, &[]);
+        assert!(!clear.perfect, "the I's three cells are left");
+    }
+
+    /// `tetris`' well's row `y` as text: `.` empty, `G` garbage, `#` a
+    /// piece's block.
+    fn text(tetris: &Tetris, y: usize) -> String {
+        tetris.well[y]
+            .iter()
+            .map(|cell| match cell {
+                None => '.',
+                Some(Piece::Garbage) => 'G',
+                Some(_) => '#',
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_lock_that_clears_nothing_raises_at_most_eight_queued_rows_oldest_first() {
+        let mut tetris = Tetris::versus(1, 1);
+        tetris.versus.as_mut().expect("versus").incoming.extend([
+            Attack { lines: 5, hole: 1 },
+            Attack { lines: 4, hole: 2 },
+            Attack { lines: 2, hole: 3 },
+        ]);
+        let clear = lock_in(&mut tetris, &[], O_TOP, &[]);
+        assert_eq!(clear.rose, 8);
+        let bottom: Vec<String> = (ROWS as usize - 10..ROWS as usize)
+            .map(|y| text(&tetris, y))
+            .collect();
+        let mut rows = vec!["....##....".to_owned(); 2];
+        rows.extend(vec!["G.GGGGGGGG".to_owned(); 5]);
+        rows.extend(vec!["GG.GGGGGGG".to_owned(); 3]);
+        assert_eq!(
+            bottom, rows,
+            "five of the first attack, three of the second"
+        );
+        let garbage = tetris.versus.as_ref().expect("versus");
+        assert_eq!(
+            garbage.incoming,
+            [Attack { lines: 1, hole: 2 }, Attack { lines: 2, hole: 3 }]
+        );
+        assert_eq!(
+            lock_in(&mut tetris, &[], O_TOP, &[]).rose,
+            3,
+            "the rest, on the next"
+        );
+    }
+
+    #[test]
+    fn what_a_lock_sends_cancels_the_garbage_queued_first() {
+        let mut tetris = Tetris::versus(1, 1);
+        let garbage = tetris.versus.as_mut().expect("versus");
+        garbage.receive(Attack { lines: 3, hole: 0 });
+        garbage.receive(Attack { lines: 2, hole: 9 });
+        let clear = lock_in(&mut tetris, &TSD, TSD_T, &["z"]);
+        assert_eq!(
+            (clear.cancelled, clear.sent),
+            (4, 0),
+            "a T-spin Double's four"
+        );
+        let garbage = tetris.versus.as_mut().expect("versus");
+        assert!(sent(garbage).is_empty());
+        assert_eq!(garbage.incoming, [Attack { lines: 1, hole: 9 }]);
+        // back to back at combo 1: four, one and one
+        let clear = lock_in(&mut tetris, &TETRIS, I_UP, &[]);
+        assert_eq!((clear.cancelled, clear.sent), (1, 5));
+        let garbage = tetris.versus.as_mut().expect("versus");
+        assert_eq!(sent(garbage), [5]);
+        assert!(garbage.incoming.is_empty());
+        assert_eq!(
+            (garbage.sent, garbage.received),
+            (5, 5),
+            "sent counts what left, received what came, cancelled or not"
+        );
+    }
+
+    #[test]
+    fn versus_wells_fall_alike_at_equal_ticks_whatever_each_cleared() {
+        let (mut ours, mut theirs) = (Tetris::versus(5, 1), Tetris::versus(5, 2));
+        // ours clears forty rows, a Tetris a tick; theirs plays nothing
+        for _ in 0..10 {
+            lock_in(&mut ours, &TETRIS, I_UP, &[]);
+            theirs.tick();
+            assert_eq!(
+                (ours.level, ours.gravity()),
+                (theirs.level, theirs.gravity())
+            );
+        }
+        assert_eq!((ours.lines, theirs.lines), (40, 0));
+        while ours.ticks < MINUTE - 1 {
+            ours.tick();
+            theirs.tick();
+        }
+        assert_eq!((ours.level, theirs.level), (0, 0), "a minute less a tick");
+        ours.tick();
+        theirs.tick();
+        assert_eq!((ours.level, theirs.level), (1, 1), "a minute");
+        assert_eq!((ours.gravity(), theirs.gravity()), (GRAVITY[1], GRAVITY[1]));
+        // alone, ten rows are a level
+        let mut alone = with(Piece::I);
+        lock_in(&mut alone, &TETRIS, I_UP, &[]);
+        lock_in(&mut alone, &TETRIS, I_UP, &[]);
+        lock_in(&mut alone, &TETRIS, I_UP, &[]);
+        assert_eq!(alone.level, 1);
+    }
+
+    #[test]
+    fn the_largest_attack_a_lock_sends_is_fair() {
+        let most = Clear {
+            rows: 3,
+            spin: Some(Spin::Full),
+            back_to_back: true,
+            combo: 40,
+            perfect: true,
+            ..Clear::default()
+        };
+        assert_eq!((most.attack(), MOST_SENT), (16, 16));
+        assert!(
+            Attack {
+                lines: MOST_SENT,
+                hole: 0
+            }
+            .fair()
+        );
+        assert!(
+            !Attack {
+                lines: MOST_SENT + 1,
+                hole: 0
+            }
+            .fair()
+        );
     }
 
     #[test]

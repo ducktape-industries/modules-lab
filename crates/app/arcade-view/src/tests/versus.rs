@@ -156,12 +156,14 @@ fn a_tetris_sends_four_rows_that_rise_in_the_other_well_on_its_next_lock() {
     let mut both = matched();
     game(&mut both.ada, |game| {
         let tetris = &mut game.tetris;
-        // four rows full but for the first column, an I upright over it
+        // four rows full but for the first column, an I upright over it,
+        // and a block over them: no all clear
         for y in ROWS as usize - 4..ROWS as usize {
             for x in 1..COLS as usize {
                 tetris.well[y][x] = Some(Piece::O);
             }
         }
+        tetris.well[ROWS as usize - 5][9] = Some(Piece::O);
         tetris.piece = Piece::I;
         tetris.turn = 1;
         tetris.at = (-2, 0);

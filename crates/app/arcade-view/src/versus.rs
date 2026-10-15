@@ -780,6 +780,7 @@ impl Arcade {
         let stats = vec![
             ("Sent", garbage.sent.to_string()),
             ("Received", garbage.received.to_string()),
+            ("Level", game.tetris.level.to_string()),
         ];
         tetris::stage(
             self.stage_room(),
