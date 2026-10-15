@@ -12,7 +12,7 @@
 //!   every query
 //! - `rules.rs`: what each op checks and writes
 //! - `queries.rs`: one function per question
-//! - `tests.rs`: the module natively over `guest::MockHost`
+//! - `tests.rs`: the module natively over `::program::MockHost`
 mod program;
 mod queries;
 mod rules;
@@ -25,7 +25,7 @@ pub use program::Trade;
 use borsh::{BorshDeserialize, BorshSerialize};
 use store::{PageRequest, PageResponse};
 
-pub const MODULE: &str = "trade";
+pub const PROGRAM: &str = "trade";
 
 /// Every balance, amount and price counts in this many parts of one: an
 /// amount of `UNIT` is 1 of its asset, a price of `UNIT` is 1 of the quote

@@ -1,8 +1,8 @@
 # modules-lab — experiments written against the modules SDK, out of tree.
 #
-# A crate here keeps the shape of modules' `crates/app/*` (a view is a cdylib
-# for wasm32-unknown-unknown on `ducktape-view-guest`), so one that earns its
-# place moves over as it is.
+# A crate here keeps the shape of programs' `crates/app/*` (a view is a cdylib
+# for wasm32-unknown-unknown on `view`), so one that earns its place moves
+# over as it is.
 
 [workspace]
 resolver = "2"
@@ -13,20 +13,20 @@ edition = "2024"
 version = "0.1.0"
 
 [workspace.dependencies]
-# ---- sdk-line: modules @ 4339899c (modules#343: block reads list sizes, chain.tx; WIRE_ID bec30594), the rev the app pins. The app refuses
+# ---- sdk-line: programs @ 62b369c6 (programs `feat/live`: dev b3b4b562 with the live tracks; WIRE_ID 10e9a7c0), the rev the app pins. The app refuses
 # a view built against another wire, so this moves when the app's pin moves.
-ducktape-view-guest = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
+view = { git = "https://github.com/ducktape-industries/programs", rev = "62b369c6abb11db582d6a4cd3ede27710bc850b7" }
 # What a program is written against: the kernel ABI (a copy of core's, never
-# to drift from it), the guest and its mock host, the query derive, the
-# tables, and the describe module.
-abi = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
-guest = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
-program = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
-store = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
-describe = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
+# to drift from it), the program SDK and its mock host, the tables, and the
+# describe module.
+abi = { git = "https://github.com/ducktape-industries/programs", rev = "62b369c6abb11db582d6a4cd3ede27710bc850b7" }
+program = { git = "https://github.com/ducktape-industries/programs", rev = "62b369c6abb11db582d6a4cd3ede27710bc850b7" }
+store = { git = "https://github.com/ducktape-industries/programs", rev = "62b369c6abb11db582d6a4cd3ede27710bc850b7" }
+describe = { git = "https://github.com/ducktape-industries/programs", rev = "62b369c6abb11db582d6a4cd3ede27710bc850b7" }
 # The op that gives a key its account: what a live stage's seed sends first
-# (`crates/app/trade/examples/seed.rs`). No program or view here links it.
-identity = { git = "https://github.com/ducktape-industries/modules", rev = "4339899c8f48e3795c13382d0a4af3f7167b7052" }
+# (`crates/app/trade/examples/seed.rs`), and the profiles arcade-view reads
+# names from.
+identity = { git = "https://github.com/ducktape-industries/programs", rev = "62b369c6abb11db582d6a4cd3ede27710bc850b7" }
 # `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
 # the SDK does not re-export.
 # The rev is the one modules names.
@@ -65,7 +65,7 @@ opt-level = 3
 opt-level = 3
 [profile.release.package.browser-view]
 opt-level = 3
-[profile.release.package.ducktape-view-guest]
+[profile.release.package.view]
 opt-level = 3
 [profile.release.package.view-wire]
 opt-level = 3
@@ -79,15 +79,8 @@ opt-level = 3
 rmp-serde = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "b38e8b8feec037f15da484f7f703983ae4f8f0de" }
 gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "b38e8b8feec037f15da484f7f703983ae4f8f0de" }
 
-# live: local patches. The SDK's live tracks (modules `feat/live`) from its
-# worktree on this box, until that branch is pushed and the pins above move
-# to its rev. On that rev the fake-node runner is `rig`, not `live`, which
-# browser-view's example follows here.
-[patch."https://github.com/ducktape-industries/modules"]
-abi = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/sdk/abi" }
-describe = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/sdk/describe" }
-ducktape-view-guest = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/sdk/view-guest" }
-guest = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/sdk/guest" }
-identity = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/system/identity" }
-program = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/sdk/program" }
-store = { path = "/home/eddy/dev/ducktape/modules/.wt/live/crates/sdk/store" }
+# The SDK's fake node (`view`'s `rig`) links programs' blobs crate, which links
+# core's `blob` and with it core's abi: one abi in the graph, the programs
+# copy, as the app patches it.
+[patch."https://github.com/ducktape-industries/ducktape"]
+abi = { git = "https://github.com/ducktape-industries/programs", rev = "62b369c6abb11db582d6a4cd3ede27710bc850b7", package = "abi" }

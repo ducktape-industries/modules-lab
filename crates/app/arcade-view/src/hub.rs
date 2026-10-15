@@ -1,8 +1,8 @@
 //! The hub: a card for each game, each a button with the game's name, a
 //! line of what it is, a still picture of it, and the reader's best; and
 //! last, Tetris versus's, which opens its lobby.
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{App, Canvas, Div, FontWeight, Stateful};
+use view::prelude::*;
+use view::{App, Canvas, Div, FontWeight, Stateful};
 
 use crate::{Arcade, breakout, invaders, merge, mines, snake, tetris};
 

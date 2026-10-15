@@ -10,10 +10,10 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-ducktape-view-guest.workspace = true
+view.workspace = true
 gpui.workspace = true
 serde.workspace = true
-# the program's types and rules, linked with `module` off
+# the program's types and rules, linked with `program` off
 trade.workspace = true
 # `Reads`: which tables a query reads, asked of each block's change
 program.workspace = true

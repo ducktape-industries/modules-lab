@@ -6,15 +6,15 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use ::identity::Identity;
 use abi::role::identity;
 use arcade::{Entry, Op, Query, Reply, state};
-use ducktape_view_guest::methods::{
+use view::methods::{
     Change, Changes, ClockTicks, HostId, HostSession, HostVisible, Query as Ask, Session, Submit,
 };
-use ducktape_view_guest::prelude::Capability;
-use ducktape_view_guest::testing::{StreamSender, TestAppContext};
-use ducktape_view_guest::{Entity, View, wire};
-use program::role::Identity;
+use view::prelude::Capability;
+use view::testing::{StreamSender, TestAppContext};
+use view::{Entity, View, wire};
 
 use crate::games::Game;
 use crate::{Arcade, Post};
@@ -99,11 +99,11 @@ pub(crate) fn opened(world: World, account: Option<u64>) -> Opened {
     });
     let named = world.clone();
     cx.host().handle::<Ask<Identity>>(move |query| {
-        let identity::Query::Profile(number) = query else {
+        let ::identity::Query::Profile { number } = query else {
             panic!("the view asks identity for a profile alone");
         };
         let name = named.borrow().names.get(&number).cloned();
-        Ok(identity::Reply::Profile(name.map(|name| {
+        Ok(::identity::Reply::Profile(name.map(|name| {
             identity::Profile {
                 number,
                 name,
@@ -116,10 +116,7 @@ pub(crate) fn opened(world: World, account: Option<u64>) -> Opened {
     let told = world.clone();
     cx.host()
         .handle::<Submit<arcade::Arcade>>(move |_| match &told.borrow().refusal {
-            Some(message) => Err(ducktape_view_guest::host::Error::new(
-                "refused",
-                message.clone(),
-            )),
+            Some(message) => Err(view::host::Error::new("refused", message.clone())),
             None => Ok(Vec::new()),
         });
     let sessions = cx.host().stream::<HostSession>();
@@ -237,11 +234,11 @@ pub(crate) fn shows(cx: &TestAppContext, texts: &[&str]) {
 #[test]
 fn the_manifest_names_the_program_identity_the_clock_and_live() {
     assert_eq!(<Arcade as View>::NAME, "Arcade");
-    assert_eq!(<Arcade as View>::TARGETS, [arcade::MODULE, "identity"]);
+    assert_eq!(<Arcade as View>::TARGETS, [arcade::PROGRAM, "identity"]);
     assert_eq!(
         <Arcade as View>::CAPABILITIES,
         [
-            Capability::Module,
+            Capability::Program,
             Capability::Op,
             Capability::Host,
             Capability::Clock,
