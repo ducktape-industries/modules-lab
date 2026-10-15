@@ -1,10 +1,9 @@
 //! What the view follows and asks: the session, whether it is on screen,
 //! the program's blocks, the reader's bests, the open game's board with
 //! its accounts' names, and the one op it sends, an ended game's score.
-use abi::role::identity;
+use ::identity::Identity;
 use arcade::{Entry, Op, ask};
-use ducktape_view_guest::prelude::*;
-use program::role::Identity;
+use view::prelude::*;
 
 use crate::games::Game;
 use crate::versus::Versus;
@@ -161,13 +160,14 @@ impl Arcade {
     /// Asks for the clock at the running game's period, or a versus
     /// round's, drops it when none runs, and asks again when the period
     /// changes. A versus round runs on off screen: the other side plays on.
+    /// An ended game's effects play out first.
     fn run_clock(&mut self, cx: &mut Context<Self>) {
         let running = self
             .play
             .as_ref()
             .filter(|play| !play.paused && !self.hidden)
             .and_then(|play| play.game.ready())
-            .filter(|game| !game.over());
+            .filter(|game| !game.over() || game.animating());
         let period = running
             .and_then(Game::period)
             .or_else(|| self.versus.as_ref().and_then(Versus::period));
@@ -215,12 +215,16 @@ async fn board(host: Host, game: u8) -> Result<Vec<Row>, Error> {
         .await?;
     let names: Vec<_> = top
         .iter()
-        .map(|entry| host.ask::<Query<Identity>>(identity::Query::Profile(entry.account)))
+        .map(|entry| {
+            host.ask::<Query<Identity>>(::identity::Query::Profile {
+                number: entry.account,
+            })
+        })
         .collect();
     let mut rows = Vec::with_capacity(top.len());
     for (entry, name) in top.into_iter().zip(names) {
         let name = match name.await {
-            Ok(identity::Reply::Profile(Some(profile))) => profile.name,
+            Ok(::identity::Reply::Profile(Some(profile))) => profile.name,
             _ => format!("account {}", entry.account),
         };
         rows.push(Row { entry, name });

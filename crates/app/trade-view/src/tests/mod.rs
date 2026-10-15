@@ -1,11 +1,11 @@
 //! The view against a fake host that answers as the program would
 //! (`sample.rs`): each test drives the frame the way a person would. Every
 //! frame it sends is held to the host's sanitizer and accessibility audit.
-use ducktape_view_guest::methods::{Change, Changes, Query as Ask, Submit};
-use ducktape_view_guest::prelude::Capability;
-use ducktape_view_guest::testing::TestAppContext;
-use ducktape_view_guest::{Entity, View};
 use trade::{MAX_ROWS, Op, Query, UNIT, state};
+use view::methods::{Change, Changes, Query as Ask, Submit};
+use view::prelude::Capability;
+use view::testing::TestAppContext;
+use view::{Entity, View};
 
 use crate::{Column, Panel, Trade, format};
 use sample::{READER, Shared, World};
@@ -72,10 +72,10 @@ fn shows(cx: &TestAppContext, texts: &[&str]) {
 #[test]
 fn the_manifest_names_the_program_and_what_the_view_asks_of_the_host() {
     assert_eq!(<Trade as View>::NAME, "Trade");
-    assert_eq!(<Trade as View>::TARGETS, [trade::MODULE]);
+    assert_eq!(<Trade as View>::TARGETS, [trade::PROGRAM]);
     assert_eq!(
         <Trade as View>::CAPABILITIES,
-        [Capability::Module, Capability::Op, Capability::Host]
+        [Capability::Program, Capability::Op, Capability::Host]
     );
     // narrower than the desk's 768 px pane, which the view is laid out in
     assert_eq!(<Trade as View>::MIN_WINDOW_WIDTH, 736);
@@ -369,9 +369,7 @@ fn a_refused_read_says_why_in_its_place() {
     cx.simulate_resize(WIDE.0, WIDE.1);
     cx.host()
         .refuse::<Ask<trade::Trade>>("unavailable", "the node is catching up");
-    let sessions = cx
-        .host()
-        .stream::<ducktape_view_guest::methods::HostSession>();
+    let sessions = cx.host().stream::<view::methods::HostSession>();
     cx.open::<Trade>();
     sessions.send(sample::session(Some(READER)));
     cx.run_until_parked();

@@ -103,7 +103,7 @@ fn main() {
     for name in ACCOUNTS {
         let account = identity::Op::Create {
             name: name.to_owned(),
-            scheme: guest::Scheme::Ed25519,
+            scheme: ::program::Scheme::Ed25519,
         };
         write(
             out,

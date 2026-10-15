@@ -85,8 +85,8 @@
 use std::collections::VecDeque;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Canvas, Div, FontWeight, Stateful};
+use view::prelude::*;
+use view::{Canvas, Div, FontWeight, Stateful};
 
 use crate::games::{Fact, Rng, square};
 
@@ -423,6 +423,189 @@ fn rise(well: &mut Well, attacks: &[Attack]) -> bool {
     out
 }
 
+/// How many frames each effect shows for: a flash 256 ms (the rows a
+/// clear took, the rows that rose, the meter, the other side's frame), the
+/// well's nudge 128 ms, the rows sent a second, a callout 1.5 s and the end
+/// of a game 320 ms.
+const FLASH: u32 = 16;
+const NUDGE: u32 = 8;
+const SENT: u32 = 62;
+pub(crate) const CALLOUT: u32 = 94;
+pub(crate) const ENDING: u32 = 20;
+/// How far the well nudges up as garbage rises. The view hears no
+/// reduced-motion setting (the SDK sends none), so this is everyone's:
+/// 0 turns the one motion here off, and the effects are fades only.
+const NUDGE_PX: f32 = 3.;
+/// The callouts a stack holds, the newest first.
+const CALLOUTS: usize = 6;
+
+/// An effect: what it shows, and the frames it has left of its length.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Fade<T> {
+    what: T,
+    left: u32,
+    length: u32,
+}
+
+impl<T> Fade<T> {
+    fn new(what: T, length: u32) -> Fade<T> {
+        Fade {
+            what,
+            left: length,
+            length,
+        }
+    }
+
+    /// 1 as it starts, toward 0 as it ends.
+    fn strength(&self) -> f32 {
+        self.left as f32 / self.length as f32
+    }
+
+    /// The frames it has shown.
+    fn shown(&self) -> u32 {
+        self.length - self.left
+    }
+}
+
+/// One effect a frame older; gone at its end.
+fn age<T>(fade: &mut Option<Fade<T>>) {
+    *fade = fade.take().and_then(|mut fade| {
+        fade.left -= 1;
+        (fade.left > 0).then_some(fade)
+    });
+}
+
+/// A line of the callouts, and how it is drawn.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Callout {
+    text: String,
+    /// In its piece's color, or quiet; the all clear's is large.
+    tone: Tone,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Tone {
+    Piece(Piece),
+    Quiet,
+    Large,
+}
+
+/// What a clear is called, its notable parts a line each.
+fn called(clear: &Clear) -> Vec<Callout> {
+    let line = |text: String, tone| Callout { text, tone };
+    let rows = ["", " SINGLE", " DOUBLE", " TRIPLE"];
+    let mut lines = Vec::new();
+    match (clear.spin, usize::from(clear.rows)) {
+        (Some(Spin::Full), rows_cleared) => lines.push(line(
+            format!("T-SPIN{}", rows[rows_cleared]),
+            Tone::Piece(Piece::T),
+        )),
+        (Some(Spin::Mini), rows_cleared) => lines.push(line(
+            format!("T-SPIN MINI{}", rows[rows_cleared]),
+            Tone::Piece(Piece::T),
+        )),
+        (None, 4) => lines.push(line("TETRIS".into(), Tone::Piece(Piece::I))),
+        _ => {}
+    }
+    if clear.back_to_back {
+        lines.push(line("BACK-TO-BACK".into(), Tone::Quiet));
+    }
+    if clear.rows > 0 && clear.combo > 0 {
+        lines.push(line(format!("{} COMBO", clear.combo), Tone::Quiet));
+    }
+    if clear.perfect {
+        lines.push(line("ALL CLEAR".into(), Tone::Large));
+    }
+    lines
+}
+
+/// What the screen shows for a moment after the game did something, aged
+/// a frame a tick: drawn only, never read by the rules or sent.
+#[derive(Default)]
+struct Effects {
+    /// The rows the last clear took, where they were before the rows over
+    /// them came down.
+    cleared: Option<Fade<Vec<usize>>>,
+    /// Rows of garbage that rose from the floor.
+    rose: Option<Fade<u8>>,
+    /// An attack came into the queue.
+    arrived: Option<Fade<()>>,
+    /// Rows of the queue a clear cancelled.
+    cancelled: Option<Fade<u8>>,
+    /// Rows this well sent, and the other side's frame struck by them.
+    sent: Option<Fade<u8>>,
+    struck: Option<Fade<()>>,
+    /// The game or the round ended: won, or topped out.
+    ended: Option<Fade<bool>>,
+    /// What the last clears were called, the newest first.
+    callouts: Vec<Fade<Callout>>,
+}
+
+impl Effects {
+    fn any(&self) -> bool {
+        self.cleared.is_some()
+            || self.rose.is_some()
+            || self.arrived.is_some()
+            || self.cancelled.is_some()
+            || self.sent.is_some()
+            || self.struck.is_some()
+            || self.ended.is_some()
+            || !self.callouts.is_empty()
+    }
+
+    /// A frame on. Whether an effect was showing, so this frame differs.
+    fn step(&mut self) -> bool {
+        let showing = self.any();
+        age(&mut self.cleared);
+        age(&mut self.rose);
+        age(&mut self.arrived);
+        age(&mut self.cancelled);
+        age(&mut self.sent);
+        age(&mut self.struck);
+        age(&mut self.ended);
+        self.callouts.retain_mut(|callout| {
+            callout.left -= 1;
+            callout.left > 0
+        });
+        showing
+    }
+
+    /// A lock's effects: the rows it cleared, at `rows`, flash; the rows it
+    /// raised flash and nudge the well; what it cancelled and sent show
+    /// beside it; and what it was called stacks up.
+    fn locked(&mut self, clear: &Clear, rows: Vec<usize>) {
+        if !rows.is_empty() {
+            self.cleared = Some(Fade::new(rows, FLASH));
+        }
+        if clear.rose > 0 {
+            self.rose = Some(Fade::new(clear.rose, FLASH));
+        }
+        if clear.cancelled > 0 {
+            self.cancelled = Some(Fade::new(clear.cancelled, FLASH));
+        }
+        if clear.sent > 0 {
+            self.sent = Some(Fade::new(clear.sent, SENT));
+            self.struck = Some(Fade::new((), FLASH));
+        }
+        let called = called(clear)
+            .into_iter()
+            .map(|line| Fade::new(line, CALLOUT));
+        self.callouts.splice(0..0, called);
+        self.callouts.truncate(CALLOUTS);
+    }
+
+    /// The px the well stands up: up at once as garbage rises, back down
+    /// over [`NUDGE`] frames.
+    fn nudge(&self) -> f32 {
+        self.rose
+            .as_ref()
+            .filter(|rose| rose.shown() < NUDGE)
+            .map_or(0., |rose| {
+                (NUDGE_PX * (1. - rose.shown() as f32 / NUDGE as f32)).round()
+            })
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Move {
     Left,
@@ -480,6 +663,7 @@ pub struct Tetris {
     over: bool,
     /// The garbage this well trades in versus; none alone.
     pub versus: Option<Garbage>,
+    effects: Effects,
 }
 
 impl Tetris {
@@ -511,6 +695,7 @@ impl Tetris {
             score: 0,
             over: false,
             versus: None,
+            effects: Effects::default(),
         };
         tetris.next = std::array::from_fn(|_| tetris.draw_bag());
         tetris.spawn();
@@ -662,6 +847,9 @@ impl Tetris {
         for (x, y) in self.falling() {
             self.well[y as usize][x as usize] = Some(self.piece);
         }
+        let full: Vec<usize> = (0..ROWS as usize)
+            .filter(|y| self.well[*y].iter().all(Option::is_some))
+            .collect();
         let kept: Vec<_> = self
             .well
             .iter()
@@ -696,6 +884,7 @@ impl Tetris {
             }
         };
         self.last = Some(clear);
+        self.effects.locked(&clear, full);
         if out {
             self.over = true;
             return;
@@ -823,7 +1012,17 @@ impl Tetris {
 
     /// One frame: the keys that waited, then gravity's count, or the lock
     /// delay's on the ground. In versus the frame counts toward the level.
+    /// A game that ends on it flashes its well.
     pub fn tick(&mut self) -> bool {
+        let over = self.over;
+        let moved = self.step();
+        if self.over && !over {
+            self.effects.ended = Some(Fade::new(false, ENDING));
+        }
+        moved
+    }
+
+    fn step(&mut self) -> bool {
         self.ticks += 1;
         if self.versus.is_some() {
             self.level = self.ticks / MINUTE;
@@ -858,6 +1057,35 @@ impl Tetris {
             }
         }
         moved
+    }
+
+    /// The effects a frame on: whether one was showing, so the frame
+    /// changes.
+    pub(crate) fn fade(&mut self) -> bool {
+        self.effects.step()
+    }
+
+    /// An effect shows: the screen wants frames until it ends.
+    pub(crate) fn animating(&self) -> bool {
+        self.effects.any()
+    }
+
+    /// The well flashes for the game's end: its card waits.
+    pub(crate) fn ending(&self) -> bool {
+        self.effects.ended.is_some()
+    }
+
+    /// Versus: the other side's attack, queued to rise; the meter pulses.
+    pub(crate) fn receive(&mut self, attack: Attack) {
+        if let Some(garbage) = &mut self.versus {
+            garbage.receive(attack);
+            self.effects.arrived = Some(Fade::new((), FLASH));
+        }
+    }
+
+    /// Versus: the other side topped out or left; the well flashes.
+    pub(crate) fn won(&mut self) {
+        self.effects.ended = Some(Fade::new(true, ENDING));
     }
 
     fn gravity(&self) -> u32 {
@@ -896,7 +1124,9 @@ impl Tetris {
     }
 
     /// The well, `cell` px a cell: the settled blocks, where the piece
-    /// would land, and the piece.
+    /// would land, and the piece; over them the rows a clear took flashing
+    /// out where they were, a band that widens as it fades, the rows that
+    /// rose in red, and at the game's end the whole well.
     pub(crate) fn draw(&self, cell: f32, theme: &Theme) -> Canvas {
         let block = |x: i32, y: i32| {
             square(
@@ -907,16 +1137,48 @@ impl Tetris {
             )
         };
         let mut drawn = draw_well(&self.well, cell, theme);
-        if self.over {
-            return drawn;
+        if !self.over {
+            let fall = self.landing() - self.at.1;
+            for (x, y) in self.falling() {
+                drawn = drawn.rect(block(x, y + fall), theme.border_strong);
+            }
+            let color = self.piece.color(theme);
+            for (x, y) in self.falling() {
+                drawn = drawn.rect(block(x, y), color);
+            }
         }
-        let fall = self.landing() - self.at.1;
-        for (x, y) in self.falling() {
-            drawn = drawn.rect(block(x, y + fall), theme.border_strong);
+        let (width, height) = (COLS as f32 * cell, ROWS as f32 * cell);
+        let effects = &self.effects;
+        if let Some(cleared) = &effects.cleared {
+            let strength = cleared.strength();
+            let spread = (1. - strength) * cell / 4.;
+            // a band a run of rows next to each other
+            for run in cleared.what.chunk_by(|above, below| above + 1 == *below) {
+                let top = (run[0] as f32 * cell - spread).max(0.);
+                let bottom = ((run[run.len() - 1] + 1) as f32 * cell + spread).min(height);
+                drawn = drawn.rect(
+                    square(0., top, width, bottom - top),
+                    bright(theme).opacity(0.8 * strength),
+                );
+            }
         }
-        let color = self.piece.color(theme);
-        for (x, y) in self.falling() {
-            drawn = drawn.rect(block(x, y), color);
+        if let Some(rose) = &effects.rose {
+            let rows = f32::from(rose.what).min(ROWS as f32) * cell;
+            drawn = drawn.rect(
+                square(0., height - rows, width, rows),
+                theme.danger.opacity(0.45 * rose.strength()),
+            );
+        }
+        if let Some(ended) = &effects.ended {
+            let color = if ended.what {
+                theme.success
+            } else {
+                theme.danger
+            };
+            drawn = drawn.rect(
+                square(0., 0., width, height),
+                color.opacity(0.3 * ended.strength()),
+            );
         }
         drawn
     }
@@ -1132,7 +1394,23 @@ pub(crate) fn stage(
             .child(drawn)
     };
     let inside = f32::from(at.hold.size.width) - FRAME;
+    let effects = &tetris.effects;
+    // what the last clears were called, under the stats, fading
+    let callouts = effects.callouts.iter().map(|callout| {
+        let (size, color) = match callout.what.tone {
+            Tone::Piece(shown) => (design::text::SECTION, shown.color(theme)),
+            Tone::Quiet => (design::text::SECONDARY, theme.muted),
+            Tone::Large => (design::text::TITLE, theme.warning),
+        };
+        div()
+            .text_size(size)
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(color.opacity(callout.strength()))
+            .whitespace_nowrap()
+            .child(callout.what.text.clone())
+    });
     let stats = place(div(), at.stats)
+        .overflow_hidden()
         .flex()
         .flex_col()
         .gap(design::space::SM)
@@ -1142,7 +1420,14 @@ pub(crate) fn stage(
                     .text_size(design::text::SECTION)
                     .font_weight(FontWeight::MEDIUM),
             )
-        }));
+        }))
+        .child(
+            div()
+                .pt(design::space::SM)
+                .flex()
+                .flex_col()
+                .children(callouts),
+        );
     let queued = garbage.map_or(0, Garbage::queued);
     let meter = at.meter.map(|bounds| {
         let (width, height) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
@@ -1151,11 +1436,47 @@ pub(crate) fn stage(
             .h(px(height))
             .rect(square(0., 0., width, height), theme.surface);
         // a well's cell a row coming, from the floor up
-        let drawn = (1..=queued.min(ROWS as u32)).fold(ground, |drawn, row| {
+        let row = |row: u32| {
             let y = height - 1. - row as f32 * cell;
-            drawn.rect(square(1., y + 1., width - 2., cell - 2.), theme.danger)
-        });
+            square(1., y + 1., width - 2., cell - 2.)
+        };
+        let mut drawn = (1..=queued.min(ROWS as u32))
+            .fold(ground, |drawn, at| drawn.rect(row(at), theme.danger));
+        // an attack that came in pulses the rows coming; rows a clear
+        // cancelled fade out over them
+        if let Some(arrived) = &effects.arrived {
+            let pulse = bright(theme).opacity(0.6 * arrived.strength());
+            drawn =
+                (1..=queued.min(ROWS as u32)).fold(drawn, |drawn, at| drawn.rect(row(at), pulse));
+        }
+        if let Some(cancelled) = &effects.cancelled {
+            let gone = theme.success.opacity(cancelled.strength());
+            let rows = queued + 1..=(queued + u32::from(cancelled.what)).min(ROWS as u32);
+            drawn = rows.fold(drawn, |drawn, at| drawn.rect(row(at), gone));
+        }
         place(div(), bounds).child(drawn)
+    });
+    // the rows this well just sent, under the queue
+    let sent = effects.sent.as_ref().map(|sent| {
+        let next = edges(at.next);
+        place(
+            div(),
+            square(
+                next[0],
+                next[3] + (cell / 2.).floor(),
+                next[2] - next[0],
+                2. * LINE,
+            ),
+        )
+        .flex()
+        .justify_center()
+        .text_size(design::text::TITLE)
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(theme.danger.opacity(sent.strength()))
+        .child(format!("+{}", sent.what))
+    });
+    let struck = effects.struck.as_ref().map_or(theme.border, |struck| {
+        theme.border.blend(theme.danger.opacity(struck.strength()))
     });
     let coming = (queued > 0).then(|| {
         div()
@@ -1200,7 +1521,7 @@ pub(crate) fn stage(
                 div()
                     .id("versus-theirs")
                     .border_1()
-                    .border_color(theme.border)
+                    .border_color(struck)
                     .role(Role::Figure)
                     .aria_label(format!("{name}'s well"))
                     .child(draw_well(
@@ -1222,15 +1543,39 @@ pub(crate) fn stage(
         ))
         .child(stats)
         .children(meter)
-        .child(place(board, at.well).child(tetris.draw(cell, theme)))
+        .child(place(board, nudged(at.well, effects.nudge())).child(tetris.draw(cell, theme)))
         .child(boxed(
             at.next,
             "Next",
             tetris.draw_next(inside, cell, theme),
         ))
         .child(footer)
+        .children(sent)
         .children(theirs)
         .children(card.map(|card| place(div(), at.well).child(card)))
+}
+
+/// What a flash is drawn in: the dark theme's light ink; on the light
+/// theme, where nothing is lighter than the well, its gold.
+fn bright(theme: &Theme) -> Hsla {
+    if theme.dark {
+        theme.foreground
+    } else {
+        theme.warning
+    }
+}
+
+/// `bounds`' left, top, right and bottom.
+fn edges(bounds: Bounds<Pixels>) -> [f32; 4] {
+    let (x, y) = (f32::from(bounds.origin.x), f32::from(bounds.origin.y));
+    let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+    [x, y, x + w, y + h]
+}
+
+/// `bounds` `up` px higher.
+fn nudged(bounds: Bounds<Pixels>, up: f32) -> Bounds<Pixels> {
+    let [left, top, right, bottom] = edges(bounds);
+    square(left, top - up, right - left, bottom - top)
 }
 
 /// `element` at `bounds` in its parent.
@@ -1822,13 +2167,6 @@ mod tests {
         assert_eq!(read_cells(&past), None, "no block is 9");
     }
 
-    /// `bounds`' left, top, right and bottom.
-    fn edges(bounds: Bounds<Pixels>) -> [f32; 4] {
-        let (x, y) = (f32::from(bounds.origin.x), f32::from(bounds.origin.y));
-        let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
-        [x, y, x + w, y + h]
-    }
-
     #[test]
     fn the_screen_takes_one_cell_from_the_room_and_lays_its_parts_apart_inside_it() {
         // the three windows as the view's pane, less the bar: the cell,
@@ -2323,6 +2661,112 @@ mod tests {
             }
             .fair()
         );
+    }
+
+    /// The callouts' lines, the newest first.
+    fn callouts(tetris: &Tetris) -> Vec<&str> {
+        tetris
+            .effects
+            .callouts
+            .iter()
+            .map(|callout| callout.what.text.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn a_clear_flashes_its_rows_and_calls_what_it_was_and_both_fade_out() {
+        let mut tetris = Tetris::versus(1, 1);
+        lock_in(&mut tetris, &TETRIS, I_UP, &[]);
+        assert_eq!(callouts(&tetris), ["TETRIS"]);
+        assert_eq!(
+            tetris
+                .effects
+                .cleared
+                .as_ref()
+                .map(|cleared| cleared.what.clone()),
+            Some(vec![16, 17, 18, 19])
+        );
+        lock_in(&mut tetris, &TSD, TSD_T, &["z"]);
+        assert_eq!(
+            callouts(&tetris),
+            ["T-SPIN DOUBLE", "BACK-TO-BACK", "1 COMBO", "TETRIS"],
+            "the newest on top"
+        );
+        assert_eq!(
+            tetris
+                .effects
+                .cleared
+                .as_ref()
+                .map(|cleared| cleared.what.clone()),
+            Some(vec![18, 19]),
+            "where they were"
+        );
+        lock_in(&mut tetris, &MINI, MINI_T, &["up"]);
+        lock_in(&mut tetris, &TETRIS[1..], I_UP, &[]);
+        assert_eq!(
+            callouts(&tetris),
+            [
+                "TETRIS",
+                "BACK-TO-BACK",
+                "3 COMBO",
+                "ALL CLEAR",
+                "T-SPIN MINI SINGLE",
+                "BACK-TO-BACK"
+            ],
+            "six lines at most"
+        );
+        assert_eq!(
+            tetris.effects.callouts[3].what.tone,
+            Tone::Large,
+            "the all clear's large"
+        );
+        // a lock that clears nothing calls nothing; each frame fades
+        lock_in(&mut tetris, &[], O_TOP, &[]);
+        assert_eq!(callouts(&tetris).len(), 6);
+        for _ in 0..CALLOUT {
+            assert!(tetris.fade(), "showing");
+        }
+        assert!(!tetris.animating());
+        assert!(!tetris.fade(), "nothing left to change a frame");
+    }
+
+    #[test]
+    fn garbage_rising_flashes_red_and_nudges_the_well_up_then_back() {
+        let mut tetris = Tetris::versus(1, 1);
+        tetris.receive(Attack { lines: 2, hole: 0 });
+        assert!(tetris.effects.arrived.is_some(), "the meter pulses");
+        let clear = lock_in(&mut tetris, &[], O_TOP, &[]);
+        assert_eq!(clear.rose, 2);
+        let mut nudges = vec![tetris.effects.nudge()];
+        for _ in 0..NUDGE {
+            tetris.fade();
+            nudges.push(tetris.effects.nudge());
+        }
+        assert_eq!(nudges, [3., 3., 2., 2., 2., 1., 1., 0., 0.]);
+        for _ in NUDGE..FLASH - 1 {
+            assert!(tetris.effects.rose.is_some(), "the red outlasts the nudge");
+            tetris.fade();
+            assert_eq!(tetris.effects.nudge(), 0.);
+        }
+        tetris.fade();
+        assert!(tetris.effects.rose.is_none());
+    }
+
+    #[test]
+    fn a_clear_that_cancels_and_sends_flashes_the_meter_and_shows_what_went() {
+        let mut tetris = Tetris::versus(1, 1);
+        tetris.receive(Attack { lines: 1, hole: 0 });
+        lock_in(&mut tetris, &TSD, TSD_T, &["z"]);
+        let effects = &tetris.effects;
+        assert_eq!(effects.cancelled.as_ref().map(|fade| fade.what), Some(1));
+        assert_eq!(effects.sent.as_ref().map(|fade| fade.what), Some(3));
+        assert!(effects.struck.is_some(), "the other's frame flashes");
+        for _ in 0..FLASH {
+            tetris.fade();
+        }
+        let effects = &tetris.effects;
+        assert!(effects.cancelled.is_none() && effects.struck.is_none());
+        assert!(effects.sent.is_some(), "the +3 stays a second");
     }
 
     #[test]

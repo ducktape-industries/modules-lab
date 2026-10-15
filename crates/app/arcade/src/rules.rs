@@ -1,7 +1,7 @@
 //! What each [`Op`](crate::Op) checks and writes: it reads first, then
 //! writes, so a refused op leaves the store as it found it.
-use guest::live::{Grant, grant};
-use guest::{Error, ExecCtx, not_found};
+use ::program::live::{Grant, grant};
+use ::program::{Error, ExecCtx, not_found};
 
 use crate::state::{BEST, BOARD, highest_first};
 use crate::{GAMES, VERSUS};

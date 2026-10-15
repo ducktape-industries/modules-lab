@@ -20,10 +20,10 @@
 //! box, the inactive ones invisible, so switching tabs never reloads one. A
 //! piece is keyed by its tab's id, never its place, so closing a tab
 //! leaves the others' pages where they are.
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::wire::{ElementIdWire, WidgetCommand};
-use ducktape_view_guest::{Div, FontWeight, Stateful, Svg};
 use serde::{Deserialize, Serialize};
+use view::prelude::*;
+use view::wire::{ElementIdWire, WidgetCommand};
+use view::{Div, FontWeight, Stateful, Svg};
 
 /// What the new-tab button opens.
 pub const HOME: &str = "https://www.wikipedia.org/";

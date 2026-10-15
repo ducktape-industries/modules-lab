@@ -1,8 +1,8 @@
 //! Numbers and times as the screen writes them. Every price, amount and
 //! balance is the program's `u64` counting 1e-8 of a unit, so nothing here
 //! goes through a float: a number is written and read back exactly.
-use ducktape_view_guest::design;
 use trade::{MARKETS, UNIT};
+use view::design;
 
 /// The decimal places `UNIT` holds.
 const PLACES: u32 = 8;

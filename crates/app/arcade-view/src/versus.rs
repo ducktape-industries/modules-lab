@@ -25,13 +25,12 @@
 //! `Op::OpenVersus`, and when it lands the lobby asks again, once.
 use std::collections::{BTreeMap, BTreeSet};
 
-use abi::role::identity;
+use ::identity::Identity;
 use arcade::Op;
 use borsh::{BorshDeserialize, BorshSerialize};
-use ducktape_view_guest::live::{Received, Track, subscribe};
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{AnyElement, Div, FontWeight, Stateful};
-use program::role::Identity;
+use view::live::{Received, Track, subscribe};
+use view::prelude::*;
+use view::{AnyElement, Div, FontWeight, Stateful};
 
 use crate::Arcade;
 use crate::games::seed;
@@ -119,10 +118,11 @@ pub(crate) enum End {
 }
 
 impl Versus {
-    /// The clock's period while a round runs.
+    /// The clock's period while a round runs, and while its effects play
+    /// out after it.
     pub(crate) fn period(&self) -> Option<i64> {
         let game = self.game.as_ref()?;
-        game.end.is_none().then_some(tetris::PERIOD)
+        (game.end.is_none() || game.tetris.animating()).then_some(tetris::PERIOD)
     }
 
     fn name(&self, account: u64) -> String {
@@ -142,6 +142,15 @@ impl Match {
 
     fn running(&self) -> bool {
         self.end.is_none()
+    }
+
+    /// The other side topped out or left: this one wins, and its well
+    /// flashes.
+    fn win(&mut self) {
+        if self.running() {
+            self.end = Some(End::Won);
+            self.tetris.won();
+        }
     }
 }
 
@@ -323,11 +332,11 @@ impl Arcade {
             versus.names.insert(by, format!("account {by}"));
             let profile = cx
                 .host()
-                .ask::<Query<Identity>>(identity::Query::Profile(by));
+                .ask::<Query<Identity>>(::identity::Query::Profile { number: by });
             versus
                 .waits
                 .push(cx.land(profile, move |view, profile, cx| {
-                    if let (Some(versus), Ok(identity::Reply::Profile(Some(profile)))) =
+                    if let (Some(versus), Ok(::identity::Reply::Profile(Some(profile)))) =
                         (&mut view.versus, profile)
                     {
                         versus.names.insert(by, profile.name);
@@ -426,10 +435,9 @@ impl Arcade {
         match said {
             Ok(Received::Object { value, .. }) => match value {
                 Said::Attack(attack) if game.running() && attack.fair() => {
-                    let garbage = game.tetris.versus.as_mut().expect("a versus well");
-                    garbage.receive(attack);
+                    game.tetris.receive(attack)
                 }
-                Said::Out if game.running() => game.end = Some(End::Won),
+                Said::Out if game.running() => game.win(),
                 Said::Rematch => {
                     game.again.1 = true;
                     self.again(cx);
@@ -443,9 +451,7 @@ impl Arcade {
                     || refusal.code == refusal::TRACK_ENDED =>
             {
                 game.gone = true;
-                if game.running() {
-                    game.end = Some(End::Won);
-                }
+                game.win();
                 // nobody is left to play again: this side's challenge ends
                 // with the match, or it reads as a fresh one when they
                 // come back
@@ -473,8 +479,19 @@ impl Arcade {
     }
 
     /// One tick of a round: the well steps, and its attacks, its top-out
-    /// and its new look go to the other side.
+    /// and its new look go to the other side. After the round only its
+    /// effects go on.
     pub(crate) fn versus_ticked(&mut self, cx: &mut Context<Self>) {
+        let Some(game) = self.versus.as_mut().and_then(|versus| versus.game.as_mut()) else {
+            return;
+        };
+        let faded = game.tetris.fade();
+        if faded {
+            cx.notify();
+        }
+        if !game.running() {
+            return self.settle(cx);
+        }
         let Some(Versus {
             game: Some(game),
             ask: Some((_, ask)),
@@ -483,9 +500,6 @@ impl Arcade {
         else {
             return;
         };
-        if !game.running() {
-            return;
-        }
         let host = cx.host();
         let moved = game.tetris.tick();
         let garbage = game.tetris.versus.as_mut().expect("a versus well");
@@ -803,7 +817,7 @@ impl Arcade {
         cx: &mut Context<Self>,
         theme: &Theme,
     ) -> Option<Div> {
-        let end = game.end?;
+        let end = game.end.filter(|_| !game.tetris.ending())?;
         let theme = *theme;
         let title = match end {
             End::Won => "You win",

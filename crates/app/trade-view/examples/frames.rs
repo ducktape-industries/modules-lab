@@ -4,8 +4,8 @@
 //! renderer then draws them with no node behind it: the view runs here on
 //! the tests' fake host and sample market, driven to each screen the way a
 //! person would get to it.
-use ducktape_view_guest::testing::TestAppContext;
 use trade_view::Trade;
+use view::testing::TestAppContext;
 
 #[path = "../src/tests/sample.rs"]
 mod sample;
