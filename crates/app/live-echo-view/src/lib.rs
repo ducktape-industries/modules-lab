@@ -77,7 +77,7 @@ pub(crate) enum Lobby {
     #[default]
     Away,
     /// Asked in, not let in yet: the node holds the asks while the lobby
-    /// is not open, and `Open` goes on the first `not_granted`.
+    /// is not open, and `Open` goes on the first `Waiting`.
     Joining,
     /// Let in: published and listening.
     In,

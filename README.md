@@ -15,9 +15,9 @@ it is.
 | `crates/app/live-echo` | the program behind a live room: one op that opens it to every account |
 | `crates/app/live-echo-view` | its view: lines typed in the lobby, live through the node, by account |
 
-The SDK is modules `dev` at the rev the app pins (`Cargo.toml`, `sdk-line`).
-The app refuses a view built against another wire, so the pin moves when the
-app's does.
+The SDK is programs at the rev the app pins (`Cargo.toml`'s `sdk-line`,
+programs `pin/app-live` today). The app refuses a view built against another
+wire, so the pin moves when the app's does.
 
 ## trade
 
@@ -185,10 +185,12 @@ reader publishes `echo/<account>` in the room `lobby` in stream mode, a
 line as one object alone in its group, so a reader who comes later is
 replayed each person's last line. The view follows the room's tracks
 (`live.tracks`), subscribes to every `echo/*` it hears of, and lists the
-lines by account, the reader's own first; a track that ends says why
-under its account (`left: publisher_gone` when that app went away).
+lines by account, the reader's own first. A track opened anew (a
+reconnect) starts that person's lines over from the last one the node
+replays. A track that ends says why under its account (`left:
+publisher_gone` when that app went away).
 
-The node lets an account into a room only as the module's program granted
+The node lets an account into a room only as the view's program granted
 it, in a row the program writes. The program keeps nothing else: its one
 op, `Open { room }`, writes the grant that lets every account on the chain
 subscribe to every track of the room and publish only its own,
