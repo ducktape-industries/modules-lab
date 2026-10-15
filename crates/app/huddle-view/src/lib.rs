@@ -7,6 +7,14 @@
 //! toggles, each with its device menu, and Leave. Calls with other people
 //! are not connected yet: the room says so.
 //!
+//! Join floats the room in the same press (`host.float`): the pane leaves
+//! the desk into a small window of its own, kept above other apps' windows,
+//! so the call stays in sight while the person works elsewhere; Leave puts
+//! it back (`host.unfloat`). Below 480 by 320 the room is one tile with its
+//! controls over it (pin: keep on top or not; back: to the full window);
+//! the layout follows the window's size alone, and only the pin's state and
+//! back read where the pane is (`host.placement`).
+//!
 //! The view never touches a device: it places the SDK's `camera` and
 //! `microphone` pieces, which the host captures, draws and plays, and hears
 //! how their devices are. Turning the camera off or muting removes the
@@ -22,6 +30,19 @@ mod ui;
 
 /// How long "Record and play back" records, in seconds.
 pub const RECORD_SECONDS: u8 = 5;
+
+/// The float Join asks for: the room laid out 320 by 200, never under 240
+/// by 150, kept above other windows.
+pub const FLOAT: Float = Float {
+    width: 320,
+    height: 200,
+    min_width: 240,
+    min_height: 150,
+    on_top: true,
+};
+
+/// Below this the room is one tile with its controls over it.
+pub(crate) const COMPACT: (f32, f32) = (480., 320.);
 
 /// Which screen is up: the device check, or the room.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -126,6 +147,17 @@ pub struct Huddle {
     /// The pane's size as the host lays the frame out.
     #[serde(skip)]
     pub(crate) viewport: (f32, f32),
+    /// Where the pane is, as the host last said (`host.placement`).
+    #[serde(skip)]
+    pub(crate) placement: Placement,
+    /// The host answered a float kept on top with none: this platform
+    /// keeps no window on top (Wayland), so there is no pin.
+    #[serde(skip)]
+    pub(crate) no_keep_on_top: bool,
+    /// The line that says so, once per float, until closed or the next
+    /// press in the float.
+    #[serde(skip)]
+    pub(crate) no_keep_on_top_line: bool,
 }
 
 impl View for Huddle {
@@ -134,8 +166,9 @@ impl View for Huddle {
     const ICON: &'static str = "icons/video.svg";
     // `camera` and `microphone`: the pieces and their device lists; `clock`:
     // the room's clock and the recording's countdown; `host`: the window's
-    // title and the log a refusal nothing waits on goes to; `link`: the
-    // settings page a refused device opens (macOS)
+    // title, the float and where the pane is, and the log a refusal nothing
+    // waits on goes to; `link`: the settings page a refused device opens
+    // (macOS)
     const CAPABILITIES: &'static [Capability] = &[
         Capability::Camera,
         Capability::Microphone,
@@ -152,6 +185,16 @@ impl View for Huddle {
         cx.follow::<ClockTicks>(1000, |view, tick, cx| match tick {
             Ok(()) => view.tick(cx),
             Err(refusal) => cx.log_refused("the clock", &refusal),
+        })
+        .detach();
+        cx.follow::<HostPlacement>((), |view, placement, cx| match placement {
+            Ok(placement) => {
+                if view.placement != placement {
+                    view.placement = placement;
+                    cx.notify();
+                }
+            }
+            Err(refusal) => cx.log_refused("where the pane is", &refusal),
         })
         .detach();
     }
@@ -231,6 +274,7 @@ impl Huddle {
     }
 
     pub(crate) fn toggle_mute(&mut self, cx: &mut Context<Self>) {
+        self.no_keep_on_top_line = false;
         self.muted = !self.muted;
         self.monitor = false;
         self.recording_since = None;
@@ -239,12 +283,15 @@ impl Huddle {
     }
 
     pub(crate) fn toggle_camera(&mut self, cx: &mut Context<Self>) {
+        self.no_keep_on_top_line = false;
         self.camera_off = !self.camera_off;
         self.camera_state = MediaState::default();
         self.camera_since = self.ticks;
         cx.notify();
     }
 
+    /// Into the room, floated in the same press: the call stays in sight
+    /// above other windows while the person works elsewhere.
     pub(crate) fn join(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.screen = Screen::Room;
         self.entered = self.ticks;
@@ -254,17 +301,61 @@ impl Huddle {
         self.camera_since = self.ticks;
         cx.host()
             .notify::<HostTitle>("Huddle \u{b7} just you".into());
+        self.float(true, cx);
         window.focus("huddle-room");
         cx.notify();
     }
 
+    /// Out of the room, the pane back on the desk (asked whether or not
+    /// the host has said it floats yet: nothing happens where it does not).
     pub(crate) fn leave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.screen = Screen::Check;
         self.menu = None;
         self.camera_since = self.ticks;
+        self.no_keep_on_top_line = false;
         cx.host().notify::<HostTitle>("Huddle".into());
+        cx.host().notify::<HostUnfloat>(());
         window.focus("huddle-join");
         cx.notify();
+    }
+
+    /// The pane in a window of its own (or, floating already, kept on top
+    /// or not): at a press, as the host takes it. A host that keeps nothing
+    /// on top says so in its answer, and the float says so once.
+    pub(crate) fn float(&mut self, on_top: bool, cx: &mut Context<Self>) {
+        let fresh = !self.placement.floating;
+        let floated = cx.host().ask::<HostFloat>(Float { on_top, ..FLOAT });
+        cx.land(floated, move |view, floated, cx| match floated {
+            Ok(placement) => {
+                if on_top && !placement.on_top {
+                    view.no_keep_on_top = true;
+                    view.no_keep_on_top_line = fresh;
+                    cx.notify();
+                }
+            }
+            Err(refusal) => cx.log_refused("the float", &refusal),
+        })
+        .detach();
+    }
+
+    /// Back to the full window: the call goes on, on the desk.
+    pub(crate) fn back(&mut self, cx: &mut Context<Self>) {
+        self.no_keep_on_top_line = false;
+        cx.host().notify::<HostUnfloat>(());
+        cx.notify();
+    }
+
+    /// The pin: floating, kept on top or let among the other windows; on
+    /// the desk, float again.
+    pub(crate) fn pin(&mut self, cx: &mut Context<Self>) {
+        let on_top = !self.placement.floating || !self.placement.on_top;
+        self.float(on_top, cx);
+    }
+
+    /// The room is one tile with its controls over it: below 480 by 320.
+    pub(crate) fn compact(&self) -> bool {
+        let (width, height) = self.viewport;
+        width < COMPACT.0 || height < COMPACT.1
     }
 
     /// The menu of `which` opened, its picked row active, the lists read

@@ -1,10 +1,13 @@
 //! What Huddle draws: the device check (the picture with its toggles, the
-//! settings column), the room (the stage and its bar), the device menu,
-//! the state cards a refused or missing device shows, and the screen of a
-//! build without camera and microphone. Pieces sit first in their parent,
-//! cards and chips after them, so a piece keeps its path (the host keys
-//! its device by it) whatever is drawn over it; the root always goes
-//! through the one menu overlay for the same reason.
+//! settings column), the room (the stage and its bar, or below 480 by 320
+//! one tile with its controls over it), the device menu, the state cards a
+//! refused or missing device shows, and the screen of a build without
+//! camera and microphone. Pieces sit first in their parent, cards and chips
+//! after them, so a piece keeps its path (the host keys its device by it)
+//! whatever is drawn over it; the root always goes through the one menu
+//! overlay for the same reason, and both room layouts hold the pieces
+//! under the same room, stage and tile, so a float moving between them
+//! opens no device again.
 use view::prelude::*;
 use view::{
     Anchor, AnchoredPositionMode, AnyElement, Bounds, Div, Edges, FontWeight, Point, Stateful, Svg,
@@ -32,6 +35,10 @@ const CHECK: &str = "icons/check.svg";
 const PEOPLE: &str = "icons/users.svg";
 const SPEAKING: &str = "icons/audio-lines.svg";
 const PERSON: &str = "icons/user-round.svg";
+const PIN: &str = "icons/pin.svg";
+const PIN_OFF: &str = "icons/pin-off.svg";
+const BACK: &str = "icons/picture-in-picture-2.svg";
+const CLOSE: &str = "icons/x.svg";
 
 fn f(pixels: Pixels) -> f32 {
     pixels.into()
@@ -945,6 +952,7 @@ fn actions(device: Device, state: &MediaState, cx: &mut Context<Huddle>, theme: 
 // ---------- the room ----------
 
 fn room(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
+    let compact = view.compact();
     div()
         .id("huddle-room")
         .size_full()
@@ -968,29 +976,40 @@ fn room(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div>
                 }
             }),
         )
-        .child(stage(view, cx, theme))
-        .child(bar(view, cx, theme))
+        .child(stage(view, compact, cx, theme))
+        .when(!compact, |room| room.child(bar(view, cx, theme)))
 }
 
 /// The stage: one tile per person in a grid. Today only you: your tile
-/// fills it.
-fn stage(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
+/// fills it, edge to edge in the compact room.
+fn stage(view: &Huddle, compact: bool, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
     let (width, _) = view.viewport;
-    let tile_width = width - 2. * f(design::space::LG);
+    let tile_width = match compact {
+        true => width,
+        false => width - 2. * f(design::space::LG),
+    };
     div()
         .id("huddle-stage")
         .flex_1()
         .min_h(px(0.))
         .flex()
-        .p(design::space::LG)
-        .bg(theme.surface)
-        .child(tile(view, tile_width, cx, theme))
+        .map(|stage| match compact {
+            true => stage.bg(black()),
+            false => stage.p(design::space::LG).bg(theme.surface),
+        })
+        .child(tile(view, tile_width, compact, cx, theme))
 }
 
 /// Your tile: the picture covering it (mirrored as you set), a ring while
-/// you speak, the chip with your marks, and the line that says you are
-/// alone.
-fn tile(view: &Huddle, width: f32, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
+/// you speak, and the chip with your marks; in the room the line that says
+/// you are alone, in the compact room the strip of controls instead.
+fn tile(
+    view: &Huddle,
+    width: f32,
+    compact: bool,
+    cx: &mut Context<Huddle>,
+    theme: &Theme,
+) -> Stateful<Div> {
     let off = view.camera_off;
     let troubled = !off && trouble(&view.camera_state);
     let speaking = view.mic_placed() && view.mic_state.speaking;
@@ -1015,55 +1034,86 @@ fn tile(view: &Huddle, width: f32, cx: &mut Context<Huddle>, theme: &Theme) -> S
     }
     if off {
         let size = match width {
+            _ if compact => 48.,
             w if w >= 300. => 72.,
             w if w >= 180. => 48.,
             _ => 32.,
         };
         tile = tile.child(camera_off(size, None, theme));
     }
+    let tile = tile.when(speaking, |tile| {
+        tile.child(
+            div()
+                .absolute()
+                .inset_0()
+                .border_2()
+                .border_color(theme.success),
+        )
+    });
+    if compact {
+        // the strip first: Try again and the line's close come after its
+        // controls in the keys' order
+        return tile
+            .child(float_strip(view, speaking, cx, theme))
+            .children(troubled.then(|| trouble_row(&view.camera_state, cx, theme)))
+            .when(view.no_keep_on_top_line, |tile| {
+                tile.child(no_keep_on_top_line(cx))
+            });
+    }
+    // the chip and the line share the tile's foot: the line centred
+    // between two equal sides, the chip's never narrower than the chip,
+    // so in a float sized up to the room the line moves off it, wrapping
+    // if it must
     tile.children(troubled.then(|| state_card(Device::Camera, &view.camera_state, cx, theme)))
-        .when(speaking, |tile| {
-            tile.child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .border_2()
-                    .border_color(theme.success),
-            )
-        })
-        .child(room_chip(view, speaking))
         .child(
             div()
                 .absolute()
-                .bottom(design::space::MD)
-                .left_0()
-                .right_0()
+                .left(design::space::SM)
+                .right(design::space::SM)
+                .bottom(design::space::SM)
                 .flex()
-                .justify_center()
+                .items_end()
+                .gap(design::space::SM)
+                .child(div().flex_1().flex().child(room_chip(view, speaking)))
                 .child(
                     div()
                         .id("huddle-solo")
+                        .min_w(px(0.))
                         .px(design::space::SM)
                         .py(design::space::XXS)
                         .bg(glass())
                         .text_color(white())
                         .text_size(design::text::CAPTION)
                         .child("Only you are here. Calls with others are not connected yet."),
-                ),
+                )
+                .child(div().flex_1()),
         )
+}
+
+/// The muted or the speaking mark a chip carries, named for a reader.
+fn mark(view: &Huddle, speaking: bool) -> Option<Stateful<Div>> {
+    let (icon, name, color) = match (view.muted, speaking) {
+        (true, _) => (MIC_OFF, "Muted", muted_mark()),
+        (false, true) => (SPEAKING, "Speaking", white()),
+        (false, false) => return None,
+    };
+    Some(
+        div()
+            .id(SharedString::from(format!(
+                "huddle-mark-{}",
+                name.to_lowercase()
+            )))
+            .flex()
+            .role(Role::Image)
+            .aria_label(name)
+            .child(glyph(icon, 12.).text_color(color)),
+    )
 }
 
 /// The tile's chip: the muted or speaking mark, the name, "· mirrored".
 fn room_chip(view: &Huddle, speaking: bool) -> Div {
-    let mark = match (view.muted, speaking) {
-        (true, _) => Some((MIC_OFF, "Muted", muted_mark())),
-        (false, true) => Some((SPEAKING, "Speaking", white())),
-        (false, false) => None,
-    };
     div()
-        .absolute()
-        .left(design::space::SM)
-        .bottom(design::space::SM)
+        .flex_none()
         .h(px(22.))
         .px(design::space::XS)
         .flex()
@@ -1072,17 +1122,7 @@ fn room_chip(view: &Huddle, speaking: bool) -> Div {
         .bg(glass())
         .text_color(white())
         .text_size(design::text::CAPTION)
-        .children(mark.map(|(icon, name, color)| {
-            div()
-                .id(SharedString::from(format!(
-                    "huddle-mark-{}",
-                    name.to_lowercase()
-                )))
-                .flex()
-                .role(Role::Image)
-                .aria_label(name)
-                .child(glyph(icon, 12.).text_color(color))
-        }))
+        .children(mark(view, speaking))
         .child("You")
         .when(view.camera_placed() && !view.unmirrored, |chip| {
             chip.child(
@@ -1114,8 +1154,11 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
         .border_t_1()
         .border_color(theme.border)
         .bg(theme.background)
+        // the name and clock give way first: in a float sized down to
+        // the room's 480 every control still fits
         .child(
             div()
+                .min_w(px(0.))
                 .flex()
                 .flex_col()
                 .gap(px(2.))
@@ -1123,6 +1166,7 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                     div()
                         .text_size(design::text::BODY)
                         .font_weight(FontWeight::MEDIUM)
+                        .truncate()
                         .child("Huddle"),
                 )
                 .child(
@@ -1131,22 +1175,24 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                         .font_family(design::fonts::FAMILY_MONO)
                         .text_size(design::text::CAPTION)
                         .text_color(theme.muted)
-                        .whitespace_nowrap()
+                        .truncate()
                         .child(format!("{clock} \u{b7} only you")),
                 ),
         )
-        .child(div().flex_1())
-        .child(split(
-            ("huddle-mic", if view.muted { MIC_OFF } else { MIC }),
-            if view.muted { "Unmute" } else { "Mute" },
-            view.muted,
-            Which::Sound,
-            "Choose microphone and speaker",
-            view,
-            cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_mute(cx)),
-            cx,
-            &theme_,
-        ))
+        .child(
+            split(
+                ("huddle-mic", if view.muted { MIC_OFF } else { MIC }),
+                if view.muted { "Unmute" } else { "Mute" },
+                view.muted,
+                Which::Sound,
+                "Choose microphone and speaker",
+                view,
+                cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_mute(cx)),
+                cx,
+                &theme_,
+            )
+            .ml_auto(),
+        )
         .child(split(
             (
                 "huddle-camera",
@@ -1168,6 +1214,7 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
         .child(
             div()
                 .id("huddle-leave")
+                .flex_none()
                 .h(px(32.))
                 .px(design::space::LG)
                 .flex()
@@ -1187,23 +1234,279 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                 .child(glyph(LEAVE, 14.))
                 .child("Leave"),
         )
-        .child(div().flex_1())
         .child(
             div()
-                .id("huddle-count")
+                .ml_auto()
+                .flex_none()
                 .flex()
                 .items_center()
-                .gap(design::space::XXS)
-                .text_color(theme.muted)
-                .role(Role::Group)
-                .aria_label("1 in the huddle")
-                .child(glyph(PEOPLE, 14.))
+                .gap(design::space::SM)
                 .child(
                     div()
-                        .font_family(design::fonts::FAMILY_MONO)
-                        .text_size(design::text::CAPTION)
-                        .child("1"),
+                        .id("huddle-count")
+                        .flex()
+                        .items_center()
+                        .gap(design::space::XXS)
+                        .text_color(theme.muted)
+                        .role(Role::Group)
+                        .aria_label("1 in the huddle")
+                        .child(glyph(PEOPLE, 14.))
+                        .child(
+                            div()
+                                .font_family(design::fonts::FAMILY_MONO)
+                                .text_size(design::text::CAPTION)
+                                .child("1"),
+                        ),
+                )
+                .children(pin_back(view, false, cx, theme)),
+        )
+}
+
+/// The pin and back after the bar's count, or at the float strip's end:
+/// floating, the pin keeps the window on top or not (none where the host
+/// keeps nothing on top) and back returns it to the full window; on the
+/// desk the pin floats it again.
+fn pin_back(
+    view: &Huddle,
+    glassy: bool,
+    cx: &mut Context<Huddle>,
+    theme: &Theme,
+) -> Vec<Stateful<Div>> {
+    let floating = view.placement.floating;
+    let on_top = floating && view.placement.on_top;
+    let pin = (!floating || !view.no_keep_on_top).then(|| {
+        small(
+            ("huddle-pin", if on_top { PIN } else { PIN_OFF }),
+            if floating {
+                "Keep on top"
+            } else {
+                "Float this window"
+            },
+            glassy,
+            false,
+            theme,
+            cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
+                view.no_keep_on_top_line = false;
+                view.pin(cx)
+            }),
+        )
+        .aria_toggled(on_top.into())
+    });
+    let back = floating.then(|| {
+        small(
+            ("huddle-back", BACK),
+            "Back to the full window",
+            glassy,
+            false,
+            theme,
+            cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.back(cx)),
+        )
+    });
+    pin.into_iter().chain(back).collect()
+}
+
+/// A 28 px control: glass over the picture (`glassy`), else the bar's
+/// hairline box; danger-filled while `off`.
+fn small(
+    (id, icon): (&'static str, &'static str),
+    name: &'static str,
+    glassy: bool,
+    off: bool,
+    theme: &Theme,
+    click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Stateful<Div> {
+    let theme = *theme;
+    div()
+        .id(id)
+        .size(design::size::CONTROL)
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .map(|button| match (off, glassy) {
+            (true, _) => button.bg(theme.danger).text_color(white()),
+            (false, true) => button.bg(glass()).text_color(white()),
+            (false, false) => button
+                .border_1()
+                .border_color(theme.border_strong)
+                .text_color(theme.foreground)
+                .hover(move |style| style.bg(theme.surface)),
+        })
+        .role(Role::Button)
+        .aria_label(name)
+        .focusable()
+        .on_click(click)
+        .child(glyph(icon, 14.))
+}
+
+// ---------- the compact room ----------
+
+/// The compact room's one row over the tile's foot: your chip, the
+/// microphone, the camera and Leave, then the pin and back. Always shown:
+/// a small window whose controls hide is a guessing game, and a keyboard
+/// or a screen reader never hovers.
+fn float_strip(
+    view: &Huddle,
+    speaking: bool,
+    cx: &mut Context<Huddle>,
+    theme: &Theme,
+) -> Stateful<Div> {
+    let theme_ = *theme;
+    let chip = div()
+        .h(design::size::CONTROL)
+        .min_w(px(0.))
+        .flex_shrink(1.)
+        .px(design::space::XS)
+        .flex()
+        .items_center()
+        .gap(design::space::XS)
+        .bg(glass())
+        .text_color(white())
+        .text_size(design::text::CAPTION)
+        .children(mark(view, speaking))
+        .child(div().min_w(px(0.)).truncate().child("You"));
+    let controls = div()
+        .flex()
+        .flex_none()
+        .gap(design::space::XS)
+        .child(
+            small(
+                ("huddle-mic", if view.muted { MIC_OFF } else { MIC }),
+                if view.muted { "Unmute" } else { "Mute" },
+                true,
+                view.muted,
+                &theme_,
+                cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_mute(cx)),
+            )
+            .aria_toggled(view.muted.into()),
+        )
+        .child(
+            small(
+                (
+                    "huddle-camera",
+                    if view.camera_off { VIDEO_OFF } else { VIDEO },
                 ),
+                if view.camera_off {
+                    "Turn camera on"
+                } else {
+                    "Turn camera off"
+                },
+                true,
+                view.camera_off,
+                &theme_,
+                cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_camera(cx)),
+            )
+            .aria_toggled(view.camera_off.into()),
+        )
+        .child(small(
+            ("huddle-leave", LEAVE),
+            "Leave",
+            true,
+            true,
+            &theme_,
+            cx.listener(|view: &mut Huddle, _: &ClickEvent, window, cx| view.leave(window, cx)),
+        ));
+    div()
+        .id("huddle-float-strip")
+        .absolute()
+        .left(design::space::SM)
+        .right(design::space::SM)
+        .bottom(design::space::SM)
+        .h(design::size::CONTROL)
+        .flex()
+        .items_center()
+        .child(chip)
+        .child(div().flex_1().min_w(design::space::SM))
+        .child(controls)
+        .child(div().flex_1().min_w(design::space::SM))
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .gap(design::space::XS)
+                .children(pin_back(view, true, cx, theme)),
+        )
+}
+
+/// A camera in trouble in the compact room: its card as one row in the
+/// tile's middle, the title and Try again.
+fn trouble_row(state: &MediaState, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
+    let theme_ = *theme;
+    let (icon, title, _) = words(Device::Camera, state);
+    div()
+        .absolute()
+        .inset_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap(design::space::SM)
+        .child(glyph(icon, 16.).text_color(theme.muted))
+        .child(
+            div()
+                .text_size(design::text::BODY)
+                .text_color(theme.foreground)
+                .child(title),
+        )
+        .child(
+            div()
+                .id("huddle-camera-retry")
+                .h(design::size::CONTROL)
+                .flex()
+                .items_center()
+                .text_size(design::text::SECONDARY)
+                .text_color(theme.muted)
+                .cursor_pointer()
+                .hover(move |style| style.text_color(theme_.foreground))
+                .role(Role::Button)
+                .focusable()
+                .on_click(cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx)))
+                .child("Try again"),
+        )
+}
+
+/// What the float says once where the host keeps no window on top
+/// (Wayland), over the strip, until closed or the next press.
+fn no_keep_on_top_line(cx: &mut Context<Huddle>) -> Div {
+    div()
+        .absolute()
+        .left(design::space::SM)
+        .right(design::space::SM)
+        .bottom(design::space::SM + design::size::CONTROL + design::space::XS)
+        .h(px(22.))
+        .px(design::space::XS)
+        .flex()
+        .items_center()
+        .gap(design::space::XS)
+        .bg(glass())
+        .text_color(white())
+        .text_size(design::text::CAPTION)
+        .child(glyph(PIN_OFF, 12.))
+        .child(
+            div()
+                .id("huddle-no-keep-on-top")
+                .flex_1()
+                .min_w(px(0.))
+                .truncate()
+                .child("Wayland: no keep-on-top here."),
+        )
+        .child(
+            div()
+                .id("huddle-no-keep-on-top-close")
+                .size(px(22.))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .cursor_pointer()
+                .role(Role::Button)
+                .aria_label("Close")
+                .focusable()
+                .on_click(cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
+                    view.no_keep_on_top_line = false;
+                    cx.notify();
+                }))
+                .child(glyph(CLOSE, 12.)),
         )
 }
 

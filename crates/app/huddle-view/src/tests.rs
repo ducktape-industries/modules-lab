@@ -4,12 +4,13 @@
 //! capabilities (a piece the manifest leaves out fails the test).
 use view::Entity;
 use view::methods::{
-    AudioDevices, CameraDevices, ClockTicks, Device, LinkOpen, MicrophoneChime, MicrophoneDevices,
+    AudioDevices, CameraDevices, ClockTicks, Device, Float, HostFloat, HostPlacement, HostTitle,
+    HostUnfloat, LinkOpen, MicrophoneChime, MicrophoneDevices, Placement,
 };
 use view::testing::{StreamSender, TestAppContext};
 use view::wire::{Fit, MediaState, MediaStatus, MicCommand, Node, Playback};
 
-use crate::{Huddle, RECORD_SECONDS};
+use crate::{FLOAT, Huddle, RECORD_SECONDS};
 
 fn device(id: &str, name: &str, default: bool) -> Device {
     Device {
@@ -36,6 +37,13 @@ fn opened() -> (TestAppContext, Entity<Huddle>, StreamSender<ClockTicks>) {
                 device("alsa:speakers", "Speakers", true),
                 device("alsa:headphones", "Headphones", false),
             ],
+        })
+    });
+    // a host that floats and keeps on top as asked
+    cx.host().handle::<HostFloat>(|float| {
+        Ok(Placement {
+            floating: true,
+            on_top: float.on_top,
         })
     });
     let ticks = cx.host().stream::<ClockTicks>();
@@ -508,4 +516,292 @@ fn a_shared_name_shows_its_id() {
         Some("CARD=Loopback,DEV=1")
     );
     assert_eq!(crate::twin(&devices, &devices[2]), None);
+}
+
+// ---------- the float ----------
+
+/// The ids from the root down to the one node of `kind`, each named
+/// ancestor's: the path the host keys a piece's device by.
+fn path_to(cx: &TestAppContext, piece: fn(&Node) -> bool) -> Option<Vec<String>> {
+    fn down(node: &Node, piece: fn(&Node) -> bool, path: &mut Vec<String>) -> bool {
+        let named = node.identity().and_then(|id| id.name().map(str::to_owned));
+        if let Some(name) = &named {
+            path.push(name.clone());
+        }
+        if piece(node) || node.children().iter().any(|child| down(child, piece, path)) {
+            return true;
+        }
+        if named.is_some() {
+            path.pop();
+        }
+        false
+    }
+    let mut path = Vec::new();
+    down(cx.root(), piece, &mut path).then_some(path)
+}
+
+fn is_camera(node: &Node) -> bool {
+    matches!(node, Node::Camera { .. })
+}
+
+fn is_microphone(node: &Node) -> bool {
+    matches!(node, Node::Microphone { .. })
+}
+
+fn toggled(cx: &TestAppContext, id: &str) -> Option<bool> {
+    cx.interactivity(id)
+        .aria
+        .toggled
+        .map(|toggled| toggled == view::accesskit::Toggled::True)
+}
+
+/// Joined, the host saying the pane floats on top, the float's size.
+fn floated(
+    cx: &mut TestAppContext,
+    (width, height): (f32, f32),
+) -> view::testing::StreamSender<HostPlacement> {
+    let placement = cx.host().stream::<HostPlacement>();
+    cx.simulate_click("huddle-join");
+    cx.run_until_parked();
+    placement.send(Placement {
+        floating: true,
+        on_top: true,
+    });
+    cx.simulate_resize(width, height);
+    cx.run_until_parked();
+    placement
+}
+
+/// THE HEADLINE: Join floats the room in the same press (`host.float`,
+/// 320 by 200, never under 240 by 150, kept on top), and Leave puts it
+/// back (`host.unfloat`). The window says who is in it.
+#[test]
+fn join_floats_and_leave_puts_it_back() {
+    let (mut cx, ..) = opened();
+    cx.simulate_click("huddle-join");
+    cx.run_until_parked();
+    assert_eq!(cx.host().requests::<HostFloat>(), [FLOAT]);
+    assert_eq!(
+        FLOAT,
+        Float {
+            width: 320,
+            height: 200,
+            min_width: 240,
+            min_height: 150,
+            on_top: true
+        }
+    );
+    assert_eq!(
+        cx.host().requests::<HostTitle>().last().map(String::as_str),
+        Some("Huddle · just you")
+    );
+    assert!(cx.host().requests::<HostUnfloat>().is_empty());
+    cx.simulate_click("huddle-leave");
+    assert_eq!(cx.host().requests::<HostUnfloat>().len(), 1);
+    assert!(cx.has_text("Join huddle"));
+}
+
+/// Below 480 by 320 the room is one tile: the picture covering it,
+/// mirrored, and one row of controls over its foot, always shown, each
+/// named; the room's bar and its solo line are gone. The pieces keep the
+/// paths they had in the room, so the float's move opens no device again
+/// (the microphone stays open; the camera does not blink).
+#[test]
+fn the_float_is_one_tile_with_its_controls_and_the_pieces_stay() {
+    let (mut cx, ..) = opened();
+    let placement = cx.host().stream::<HostPlacement>();
+    cx.simulate_click("huddle-join");
+    cx.run_until_parked();
+    let room = (path_to(&cx, is_camera), path_to(&cx, is_microphone));
+    assert!(room.0.is_some() && room.1.is_some());
+    assert!(cx.find("huddle-bar").is_some());
+    placement.send(Placement {
+        floating: true,
+        on_top: true,
+    });
+    for size in [(320., 200.), (240., 150.)] {
+        cx.simulate_resize(size.0, size.1);
+        cx.run_until_parked();
+        assert!(cx.find("huddle-bar").is_none(), "{size:?}: no bar");
+        assert!(cx.find("huddle-solo").is_none(), "{size:?}: no solo line");
+        assert!(cx.find("huddle-float-strip").is_some());
+        for (id, name) in [
+            ("huddle-mic", "Mute"),
+            ("huddle-camera", "Turn camera off"),
+            ("huddle-leave", "Leave"),
+            ("huddle-pin", "Keep on top"),
+            ("huddle-back", "Back to the full window"),
+        ] {
+            assert_eq!(
+                cx.interactivity(id).aria.label.as_deref(),
+                Some(name),
+                "{size:?}"
+            );
+        }
+        assert_eq!(toggled(&cx, "huddle-pin"), Some(true));
+        let (_, _, mirror, fit) = camera_piece(&cx).unwrap();
+        assert_eq!((mirror, fit), (true, Fit::Cover));
+        assert_eq!(
+            (path_to(&cx, is_camera), path_to(&cx, is_microphone)),
+            room,
+            "{size:?}: the pieces moved"
+        );
+    }
+    // sized up to 480 by 320 and more: the room again, pin and back in its bar
+    cx.simulate_resize(480., 320.);
+    cx.run_until_parked();
+    assert!(cx.find("huddle-bar").is_some());
+    assert!(cx.find("huddle-float-strip").is_none());
+    assert_eq!(toggled(&cx, "huddle-pin"), Some(true));
+    assert!(cx.find("huddle-back").is_some());
+    assert_eq!((path_to(&cx, is_camera), path_to(&cx, is_microphone)), room);
+}
+
+/// The pin lets the float among the other windows and back (a float while
+/// floating: the host applies on-top alone), and follows what the host
+/// says, the Window menu's Keep on Top included. Back returns the pane to
+/// the desk with the call going on, where the bar's pin floats it again.
+#[test]
+fn the_pin_and_back() {
+    let (mut cx, ..) = opened();
+    let placement = floated(&mut cx, (320., 200.));
+    cx.simulate_click("huddle-pin");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.host().requests::<HostFloat>().last(),
+        Some(&Float {
+            on_top: false,
+            ..FLOAT
+        })
+    );
+    assert_eq!(
+        toggled(&cx, "huddle-pin"),
+        Some(true),
+        "until the host says"
+    );
+    placement.send(Placement {
+        floating: true,
+        on_top: false,
+    });
+    cx.run_until_parked();
+    assert_eq!(toggled(&cx, "huddle-pin"), Some(false));
+    cx.simulate_click("huddle-pin");
+    cx.run_until_parked();
+    assert_eq!(cx.host().requests::<HostFloat>().last(), Some(&FLOAT));
+    // the Window menu's Keep on Top
+    placement.send(Placement {
+        floating: true,
+        on_top: true,
+    });
+    cx.run_until_parked();
+    assert_eq!(toggled(&cx, "huddle-pin"), Some(true));
+
+    cx.simulate_click("huddle-back");
+    assert_eq!(cx.host().requests::<HostUnfloat>().len(), 1);
+    placement.send(Placement::default());
+    cx.simulate_resize(768., 500.);
+    cx.run_until_parked();
+    assert!(cx.has_text("00:00 · only you"), "still in the room");
+    assert!(cx.find("huddle-back").is_none());
+    assert_eq!(
+        cx.interactivity("huddle-pin").aria.label.as_deref(),
+        Some("Float this window")
+    );
+    assert_eq!(toggled(&cx, "huddle-pin"), Some(false));
+    let asked = cx.host().requests::<HostFloat>().len();
+    cx.simulate_click("huddle-pin");
+    cx.run_until_parked();
+    let floats = cx.host().requests::<HostFloat>();
+    assert_eq!((floats.len(), floats.last()), (asked + 1, Some(&FLOAT)));
+}
+
+/// Wayland keeps no window on top: the host floats the pane and says
+/// `on_top: false`. The float has no pin then, says so once in a line
+/// over the strip, closed by its own close or the next press; back stays.
+#[test]
+fn wayland_floats_with_no_pin_and_says_so_once() {
+    let (mut cx, ..) = opened();
+    cx.host().handle::<HostFloat>(|_| {
+        Ok(Placement {
+            floating: true,
+            on_top: false,
+        })
+    });
+    let placement = floated(&mut cx, (240., 150.));
+    placement.send(Placement {
+        floating: true,
+        on_top: false,
+    });
+    cx.run_until_parked();
+    assert!(cx.has_text("Wayland: no keep-on-top here."));
+    assert!(cx.find("huddle-pin").is_none(), "no pin");
+    assert!(cx.find("huddle-back").is_some());
+    cx.simulate_click("huddle-no-keep-on-top-close");
+    assert!(!cx.has_text("Wayland: no keep-on-top here."));
+    // once per float: back, then float again from the desk's pin
+    cx.simulate_click("huddle-back");
+    placement.send(Placement::default());
+    cx.simulate_resize(768., 500.);
+    cx.run_until_parked();
+    cx.simulate_click("huddle-pin");
+    cx.run_until_parked();
+    placement.send(Placement {
+        floating: true,
+        on_top: false,
+    });
+    cx.simulate_resize(320., 200.);
+    cx.run_until_parked();
+    assert!(cx.has_text("Wayland: no keep-on-top here."));
+    cx.simulate_click("huddle-mic");
+    assert!(
+        !cx.has_text("Wayland: no keep-on-top here."),
+        "the next press"
+    );
+}
+
+/// The float's states, alone: muted (the strip's microphone off, the
+/// chip's mark), speaking (the ring and the chip's mark), the camera off
+/// (your avatar, no picture), and a camera that went away (its card as one
+/// row, Try again opening a new piece).
+#[test]
+fn the_float_says_muted_speaking_off_and_gone() {
+    let (mut cx, ..) = opened();
+    let _placement = floated(&mut cx, (320., 200.));
+    let key = mic_key(&cx);
+    cx.simulate_media_state(
+        &key,
+        MediaState {
+            speaking: true,
+            ..live("Built-in Microphone")
+        },
+    );
+    assert_eq!(
+        cx.interactivity("huddle-mark-speaking")
+            .aria
+            .label
+            .as_deref(),
+        Some("Speaking")
+    );
+    cx.simulate_click("huddle-mic");
+    assert!(mic_piece(&cx).is_none(), "muted: the microphone let go");
+    assert_eq!(toggled(&cx, "huddle-mic"), Some(true));
+    assert_eq!(
+        cx.interactivity("huddle-mic").aria.label.as_deref(),
+        Some("Unmute")
+    );
+    assert!(cx.find("huddle-mark-muted").is_some());
+    let (first, ..) = camera_piece(&cx).unwrap();
+    cx.simulate_media_state(&first, status(MediaStatus::Gone));
+    assert!(cx.has_text("The camera went away"));
+    assert!(camera_piece(&cx).is_none(), "a vanished camera is let go");
+    cx.simulate_click("huddle-camera-retry");
+    cx.run_until_parked();
+    assert_ne!(camera_piece(&cx).unwrap().0, first, "a new piece");
+    cx.simulate_click("huddle-camera");
+    assert!(camera_piece(&cx).is_none());
+    assert_eq!(toggled(&cx, "huddle-camera"), Some(true));
+    assert_eq!(
+        cx.interactivity("huddle-camera").aria.label.as_deref(),
+        Some("Turn camera on")
+    );
 }
