@@ -185,6 +185,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
 
 [[package]]
+name = "attribution"
+version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/programs?rev=0e1859c87605449948a8de70337cfdc45b400096#0e1859c87605449948a8de70337cfdc45b400096"
+dependencies = [
+ "abi",
+ "borsh",
+ "describe",
+ "program",
+ "store",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -506,6 +518,21 @@ dependencies = [
  "chacha20",
  "cipher",
  "poly1305",
+]
+
+[[package]]
+name = "chat"
+version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/programs?rev=0e1859c87605449948a8de70337cfdc45b400096#0e1859c87605449948a8de70337cfdc45b400096"
+dependencies = [
+ "abi",
+ "attribution",
+ "borsh",
+ "describe",
+ "program",
+ "serde",
+ "store",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -1413,12 +1440,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge"
+version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/programs?rev=0e1859c87605449948a8de70337cfdc45b400096#0e1859c87605449948a8de70337cfdc45b400096"
+dependencies = [
+ "abi",
+ "borsh",
+ "chat",
+ "describe",
+ "gitcore",
+ "program",
+ "store",
+]
+
+[[package]]
 name = "form_urlencoded"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "founding"
+version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/programs?rev=0e1859c87605449948a8de70337cfdc45b400096#0e1859c87605449948a8de70337cfdc45b400096"
+dependencies = [
+ "abi",
+ "forge",
+ "wasm-encoder",
+ "wasmparser",
 ]
 
 [[package]]
@@ -1582,6 +1634,16 @@ name = "gimli"
 version = "0.32.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
+
+[[package]]
+name = "gitcore"
+version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/programs?rev=0e1859c87605449948a8de70337cfdc45b400096#0e1859c87605449948a8de70337cfdc45b400096"
+dependencies = [
+ "miniz_oxide 0.8.9",
+ "sha1-checked",
+ "sha2 0.10.9",
+]
 
 [[package]]
 name = "glob"
@@ -1846,6 +1908,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 dependencies = [
  "foldhash",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -2235,6 +2299,12 @@ dependencies = [
  "polycool",
  "smallvec",
 ]
+
+[[package]]
+name = "leb128fmt"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "lebe"
@@ -2858,6 +2928,7 @@ dependencies = [
  "borsh",
  "error",
  "program-derive",
+ "serde",
  "sha1",
  "sha2 0.10.9",
 ]
@@ -3963,6 +4034,7 @@ dependencies = [
  "abi",
  "borsh",
  "describe",
+ "founding",
  "identity",
  "program",
  "store",
@@ -4025,6 +4097,15 @@ name = "unicode-ident"
 version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-properties"
@@ -4274,6 +4355,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23f0c9c52aa7cd7d77769a4cfe2a9adb1b331f489a41d912ce14513d5ab995c6"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "wasm-encoder"
+version = "0.251.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a879a421bd17c528b74721b2abf4c62e8f1d1889c2ba8c3c50d02deaf2ce395"
+dependencies = [
+ "leb128fmt",
+ "wasmparser",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.251.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "437970b35b1a85cfde9c74b2398352d8d653f3bd8e3a3db0c063ea8f5b4b36ff"
+dependencies = [
+ "bitflags 2.13.2",
+ "hashbrown 0.17.1",
+ "indexmap",
+ "semver",
+ "serde",
 ]
 
 [[package]]

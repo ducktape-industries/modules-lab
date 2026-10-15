@@ -27,6 +27,9 @@ describe = { git = "https://github.com/ducktape-industries/programs", rev = "0e1
 # (`crates/app/trade/examples/seed.rs`), and the profiles arcade-view reads
 # names from.
 identity = { git = "https://github.com/ducktape-industries/programs", rev = "0e1859c87605449948a8de70337cfdc45b400096" }
+# What packs a program with its view and its describe module, as a founding
+# takes it (`crates/app/trade/examples/pack.rs`, which `live/live.sh` runs).
+founding = { git = "https://github.com/ducktape-industries/programs", rev = "0e1859c87605449948a8de70337cfdc45b400096" }
 # `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
 # the SDK does not re-export.
 # The rev is the one modules names.

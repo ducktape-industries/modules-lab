@@ -253,8 +253,8 @@ There is no runner that keeps one view alive without a node. What there is:
    ```
 
    It builds every program, its describe module and its view, packs those
-   two into `<program>.wasm` as custom sections, as modules' `founding`
-   does its own, and founds stage `lab`
+   two into `<program>.wasm` as custom sections with programs' own
+   `founding` packer (`crates/app/trade/examples/pack.rs`), and founds stage `lab`
    (`STAGE=`) with them: kit's own founding with `live/founding.toml` after
    it, the week of history as trade's params. Then it seeds the
    stage with the ops `examples/seed.rs` writes. Wallet `dev`, the one the

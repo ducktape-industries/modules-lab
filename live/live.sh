@@ -89,8 +89,8 @@ cargo run -q -p trade --example seed -- "$OUT/trade.params" "$OUT/seed"
 "$KIT" build "$STAGE" --root "$OUT"
 
 # Each program as a founding takes it: its view (<program>-view), then its describe
-# module, each a custom section (`live/pack.py`).
-pack() { python3 live/pack.py "$@"; }
+# module, each a custom section, by programs' own packer (`examples/pack.rs`).
+pack() { cargo run -q -p trade --example pack -- "$@"; }
 for program in $PROGRAMS; do
   name=$(echo "$program" | tr - _)
   pack ducktape.view "$RELEASE/$name.wasm" "$RELEASE/${name}_view.wasm" "$dir/programs/$name.wasm"
