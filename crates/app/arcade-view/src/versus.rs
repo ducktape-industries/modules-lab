@@ -21,15 +21,16 @@
 //! left, and the other wins.
 //!
 //! The node lets an account into the room only once the program wrote its
-//! grant row, and holds what the lobby asks till then: the first
-//! `not_granted` sends `Op::OpenVersus`, once, and the lobby's asks go
-//! through on the block that writes the row: nothing is asked again.
+//! grant row, and holds what the lobby asks till then: the first `Waiting`
+//! sends `Op::OpenVersus`, once, and the lobby's asks go through on the
+//! block that writes the row: nothing is asked again. A `not_granted` is
+//! the grant taken back, and stops versus.
 use std::collections::{BTreeMap, BTreeSet};
 
 use ::identity::Identity;
 use arcade::Op;
 use borsh::{BorshDeserialize, BorshSerialize};
-use view::live::{Received, Track, subscribe};
+use view::live::{DEFAULT_PRIORITY, Received, Track, subscribe};
 use view::prelude::*;
 use view::{AnyElement, Div, FontWeight, Stateful};
 
@@ -71,11 +72,8 @@ pub(crate) struct Versus {
     /// What identity calls each account met; its number until it answers.
     names: BTreeMap<u64, String>,
     /// The program was asked to open the room: once, on the first
-    /// `not_granted`.
+    /// `Waiting`.
     knocked: bool,
-    /// The node let this side into the room (its first announce): a
-    /// `not_granted` from now on is the grant taken back.
-    inside: bool,
     /// Why the lobby stopped, in a line.
     note: Option<String>,
     /// The element the next render gives the keyboard to.
@@ -121,11 +119,6 @@ impl Versus {
     pub(crate) fn period(&self) -> Option<i64> {
         let game = self.game.as_ref()?;
         game.end.is_none().then_some(tetris::PERIOD)
-    }
-
-    /// `refusal` says the room is not open yet: the ask waits for its grant.
-    fn waits_for_the_room(&self, refusal: &Error) -> bool {
-        refusal.code == refusal::NOT_GRANTED && !self.inside
     }
 
     fn name(&self, account: u64) -> String {
@@ -180,6 +173,23 @@ pub fn basis(me: u64, nonce: &str, them: u64, their_nonce: &str) -> String {
     }
 }
 
+/// This side's track `name` in the room, as it publishes it.
+fn publish(name: String, mode: LiveMode) -> LivePublish {
+    LivePublish {
+        track: track(name),
+        mode,
+        priority: DEFAULT_PRIORITY,
+    }
+}
+
+/// `track` heard from the group the node holds.
+fn latest(track: LiveTrack) -> LiveSubscribe {
+    LiveSubscribe {
+        track,
+        from: LiveStart::Latest,
+    }
+}
+
 /// The nonce of `by`'s ask of `to`, if the room has it up.
 pub fn asked(room: &BTreeMap<String, u64>, by: u64, to: u64) -> Option<String> {
     let prefix = ask_track(by, to, "");
@@ -226,17 +236,16 @@ impl Arcade {
         versus.ask = None;
         versus.nonce = None;
         versus.note = None;
-        versus.watch = Some(cx.follow::<LiveTracks>(
-            arcade::VERSUS.into(),
-            |view, announce, cx| match announce {
-                Ok(announce) => view.announced(announce, cx),
+        versus.watch = Some(
+            cx.follow::<LiveTracks>(arcade::VERSUS.into(), |view, item, cx| match item {
+                Ok(Watching::Waiting) => view.knock(cx),
+                Ok(Watching::Announce(announce)) => view.announced(announce, cx),
                 Err(refusal) => view.refused(refusal, cx),
-            },
-        ));
+            }),
+        );
         versus.waiting = Some(Track::publish(
             cx,
-            track(wait_track(me)),
-            LiveMode::Stream,
+            publish(wait_track(me), LiveMode::Stream),
             Self::published,
         ));
         let minted = cx.host().ask::<HostId>("versus".into());
@@ -252,44 +261,48 @@ impl Arcade {
         }));
     }
 
-    /// What the node says of one of this side's tracks: how many listen,
-    /// which nothing here needs; an object it dropped (`too_large`,
-    /// `rate_limit`), after which the track goes on and so does the round;
-    /// or why the track ended.
+    /// What the node says of one of this side's tracks: that it waits for
+    /// the room; how many listen, which nothing here needs; an object it
+    /// dropped (`too_large`), after which the track goes on and so does the
+    /// round; or why the track ended.
     fn published(&mut self, said: Result<Publishing, Error>, cx: &mut Context<Self>) {
         match said {
+            Ok(Publishing::Waiting) => self.knock(cx),
             Ok(Publishing::Subscribers(_)) => {}
-            Err(dropped)
-                if dropped.code == refusal::TOO_LARGE || dropped.code == refusal::RATE_LIMIT =>
-            {
+            Err(dropped) if dropped.code == refusal::TOO_LARGE => {
                 cx.log_refused("an object on a versus track", &dropped)
             }
             Err(refusal) => self.refused(refusal, cx),
         }
     }
 
-    /// A `live.*` the node refused. While the room is not open yet the
-    /// program is asked to open it, once, and the asks wait for its row;
-    /// anything else, the grant taken back too, stops the lobby, with why.
+    /// The room is not open yet: the program is asked to open it, once, and
+    /// the asks wait for its row.
+    fn knock(&mut self, cx: &mut Context<Self>) {
+        let Some(versus) = &mut self.versus else {
+            return;
+        };
+        if std::mem::replace(&mut versus.knocked, true) {
+            return;
+        }
+        let submit = cx.host().ask::<Submit<arcade::Arcade>>(Op::OpenVersus);
+        versus.waits.push(cx.land(submit, |view, opened, cx| {
+            if let (Some(versus), Err(refused)) = (&mut view.versus, opened) {
+                versus.note = Some(format!(
+                    "The arcade could not open the versus room: {}",
+                    refused.message
+                ));
+                cx.notify();
+            }
+        }));
+    }
+
+    /// A `live.*` the node refused, the grant taken back too: it stops the
+    /// lobby, with why.
     fn refused(&mut self, refusal: Error, cx: &mut Context<Self>) {
         let Some(versus) = &mut self.versus else {
             return;
         };
-        if versus.waits_for_the_room(&refusal) {
-            if !std::mem::replace(&mut versus.knocked, true) {
-                let submit = cx.host().ask::<Submit<arcade::Arcade>>(Op::OpenVersus);
-                versus.waits.push(cx.land(submit, |view, opened, cx| {
-                    if let (Some(versus), Err(refused)) = (&mut view.versus, opened) {
-                        versus.note = Some(format!(
-                            "The arcade could not open the versus room: {}",
-                            refused.message
-                        ));
-                        cx.notify();
-                    }
-                }));
-            }
-            return;
-        }
         versus.watch = None;
         versus.waiting = None;
         versus.ask = None;
@@ -306,7 +319,6 @@ impl Arcade {
             return;
         };
         let LiveAnnounce { name, by, up, .. } = announce;
-        versus.inside = true;
         if up {
             versus.room.insert(name, by);
         } else {
@@ -341,7 +353,7 @@ impl Arcade {
         if let Some(game) = &mut versus.game {
             if game.seeing.is_none() && versus.room.get(&game.theirs) == Some(&game.them) {
                 let board = track(game.theirs.clone());
-                game.seeing = Some(subscribe(cx, board, true, Self::seen));
+                game.seeing = Some(subscribe(cx, latest(board), Self::seen));
             }
             return;
         }
@@ -355,8 +367,7 @@ impl Arcade {
         let basis = basis(me, nonce, them, &their_nonce);
         let board = Track::publish(
             cx,
-            track(board_track(me, nonce)),
-            LiveMode::Datagram,
+            publish(board_track(me, nonce), LiveMode::Datagram),
             Self::published,
         );
         let their_ask = track(ask_track(them, me, &their_nonce));
@@ -366,7 +377,7 @@ impl Arcade {
             basis,
             round: 0,
             board,
-            _hearing: subscribe(cx, their_ask, true, Self::heard),
+            _hearing: subscribe(cx, latest(their_ask), Self::heard),
             theirs: board_track(them, &their_nonce),
             seeing: None,
             their_well: None,
@@ -402,8 +413,7 @@ impl Arcade {
         };
         let ask = Track::publish(
             cx,
-            track(ask_track(me, them, nonce)),
-            LiveMode::Stream,
+            publish(ask_track(me, them, nonce), LiveMode::Stream),
             Self::published,
         );
         versus.ask = Some((them, ask));
@@ -430,7 +440,7 @@ impl Arcade {
                 // an attack after the round ended, or one no well sends
                 _ => return,
             },
-            Ok(Received::Opened { .. } | Received::GroupEnd { .. }) => return,
+            Ok(Received::Waiting | Received::Opened { .. } | Received::GroupEnd { .. }) => return,
             Err(refusal)
                 if refusal.code == refusal::PUBLISHER_GONE
                     || refusal.code == refusal::TRACK_ENDED =>
