@@ -25,6 +25,16 @@ pub const LOBBY: &str = "lobby";
 /// program in front of it, and the whole namespace is at most 192 bytes.
 pub const MAX_ROOM: usize = 64;
 
+/// An open room's one row, every account's ([`Op::Open`]): each may
+/// subscribe to every track and publish its own line alone, under its
+/// number.
+pub fn open_row() -> ::program::live::Grant {
+    ::program::live::Grant {
+        publish: vec!["echo/{account}".into()],
+        subscribe: vec!["*".into()],
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum Op {
     /// Every account that acts on the chain may subscribe to every track

@@ -12,15 +12,15 @@
 //!
 //! The node lets an account into the room only as the program granted it,
 //! and holds what the reader asks until it has. On a network nobody opened
-//! the lobby on, the first publish hears a `not_granted` that ends
-//! nothing; the view then sends `live-echo`'s `Open { room }`, once a
-//! session, and its asks go through on the op's block. A `not_granted`
-//! once in is the grant taken back: shown, not retried.
+//! the lobby on, the reader's track and the room's list hear `Waiting`;
+//! the view then sends `live-echo`'s `Open { room }`, once a session, and
+//! its asks go through on the op's block. A `not_granted` is the grant
+//! taken back: shown, not retried.
 use std::collections::BTreeMap;
 
 use live_echo::{LOBBY, LiveEcho, Op};
 use serde::{Deserialize, Serialize};
-use view::live::{Received, Track, subscribe};
+use view::live::{DEFAULT_PRIORITY, Received, Track, subscribe};
 use view::prelude::*;
 
 /// The name every reader's track starts with; the rest is its account.
@@ -45,8 +45,8 @@ pub struct Echo {
     /// Where the lobby stands for this reader.
     #[serde(skip)]
     pub(crate) lobby: Lobby,
-    /// This session sent `Open` already: the next `not_granted` while
-    /// joining sends no other.
+    /// This session sent `Open` already: the next `Waiting` sends no
+    /// other.
     #[serde(skip)]
     opened: bool,
     /// The reader's track: dropping it unpublishes.
@@ -130,11 +130,16 @@ impl Echo {
         };
         self.lobby = Lobby::Joining;
         self.people.entry(me).or_default();
+        let mine = LivePublish {
+            track: track(&format!("{ECHO}{me}")),
+            mode: LiveMode::Stream,
+            priority: DEFAULT_PRIORITY,
+        };
         self.mine = Some(Track::publish(
             cx,
-            track(&format!("{ECHO}{me}")),
-            LiveMode::Stream,
+            mine,
             |view: &mut Echo, item, cx| match item {
+                Ok(Publishing::Waiting) => view.waiting(cx),
                 Ok(Publishing::Subscribers(count)) => {
                     view.let_in();
                     view.listeners = count;
@@ -145,7 +150,8 @@ impl Echo {
         ));
         self.watch = Some(
             cx.follow::<LiveTracks>(LOBBY.to_owned(), |view, item, cx| match item {
-                Ok(announce) => view.announced(announce, cx),
+                Ok(Watching::Waiting) => view.waiting(cx),
+                Ok(Watching::Announce(announce)) => view.announced(announce, cx),
                 Err(refusal) => view.refused(refusal, cx),
             }),
         );
@@ -161,7 +167,11 @@ impl Echo {
             return;
         }
         self.people.entry(by).or_default().gone = None;
-        let heard = subscribe(cx, track(&name), true, move |view: &mut Echo, item, cx| {
+        let line = LiveSubscribe {
+            track: track(&name),
+            from: LiveStart::Latest,
+        };
+        let heard = subscribe(cx, line, move |view: &mut Echo, item, cx| {
             let person = view.people.entry(by).or_default();
             match item {
                 Ok(Received::Object { value, .. }) => {
@@ -169,7 +179,9 @@ impl Echo {
                     let over = person.lines.len().saturating_sub(KEPT);
                     person.lines.drain(..over);
                 }
-                Ok(Received::Opened { .. } | Received::GroupEnd { .. }) => return,
+                Ok(Received::Waiting | Received::Opened { .. } | Received::GroupEnd { .. }) => {
+                    return;
+                }
                 // a body another build wrote (the SDK's `unexpected_reply`):
                 // the subscription goes on
                 Err(refusal) if refusal.code == "unexpected_reply" => {
@@ -191,20 +203,22 @@ impl Echo {
         }
     }
 
+    /// The lobby is not open yet: the reader's track and the room's list
+    /// both wait, and the first `Waiting` sends `Open`.
+    fn waiting(&mut self, cx: &mut Context<Self>) {
+        if !std::mem::replace(&mut self.opened, true) {
+            self.open(cx);
+            cx.notify();
+        }
+    }
+
     /// A refusal on the reader's track or on the room's list. A refused
-    /// line goes to the log and the track goes on; a `not_granted` while
-    /// joining is the lobby not open yet, and the first sends `Open`;
-    /// anything else ended the track and stays on screen.
+    /// line goes to the log and the track goes on; anything else, the
+    /// grant taken back too, ended the track and stays on screen.
     fn refused(&mut self, refusal: Error, cx: &mut Context<Self>) {
-        let one_line = [refusal::TOO_LARGE, refusal::RATE_LIMIT].contains(&refusal.code.as_str());
+        let one_line = refusal.code == refusal::TOO_LARGE;
         match &self.lobby {
             Lobby::In if one_line => return cx.log_refused("a line", &refusal),
-            // the room's list and the track both wait; one opens
-            Lobby::Joining if refusal.code == refusal::NOT_GRANTED => {
-                if !std::mem::replace(&mut self.opened, true) {
-                    self.open(cx);
-                }
-            }
             _ => self.stop(refusal.code),
         }
         cx.notify();
