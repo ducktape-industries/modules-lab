@@ -4,7 +4,7 @@
 use arcade_view::tetris::Attack;
 use arcade_view::versus::{Said, ask_track};
 use commonware_codec::DecodeExt as _;
-use live_wire::{Challenge, End, Mode};
+use live_wire::{Challenge, End, Ending, Mode};
 use tokio::io::DuplexStream;
 use tokio_tungstenite::tungstenite::protocol::Role;
 
@@ -99,7 +99,7 @@ fn the_room_is_named_on_the_chain_as_the_app_names_it() {
         root: core_abi::Root([0; 32]),
         epoch: 0,
         identity: Vec::new(),
-        contract: 5,
+        contract: noded::wire::NODE_CONTRACT,
         genesis: [
             0xab, 0x01, 0xff, 0x10, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
             7, 7, 7, 7, 7, 7, 7,
@@ -174,14 +174,21 @@ fn a_group_heard_in_slices_numbers_its_objects_on() {
     };
     wire.heard(WsFrame::Control(subscribed), &mut bot).unwrap();
     // group 0 in two slices: an attack, then their top-out, object 1
-    let slice = |said: Said| WsFrame::Group {
+    let slice = |said: Said, end| WsFrame::Group {
         header: GroupHeader { alias: 7, group: 0 },
         objects: vec![borsh::to_vec(&said).unwrap()],
-        end: false,
+        end,
     };
     let attack = Said::Attack(Attack { lines: 2, hole: 1 });
-    wire.heard(slice(attack), &mut bot).unwrap();
-    wire.heard(slice(Said::Out), &mut bot).unwrap();
+    wire.heard(slice(attack, Ending::More), &mut bot).unwrap();
+    // the slice that ends the group cut (a hand-over to their reconnected
+    // app, say) still counts what it carries, and ends nothing else
+    wire.heard(slice(Said::Out, Ending::Cut), &mut bot).unwrap();
+    assert!(
+        bot.log.iter().all(|line| !line.contains("left")),
+        "{:?}",
+        bot.log
+    );
     assert!(
         bot.log
             .iter()
@@ -203,11 +210,11 @@ async fn the_handshake_signs_the_nonce_and_a_refusal_is_the_nodes_word() {
         let _hello = control(&mut node).await;
         tell(&mut node, Control::Challenge(Challenge { nonce: [1; 32] })).await;
         let _proof = control(&mut node).await;
-        let code = Code::NoAccount;
+        let code = Code::BadProof;
         tell(&mut node, Control::Refused { request: 0, code }).await;
     };
     let (refused, ()) = tokio::join!(handshake(&mut bot, CHAIN, &NODE, &key), refuse);
-    assert!(matches!(refused, Err(Stop::Refused(why)) if why.ends_with("no_account")));
+    assert!(matches!(refused, Err(Stop::Refused(why)) if why.ends_with("bad_proof")));
 }
 
 #[tokio::test(start_paused = true)]
@@ -326,7 +333,7 @@ async fn a_challenge_from_the_room_is_a_match_over_the_wire() {
     let out = WsFrame::Group {
         header: GroupHeader { alias: 7, group: 0 },
         objects: vec![borsh::to_vec(&Said::Out).unwrap()],
-        end: false,
+        end: Ending::More,
     };
     send(&mut node, &out).await.unwrap();
     let rematch = loop {
@@ -340,7 +347,10 @@ async fn a_challenge_from_the_room_is_a_match_over_the_wire() {
             other => panic!("its rematch, not {other:?}"),
         }
     };
-    assert_eq!((rematch.0.alias, rematch.0.group, rematch.2), (2, 0, false));
+    assert_eq!(
+        (rematch.0.alias, rematch.0.group, rematch.2),
+        (2, 0, Ending::More)
+    );
     assert_eq!(rematch.1, [borsh::to_vec(&Said::Rematch).unwrap()]);
 
     // they leave: it waits again

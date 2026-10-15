@@ -14,8 +14,8 @@ use commonware_cryptography::{Signer as _, ed25519};
 use ducklink::ChainId;
 use futures_util::{SinkExt as _, StreamExt as _};
 use live_wire::{
-    Alias, Code, Control, DEFAULT_PRIORITY, DatagramHeader, GroupHeader, Hello, KeyScheme, Proof,
-    RequestId, Start, Track, Welcome, WsFrame,
+    Alias, Code, Control, DEFAULT_PRIORITY, DatagramHeader, Ending, GroupHeader, Hello, KeyScheme,
+    Proof, RequestId, Start, Track, Welcome, WsFrame,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::{Instant, MissedTickBehavior};
@@ -341,9 +341,11 @@ impl Wire {
                 });
             }
             Out::Send { name, group, body } => {
-                self.data(&name, group_frame(group, vec![body], false))
+                self.data(&name, group_frame(group, vec![body], Ending::More))
             }
-            Out::EndGroup { name, group } => self.data(&name, group_frame(group, Vec::new(), true)),
+            Out::EndGroup { name, group } => {
+                self.data(&name, group_frame(group, Vec::new(), Ending::Complete))
+            }
             Out::Latest {
                 name,
                 group,
@@ -386,9 +388,10 @@ impl Wire {
                         Err(error) => crate::log(format!("{name} said what no side says: {error}")),
                     }
                 }
+                // a group complete or cut has no more objects to number
                 match end {
-                    true => self.heard.remove(&key),
-                    false => self.heard.insert(key, first + objects.len() as u32),
+                    Ending::More => self.heard.insert(key, first + objects.len() as u32),
+                    Ending::Complete | Ending::Cut => self.heard.remove(&key),
                 };
                 return Ok(());
             }
@@ -486,7 +489,7 @@ impl Wire {
     }
 }
 
-fn group_frame(group: u64, objects: Vec<Vec<u8>>, end: bool) -> WsFrame {
+fn group_frame(group: u64, objects: Vec<Vec<u8>>, end: Ending) -> WsFrame {
     let header = GroupHeader { alias: 0, group };
     WsFrame::Group {
         header,
