@@ -52,8 +52,9 @@ pub enum Op {
     /// changes nothing.
     Score { game: u8, score: u64 },
     /// Opens the [`VERSUS`] room to every account on the chain: anyone may
-    /// publish and subscribe to any track in it. The row it writes is the
-    /// same each time, so sending it again changes nothing.
+    /// subscribe to any track in it and publish the tracks named by its own
+    /// number. The row it writes is the same each time, so sending it again
+    /// changes nothing.
     OpenVersus,
 }
 
