@@ -43,7 +43,7 @@ const THEIR_CELL: f32 = 10.;
 
 /// What a side says on its `ask` track once the match is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub(crate) enum Said {
+pub enum Said {
     /// Rows of garbage for the other's well.
     Attack(Attack),
     /// This side topped out: the other wins the round.
@@ -156,9 +156,33 @@ fn track(name: String) -> LiveTrack {
     }
 }
 
+/// `wait/<me>`: up while `me` waits in the lobby.
+pub fn wait_track(me: u64) -> String {
+    format!("wait/{me}")
+}
+
+/// `ask/<by>/<to>/<nonce>`: `by`'s challenge to `to`, then what `by` says.
+pub fn ask_track(by: u64, to: u64, nonce: &str) -> String {
+    format!("ask/{by}/{to}/{nonce}")
+}
+
+/// `board/<by>/<nonce>`: `by`'s well as the other side draws it.
+pub fn board_track(by: u64, nonce: &str) -> String {
+    format!("board/{by}/{nonce}")
+}
+
+/// What every round of a match is dealt from: both asks' accounts and
+/// nonces, the lower account first, so both sides name it alike.
+pub fn basis(me: u64, nonce: &str, them: u64, their_nonce: &str) -> String {
+    match me < them {
+        true => format!("{me}:{nonce}/{them}:{their_nonce}"),
+        false => format!("{them}:{their_nonce}/{me}:{nonce}"),
+    }
+}
+
 /// The nonce of `by`'s ask of `to`, if the room has it up.
-fn asked(room: &BTreeMap<String, u64>, by: u64, to: u64) -> Option<String> {
-    let prefix = format!("ask/{by}/{to}/");
+pub fn asked(room: &BTreeMap<String, u64>, by: u64, to: u64) -> Option<String> {
+    let prefix = ask_track(by, to, "");
     room.iter()
         .filter(|(_, publisher)| **publisher == by)
         .find_map(|(name, _)| name.strip_prefix(&prefix))
@@ -167,7 +191,7 @@ fn asked(room: &BTreeMap<String, u64>, by: u64, to: u64) -> Option<String> {
 
 /// Round `round`'s well for side `me`: the pieces from what both sides
 /// share, the holes of its attacks its own.
-fn deal(basis: &str, round: u64, me: u64) -> Box<Tetris> {
+pub fn deal(basis: &str, round: u64, me: u64) -> Box<Tetris> {
     let pieces = seed(&format!("{basis}/{round}"));
     Box::new(Tetris::versus(pieces, pieces ^ me))
 }
@@ -211,7 +235,7 @@ impl Arcade {
         ));
         versus.waiting = Some(Track::publish(
             cx,
-            track(format!("wait/{me}")),
+            track(wait_track(me)),
             LiveMode::Stream,
             Self::published,
         ));
@@ -338,17 +362,14 @@ impl Arcade {
         let Some(their_nonce) = asked(&versus.room, them, me) else {
             return;
         };
-        let basis = match me < them {
-            true => format!("{me}:{nonce}/{them}:{their_nonce}"),
-            false => format!("{them}:{their_nonce}/{me}:{nonce}"),
-        };
+        let basis = basis(me, nonce, them, &their_nonce);
         let board = Track::publish(
             cx,
-            track(format!("board/{me}/{nonce}")),
+            track(board_track(me, nonce)),
             LiveMode::Datagram,
             Self::published,
         );
-        let their_ask = track(format!("ask/{them}/{me}/{their_nonce}"));
+        let their_ask = track(ask_track(them, me, &their_nonce));
         let mut game = Match {
             them,
             tetris: deal(&basis, 0, me),
@@ -356,7 +377,7 @@ impl Arcade {
             round: 0,
             board,
             _hearing: subscribe(cx, their_ask, true, Self::heard),
-            theirs: format!("board/{them}/{their_nonce}"),
+            theirs: board_track(them, &their_nonce),
             seeing: None,
             their_well: None,
             end: None,
@@ -391,7 +412,7 @@ impl Arcade {
         };
         let ask = Track::publish(
             cx,
-            track(format!("ask/{me}/{them}/{nonce}")),
+            track(ask_track(me, them, nonce)),
             LiveMode::Stream,
             Self::published,
         );

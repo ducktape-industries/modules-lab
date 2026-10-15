@@ -29,11 +29,11 @@ use ducktape_view_guest::prelude::*;
 
 use crate::games::{Fact, Rng, square};
 
-pub(crate) const COLS: i32 = 10;
-pub(crate) const ROWS: i32 = 20;
+pub const COLS: i32 = 10;
+pub const ROWS: i32 = 20;
 pub(crate) const KEYS: &str =
     "← → move, ↑ or X turns, Z turns back, ↓ drops a row, Space drops, C or Shift holds";
-pub(crate) const PERIOD: i64 = 16;
+pub const PERIOD: i64 = 16;
 
 /// The ticks a row of fall takes at each level; one from level 29 on.
 const GRAVITY: [u32; 29] = [
@@ -79,7 +79,7 @@ const BACK_TO_BACK: u8 = 1;
 pub(crate) const MOST_SENT: u8 = SENDS[4] + BACK_TO_BACK;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Piece {
+pub enum Piece {
     I,
     O,
     T,
@@ -93,7 +93,7 @@ pub(crate) enum Piece {
 }
 
 /// What a well holds: a cell's block, if any, rows top first.
-pub(crate) type Well = [[Option<Piece>; COLS as usize]; ROWS as usize];
+pub type Well = [[Option<Piece>; COLS as usize]; ROWS as usize];
 
 const PIECES: [Piece; 7] = [
     Piece::I,
@@ -122,7 +122,7 @@ impl Piece {
 
     /// The piece's cells turned clockwise `turn` times, in its box. The O
     /// sits in the middle of a box of four.
-    fn cells(self, turn: u8) -> [(i32, i32); 4] {
+    pub fn cells(self, turn: u8) -> [(i32, i32); 4] {
         let (mut cells, side) = self.shape();
         for _ in 0..turn % 4 {
             cells = cells.map(|(x, y)| (side - 1 - y, x));
@@ -147,27 +147,27 @@ impl Piece {
 
 /// Versus: rows of garbage, each full but for one hole, all in one column.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub(crate) struct Attack {
-    pub(crate) lines: u8,
-    pub(crate) hole: u8,
+pub struct Attack {
+    pub lines: u8,
+    pub hole: u8,
 }
 
 impl Attack {
     /// Whether the other side's attack is one a well could have sent: at
     /// least a row, at most [`MOST_SENT`], its hole in the well.
-    pub(crate) fn fair(self) -> bool {
+    pub fn fair(self) -> bool {
         (1..=MOST_SENT).contains(&self.lines) && i32::from(self.hole) < COLS
     }
 }
 
 /// One well's side of versus: the garbage on its way in and the attacks
 /// its clears make.
-pub(crate) struct Garbage {
+pub struct Garbage {
     /// The other side's attacks, oldest first, to rise on a lock that
     /// clears nothing.
-    pub(crate) incoming: VecDeque<Attack>,
+    pub incoming: VecDeque<Attack>,
     /// This well's attacks, oldest first, for the view to send.
-    pub(crate) outgoing: Vec<Attack>,
+    pub outgoing: Vec<Attack>,
     /// The last lock that cleared rows cleared four.
     tetris: bool,
     /// Where an attack's hole goes. Never the bag's own: a draw from it
@@ -251,19 +251,19 @@ enum Move {
     Hold,
 }
 
-pub(crate) struct Tetris {
+pub struct Tetris {
     /// The settled blocks.
-    pub(crate) well: Well,
-    pub(crate) piece: Piece,
-    pub(crate) turn: u8,
+    pub well: Well,
+    pub piece: Piece,
+    pub turn: u8,
     /// The top left corner of the falling piece's box.
-    pub(crate) at: (i32, i32),
+    pub at: (i32, i32),
     /// The pieces coming, the first next.
-    pub(crate) next: [Piece; NEXT],
+    pub next: [Piece; NEXT],
     /// The piece put aside with C or Shift.
-    pub(crate) hold: Option<Piece>,
+    pub hold: Option<Piece>,
     /// Hold was used for the piece falling: no hold again until it locks.
-    held: bool,
+    pub held: bool,
     bag: Vec<Piece>,
     rng: Rng,
     moves: VecDeque<Move>,
@@ -280,16 +280,16 @@ pub(crate) struct Tetris {
     rest: u32,
     /// How often a move or a turn on the ground started `rest` again.
     resets: u32,
-    pub(crate) lines: u64,
-    pub(crate) level: u64,
+    pub lines: u64,
+    pub level: u64,
     score: u64,
     over: bool,
     /// The garbage this well trades in versus; none alone.
-    pub(crate) versus: Option<Garbage>,
+    pub versus: Option<Garbage>,
 }
 
 impl Tetris {
-    pub(crate) fn new(seed: u64) -> Tetris {
+    pub fn new(seed: u64) -> Tetris {
         let mut tetris = Tetris {
             well: [[None; COLS as usize]; ROWS as usize],
             piece: Piece::I,
@@ -320,7 +320,7 @@ impl Tetris {
 
     /// A versus well: dealt from `seed` as the other side's is, its
     /// attacks' holes drawn from `holes`.
-    pub(crate) fn versus(seed: u64, holes: u64) -> Tetris {
+    pub fn versus(seed: u64, holes: u64) -> Tetris {
         Tetris {
             versus: Some(Garbage::new(holes)),
             ..Tetris::new(seed)
@@ -362,7 +362,7 @@ impl Tetris {
         self.over = !self.fits(self.piece, self.turn, self.at);
     }
 
-    fn fits(&self, piece: Piece, turn: u8, (x, y): (i32, i32)) -> bool {
+    pub fn fits(&self, piece: Piece, turn: u8, (x, y): (i32, i32)) -> bool {
         piece.cells(turn).iter().all(|(dx, dy)| {
             let (x, y) = (x + dx, y + dy);
             (0..COLS).contains(&x)
@@ -508,7 +508,7 @@ impl Tetris {
 
     /// A key waits for the next tick; an arrow is held until it comes up.
     /// The keyboard's own repeat of a held key is not read.
-    pub(crate) fn key_down(&mut self, key: &str, repeat: bool) -> bool {
+    pub fn key_down(&mut self, key: &str, repeat: bool) -> bool {
         let Some(held) = read(key) else {
             return false;
         };
@@ -532,7 +532,7 @@ impl Tetris {
 
     /// An arrow came up: the other side's, if it is still held, slides
     /// the piece after its own count.
-    pub(crate) fn key_up(&mut self, key: &str) {
+    pub fn key_up(&mut self, key: &str) {
         match read(key) {
             Some(Move::Down) => self.soft = None,
             Some(up @ (Move::Left | Move::Right)) => {
@@ -573,7 +573,7 @@ impl Tetris {
 
     /// One frame: the keys that waited, then gravity's count, or the lock
     /// delay's on the ground.
-    pub(crate) fn tick(&mut self) -> bool {
+    pub fn tick(&mut self) -> bool {
         let mut moved = false;
         while let Some(held) = self.moves.pop_front() {
             if self.over {
@@ -609,11 +609,11 @@ impl Tetris {
         GRAVITY.get(self.level as usize).copied().unwrap_or(1)
     }
 
-    pub(crate) fn score(&self) -> u64 {
+    pub fn score(&self) -> u64 {
         self.score
     }
 
-    pub(crate) fn over(&self) -> bool {
+    pub fn over(&self) -> bool {
         self.over
     }
 
@@ -627,7 +627,7 @@ impl Tetris {
     /// The well with the piece falling in it, as versus shows it to the
     /// other side: a byte a cell, rows top first, 0 empty and else a
     /// block's [`Piece`] as `1 + its place` in [`BLOCKS`].
-    pub(crate) fn cells(&self) -> Vec<u8> {
+    pub fn cells(&self) -> Vec<u8> {
         let mut well = self.well;
         if !self.over {
             for (x, y) in self.falling() {

@@ -26,8 +26,8 @@ mod merge;
 mod mines;
 mod play;
 mod snake;
-mod tetris;
-mod versus;
+pub mod tetris;
+pub mod versus;
 
 use ducktape_view_guest::prelude::*;
 use gpui::relative;
