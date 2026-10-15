@@ -448,6 +448,8 @@ mod tests {
             *row = [Some(Piece::O); COLS as usize];
             row[0] = None;
         }
+        // a block over them: a Tetris, not an all clear too
+        tetris.well[ROWS as usize - 5][9] = Some(Piece::O);
         tetris.piece = Piece::I;
         for _ in 0..2000 {
             bot.tick();
