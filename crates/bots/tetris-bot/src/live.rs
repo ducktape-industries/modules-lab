@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use commonware_cryptography::{Signer as _, ed25519};
+use ducklink::ChainId;
 use futures_util::{SinkExt as _, StreamExt as _};
 use live_wire::{
     Alias, Code, Control, DEFAULT_PRIORITY, DatagramHeader, GroupHeader, Hello, KeyScheme, Proof,
@@ -41,7 +42,10 @@ pub enum Stop {
     Refused(String),
 }
 
-/// What `/v1/status` answers: the node's own `Status`, field for field.
+/// What `/v1/status` answers: the node's own `Status`
+/// (`noded::wire::Status`), field for field. Copied, not linked: the
+/// node's crate carries the whole daemon. The tests decode what the node's
+/// own type encodes, so a field the node adds fails them, not the bot.
 #[derive(BorshSerialize, BorshDeserialize)]
 pub struct Status {
     pub network: String,
@@ -60,22 +64,11 @@ pub struct Status {
 
 impl Status {
     /// The chain's id, the first of a track's namespace, as the app
-    /// stamps it (`ducklink::ChainId::of`): `<network>#<salt>`, or the
-    /// network's name alone where it is no chain label (`a-z`, `0-9`, `-`).
+    /// stamps it: `ducklink::ChainId::of`, or the network's name alone
+    /// where it is no chain label.
     pub fn chain(&self) -> String {
-        let labelled = !self.network.is_empty()
-            && self
-                .network
-                .bytes()
-                .all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'-'));
-        if !labelled {
-            return self.network.clone();
-        }
-        let salt: String = self.genesis[..4]
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
-        format!("{}#{salt}", self.network)
+        ChainId::of(&self.network, &self.genesis)
+            .map_or_else(|| self.network.clone(), |chain| chain.to_string())
     }
 }
 

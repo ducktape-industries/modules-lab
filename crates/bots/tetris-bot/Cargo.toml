@@ -12,6 +12,8 @@ publish = false
 arcade-view = { path = "../../app/arcade-view" }
 # the program and the room versus is played in
 arcade.workspace = true
+# the chain's id, as the app names a track's chain
+ducklink.workspace = true
 borsh.workspace = true
 # the live wire and the key scheme of core `feat/live-lane` 749281824: the
 # rev the node runs and the app pins
@@ -29,5 +31,7 @@ tokio = { version = "1", features = ["macros", "net", "rt", "time"] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 
 [dev-dependencies]
+# the node's own `Status`, which the copy in `live.rs` must decode
+noded = { git = "https://github.com/ducktape-industries/ducktape", rev = "749281824932ec3a325490edd1da37fdba37d837" }
 keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "749281824932ec3a325490edd1da37fdba37d837", features = ["testkit"] }
 tokio = { version = "1", features = ["test-util"] }

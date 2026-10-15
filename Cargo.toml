@@ -27,6 +27,9 @@ describe = { git = "https://github.com/ducktape-industries/programs", rev = "671
 # (`crates/app/trade/examples/seed.rs`), and the profiles arcade-view reads
 # names from.
 identity = { git = "https://github.com/ducktape-industries/programs", rev = "671fdbdca06836a6ac78f988a00fdf963fb1e5aa" }
+# The chain id a live track's namespace starts with (`ChainId::of`), as the
+# app names it: what tetris-bot names the versus room by.
+ducklink = { git = "https://github.com/ducktape-industries/programs", rev = "671fdbdca06836a6ac78f988a00fdf963fb1e5aa" }
 # `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
 # the SDK does not re-export.
 # The rev is the one modules names.

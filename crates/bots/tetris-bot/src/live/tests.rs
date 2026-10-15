@@ -114,11 +114,42 @@ fn the_room_is_named_on_the_chain_as_the_app_names_it() {
             halo: "halo".into(),
         },
     };
-    let garage = status("garage");
-    let read: Status = borsh::from_slice(&borsh::to_vec(&garage).unwrap()).unwrap();
-    assert_eq!(namespace(&read.chain()), "garage#ab01ff10/arcade/versus");
+    assert_eq!(
+        namespace(&status("garage").chain()),
+        "garage#ab01ff10/arcade/versus"
+    );
     // a name that is no chain label stands alone, as `ChainId::of` leaves it
     assert_eq!(status("Lab_1").chain(), "Lab_1");
+}
+
+#[test]
+fn the_status_copy_reads_what_the_nodes_own_type_writes() {
+    let node = noded::wire::Status {
+        network: "garage".into(),
+        time: 1_760_000_000_000,
+        block_time_ms: 1000,
+        epoch_length: 64,
+        height: 12,
+        tip: [1; 32],
+        root: core_abi::Root([2; 32]),
+        epoch: 3,
+        identity: vec![4; 32],
+        contract: noded::wire::NODE_CONTRACT,
+        genesis: [5; 32],
+        roles: core_abi::Roles {
+            programs: "programs".into(),
+            validators: "valset".into(),
+            identity: "identity".into(),
+            blobs: "blobs".into(),
+            awaits: "awaits".into(),
+            egress: Some("egress".into()),
+            halo: "halo".into(),
+        },
+    };
+    let bytes = borsh::to_vec(&node).unwrap();
+    let read: Status = borsh::from_slice(&bytes).expect("the copy reads the node's status");
+    assert_eq!(borsh::to_vec(&read).unwrap(), bytes, "and loses nothing");
+    assert_eq!((read.network, read.genesis), (node.network, node.genesis));
 }
 
 #[test]
