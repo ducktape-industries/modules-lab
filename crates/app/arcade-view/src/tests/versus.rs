@@ -4,7 +4,8 @@
 //! The room's grant is the relay's to give: held, the lobby waits for it;
 //! taken back, the lobby stops.
 use view::methods::{
-    LiveAnnounce, LiveMode, LivePublishTrack, LiveTracks, Method, Watching, refusal,
+    HostLog, LiveAnnounce, LiveMode, LivePublishTrack, LiveTracks, Method, Publishing, Watching,
+    refusal,
 };
 use view::testing::Relay;
 
@@ -296,50 +297,94 @@ fn a_side_that_goes_mid_match_hands_the_other_the_win_and_no_rematch() {
     shows(&both.ada.cx, &["Who is waiting"]);
 }
 
-#[test]
-fn an_object_the_node_drops_leaves_the_round_running() {
-    let mut opened = opened(World::default(), Some(1));
-    let tracks = opened.cx.host().stream::<LiveTracks>();
-    opened.cx.simulate_click("arcade-card-versus");
-    opened.cx.run_until_parked();
+/// Ada alone on her fake host, in a match account 2 asked for: the room's
+/// list is the test's to feed.
+struct Alone {
+    ada: Opened,
+    /// The ids of ada's `ask/` and `board/` publications.
+    ask: u64,
+    board: u64,
+}
+
+fn alone() -> Alone {
+    let mut ada = opened(World::default(), Some(1));
+    let tracks = ada.cx.host().stream::<LiveTracks>();
+    ada.cx.simulate_click("arcade-card-versus");
+    ada.cx.run_until_parked();
     // account 2 waits and asks; ada accepts
     for name in ["wait/2", "ask/2/1/0b"] {
         tracks.send(Watching::Announce(LiveAnnounce {
             name: name.into(),
             by: 2,
-            mode: LiveMode::Datagram,
+            mode: LiveMode::Stream,
             up: true,
         }));
     }
-    opened.cx.run_until_parked();
-    opened.cx.simulate_click("versus-player-2");
-    let board = opened
-        .cx
-        .last_frame()
-        .requests
-        .iter()
-        .find(|request| {
-            request.kind == LivePublishTrack::KIND
-                && LivePublishTrack::decode_request(&request.payload)
-                    .is_ok_and(|publish| publish.track.name.starts_with("board/1/"))
-        })
-        .map(|request| request.id)
-        .expect("the match publishes its board");
-    opened.cx.run_until_parked();
-    assert!(opened.ticks.subscribed(), "the round runs");
+    ada.cx.run_until_parked();
+    ada.cx.simulate_click("versus-player-2");
+    // the challenge and the match publish in the click's frame
+    let published = |prefix: &str| {
+        ada.cx
+            .last_frame()
+            .requests
+            .iter()
+            .find(|request| {
+                request.kind == LivePublishTrack::KIND
+                    && LivePublishTrack::decode_request(&request.payload)
+                        .is_ok_and(|publish| publish.track.name.starts_with(prefix))
+            })
+            .map(|request| request.id)
+            .expect("ada publishes it")
+    };
+    let (ask, board) = (published("ask/1/2/"), published("board/1/"));
+    ada.cx.run_until_parked();
+    assert!(ada.ticks.subscribed(), "the round runs");
+    Alone { ada, ask, board }
+}
+
+impl Alone {
+    /// The host says `item` of ada's publication `id`, the track going on.
+    fn tell(&mut self, id: u64, item: Result<Publishing, view::host::Error>) {
+        let result = item.map(|item| LivePublishTrack::encode_reply(&item));
+        self.ada.cx.simulate_event(wire::Event::Response {
+            id,
+            result,
+            done: false,
+        });
+        self.ada.cx.run_until_parked();
+    }
+
+    fn still_running(&mut self) {
+        assert!(self.ada.ticks.subscribed(), "the round runs");
+        assert_eq!(game(&mut self.ada, |game| game.end), None);
+        assert!(
+            !self.ada.cx.has_text("Versus stopped"),
+            "{:?}",
+            self.ada.cx.texts()
+        );
+    }
+}
+
+#[test]
+fn an_object_the_node_drops_leaves_the_round_running() {
+    let mut alone = alone();
     // an object over its cap: the node drops it, says so, and the track
     // goes on
-    opened.cx.simulate_event(wire::Event::Response {
-        id: board,
-        result: Err(view::host::Error::new(
-            refusal::TOO_LARGE,
-            "an object over its cap",
-        )),
-        done: false,
-    });
-    opened.cx.run_until_parked();
-    assert!(opened.ticks.subscribed(), "still running");
-    assert!(!opened.cx.has_text("Versus stopped: an object over its cap"));
+    let refused = view::host::Error::new(refusal::TOO_LARGE, "an object over its cap");
+    alone.tell(alone.board, Err(refused));
+    alone.still_running();
+}
+
+#[test]
+fn a_group_the_host_cut_leaves_the_round_running() {
+    let mut alone = alone();
+    alone.tell(alone.ask, Ok(Publishing::Cut { group: 0 }));
+    alone.still_running();
+    let logged = alone.ada.cx.host().requests::<HostLog>();
+    assert_eq!(
+        logged,
+        ["Arcade: the host cut group 0 of this side's versus ask"]
+    );
 }
 
 #[test]

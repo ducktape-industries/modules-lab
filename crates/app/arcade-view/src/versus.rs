@@ -268,14 +268,21 @@ impl Arcade {
         }));
     }
 
-    /// What the node says of one of this side's tracks: that it waits for
-    /// the room; how many listen, which nothing here needs; an object it
-    /// dropped (`too_large`), after which the track goes on and so does the
-    /// round; or why the track ended.
+    /// What the host says of one of this side's tracks: that it waits for
+    /// the room; how many listen, which nothing here needs; a group it cut,
+    /// or an object it dropped (`too_large`), after which the track goes on
+    /// and so does the round; or why the track ended.
     fn published(&mut self, said: Result<Publishing, Error>, cx: &mut Context<Self>) {
         match said {
             Ok(Publishing::Waiting) => self.knock(cx),
             Ok(Publishing::Subscribers(_)) => {}
+            // only `ask/` sends stream objects (`wait/` sends none, `board/`
+            // is datagram mode): the round's group, its queue to the node
+            // full. Not a reason to end the match.
+            Ok(Publishing::Cut { group }) => cx.host().log(format!(
+                "{}: the host cut group {group} of this side's versus ask",
+                <Self as View>::NAME
+            )),
             Err(dropped) if dropped.code == refusal::TOO_LARGE => {
                 cx.log_refused("an object on a versus track", &dropped)
             }
