@@ -387,7 +387,7 @@ fn main() {
         }) {
             send(&Op::Fund);
         }
-        let page = PageRequest::first(PageRequest::MAX_LIMIT);
+        let page = PageRequest::default();
         let open = match node.query(
             trade::PROGRAM,
             &Query::Orders {
