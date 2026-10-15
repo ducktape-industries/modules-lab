@@ -3,7 +3,7 @@
 //! node does (`KeyScheme::verify`), then speaks the room and a match.
 use arcade_view::versus::{Said, ask_track};
 use commonware_codec::DecodeExt as _;
-use live_wire::{Challenge, Mode};
+use live_wire::{Challenge, End, Mode};
 use tokio::io::DuplexStream;
 use tokio_tungstenite::tungstenite::protocol::Role;
 
@@ -252,11 +252,7 @@ async fn a_challenge_from_the_room_is_a_match_over_the_wire() {
 
     // they top out: it won, and asks for another round on its ask
     let out = WsFrame::Group {
-        header: GroupHeader {
-            alias: 7,
-            group: 0,
-            priority: DEFAULT_PRIORITY,
-        },
+        header: GroupHeader { alias: 7, group: 0 },
         objects: vec![borsh::to_vec(&Said::Out).unwrap()],
         end: false,
     };
