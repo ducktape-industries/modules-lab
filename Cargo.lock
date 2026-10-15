@@ -2311,6 +2311,25 @@ dependencies = [
 [[package]]
 name = "keyscheme"
 version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=8309138d49842f04c873c9d0676bbb6e95037062#8309138d49842f04c873c9d0676bbb6e95037062"
+dependencies = [
+ "base64 0.22.1",
+ "borsh",
+ "commonware-codec",
+ "commonware-cryptography",
+ "commonware-utils",
+ "ed25519-dalek",
+ "k256",
+ "p256 0.13.2",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sha3",
+]
+
+[[package]]
+name = "keyscheme"
+version = "0.1.0"
 source = "git+https://github.com/ducktape-industries/ducktape?rev=fcf077858050f2475f8ab5106764c9b87263a708#fcf077858050f2475f8ab5106764c9b87263a708"
 dependencies = [
  "base64 0.22.1",
@@ -2388,11 +2407,11 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 [[package]]
 name = "live-wire"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=fcf077858050f2475f8ab5106764c9b87263a708#fcf077858050f2475f8ab5106764c9b87263a708"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=8309138d49842f04c873c9d0676bbb6e95037062#8309138d49842f04c873c9d0676bbb6e95037062"
 dependencies = [
  "abi",
  "borsh",
- "keyscheme",
+ "keyscheme 0.1.0 (git+https://github.com/ducktape-industries/ducktape?rev=8309138d49842f04c873c9d0676bbb6e95037062)",
 ]
 
 [[package]]
@@ -4071,7 +4090,7 @@ dependencies = [
  "commonware-codec",
  "commonware-cryptography",
  "futures-util",
- "keyscheme",
+ "keyscheme 0.1.0 (git+https://github.com/ducktape-industries/ducktape?rev=8309138d49842f04c873c9d0676bbb6e95037062)",
  "live-wire",
  "reqwest",
  "tokio",
@@ -4612,7 +4631,7 @@ dependencies = [
  "futures",
  "gpui-pre",
  "identity",
- "keyscheme",
+ "keyscheme 0.1.0 (git+https://github.com/ducktape-industries/ducktape?rev=fcf077858050f2475f8ab5106764c9b87263a708)",
  "program",
  "programs",
  "serde",
