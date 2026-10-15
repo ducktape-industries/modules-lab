@@ -4,7 +4,7 @@
 use ::program::live::Grant;
 use ::program::{Env, Error, MockHost, Program, QueryCtx, code};
 
-use crate::{Arcade, Entry, GAMES, MAX_TOP, Op, PROGRAM, Query, Reply, describe};
+use crate::{Arcade, Entry, GAMES, Op, PROGRAM, Query, Reply, describe};
 
 const ADA: u64 = 1;
 const BO: u64 = 2;
@@ -86,7 +86,7 @@ fn a_higher_score_becomes_the_best_and_one_at_or_under_it_changes_nothing() {
     hall.ok(ADA, TETRIS, 4_000);
     assert_eq!(hall.bests(ADA), [4_000, 0, 0, 0, 0, 0]);
     // the board holds the new best alone: the old row went with it
-    assert_eq!(hall.top(TETRIS, MAX_TOP), [(ADA, 4_000)]);
+    assert_eq!(hall.top(TETRIS, u32::MAX), [(ADA, 4_000)]);
     // a game is its own
     hall.ok(ADA, SNAKE, 90);
     assert_eq!(hall.bests(ADA), [4_000, 90, 0, 0, 0, 0]);
@@ -99,7 +99,7 @@ fn a_score_of_nothing_is_not_on_the_board() {
     let empty = hall.store.borrow().state.clone();
     hall.ok(ADA, TETRIS, 0);
     assert_eq!(hall.store.borrow().state, empty);
-    assert_eq!(hall.top(TETRIS, MAX_TOP), []);
+    assert_eq!(hall.top(TETRIS, u32::MAX), []);
 }
 
 #[test]
@@ -113,24 +113,24 @@ fn the_board_ranks_the_highest_first_one_row_an_account() {
     // at one score the smaller account first
     hall.ok(ADA, SNAKE, 40);
     assert_eq!(
-        hall.top(TETRIS, MAX_TOP),
+        hall.top(TETRIS, u32::MAX),
         [(ADA, 900), (BO, 700), (CY, 500)]
     );
-    assert_eq!(hall.top(SNAKE, MAX_TOP), [(ADA, 40), (CY, 40)]);
+    assert_eq!(hall.top(SNAKE, u32::MAX), [(ADA, 40), (CY, 40)]);
     assert_eq!(hall.top(TETRIS, 2), [(ADA, 900), (BO, 700)]);
     // one row at least: a limit of none is one
     assert_eq!(hall.top(TETRIS, 0), [(ADA, 900)]);
 }
 
 #[test]
-fn the_board_answers_at_most_max_top_rows() {
+fn the_board_answers_every_row_it_is_asked_for() {
     let mut hall = Hall::default();
-    let posted = u64::from(MAX_TOP) + 5;
+    let posted = 55;
     for who in 1..=posted {
         hall.ok(who, TETRIS, who * 10);
     }
     let top = hall.top(TETRIS, u32::MAX);
-    assert_eq!(top.len(), MAX_TOP as usize);
+    assert_eq!(top.len(), posted as usize);
     assert_eq!(top[0], (posted, posted * 10));
     let scores: Vec<u64> = top.iter().map(|(_, score)| *score).collect();
     assert!(scores.is_sorted_by(|a, b| a >= b), "{scores:?}");

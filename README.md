@@ -96,7 +96,7 @@ The program keeps scores and nothing else. An account posts the score a
 game of its ended on (`Op::Score { game, score }`); the program keeps the
 account's best of each game, never lowering it, and ranks every account's
 best on the game's board. `Query::Top` answers a game's board, highest
-first, at most 50 rows; `Query::Bests` an account's best of every game. A
+first, as many rows as it asks (one at least); `Query::Bests` an account's best of every game. A
 key that holds no account posts nothing.
 
 Tetris versus never touches the chain: the two views talk through the

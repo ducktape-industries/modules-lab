@@ -38,9 +38,6 @@ pub const GAMES: [&str; 6] = [
     "Invaders",
 ];
 
-/// The most rows one [`Query::Top`] answers.
-pub const MAX_TOP: u32 = 50;
-
 /// The live room Tetris versus is played in: the view's tracks there pass
 /// through the node, never the chain.
 pub const VERSUS: &str = "versus";
@@ -79,8 +76,7 @@ pub enum Op {
 #[ask(Arcade)]
 pub enum Query {
     /// A game's best scores, highest first, one an account; at one score
-    /// the smaller account first. At least one row is asked for and at
-    /// most [`MAX_TOP`].
+    /// the smaller account first: `limit` rows, one at least.
     #[ask(Reply::Top(Vec<Entry>))]
     #[reads(state::BOARD)]
     Top { game: u8, limit: u32 },
