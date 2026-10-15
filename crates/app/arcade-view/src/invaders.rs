@@ -23,8 +23,8 @@
 //! the shields with it. The tick is 16 ms, the arcade's frame; shots and
 //! the ship count in 1/16 px, so an invader shot falls 4 px in three ticks
 //! as there, and the same keys play the same game.
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Canvas, Div};
+use view::prelude::*;
+use view::{Canvas, Div};
 
 use crate::games::{Fact, Rng, square};
 

@@ -1,6 +1,6 @@
 //! One function per [`Query`](crate::Query), each named by [`Arcade::query`](crate::Arcade)'s
 //! match and each a bounded read of the tables in `state.rs`.
-use guest::{Error, QueryCtx};
+use ::program::{Error, QueryCtx};
 
 use crate::rules::game;
 use crate::state::{BEST, BOARD, highest_first};

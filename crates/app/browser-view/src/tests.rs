@@ -1,10 +1,10 @@
 //! The view on a fake host: each test drives the frame the way a person
 //! would and reads what the host would get. Every frame it sends is held
 //! to the host's sanitizer and accessibility audit.
-use ducktape_view_guest::Entity;
-use ducktape_view_guest::methods::{HostRoute, HostTitle, HostWidget};
-use ducktape_view_guest::testing::{StreamSender, TestAppContext};
-use ducktape_view_guest::wire::{Node, WebCommand, WebState, WidgetCommand};
+use view::Entity;
+use view::methods::{HostRoute, HostTitle, HostWidget};
+use view::testing::{StreamSender, TestAppContext};
+use view::wire::{Node, WebCommand, WebState, WidgetCommand};
 
 use crate::{Browser, address, host_shown};
 

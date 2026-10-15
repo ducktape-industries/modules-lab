@@ -15,11 +15,11 @@
 //! is never sent for a hover.
 use std::collections::BTreeMap;
 
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Canvas, CursorStyle, FontWeight, Point, Task};
 use gpui::{point, size};
 use serde::{Deserialize, Serialize};
 use trade::{Candle, MAX_ROWS, SPANS, Side};
+use view::prelude::*;
+use view::{Canvas, CursorStyle, FontWeight, Point, Task};
 
 use crate::{Trade, format};
 

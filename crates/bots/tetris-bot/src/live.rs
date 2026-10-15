@@ -78,9 +78,9 @@ impl Status {
     }
 }
 
-/// The versus room's namespace on `chain`: `<chain>/<module>/<room>`.
+/// The versus room's namespace on `chain`: `<chain>/<program>/<room>`.
 pub fn namespace(chain: &str) -> String {
-    format!("{chain}/{}/{}", arcade::MODULE, arcade::VERSUS)
+    format!("{chain}/{}/{}", arcade::PROGRAM, arcade::VERSUS)
 }
 
 /// One session with the node at `rpc` (`http(s)://host[:port]`), as the
@@ -102,12 +102,16 @@ pub async fn session(rpc: &str, key: &ed25519::PrivateKey) -> Stop {
         Ok(Err(error)) => return Stop::Lost(format!("no live socket at {url}: {error}")),
         Err(_) => return Stop::Lost(format!("the live socket at {url} did not open in time")),
     };
-    let welcome =
-        match tokio::time::timeout(HELLO_WAIT, handshake(&mut socket, status.genesis, key)).await {
-            Ok(Ok(welcome)) => welcome,
-            Ok(Err(stop)) => return stop,
-            Err(_) => return Stop::Lost("the node did not finish the handshake in time".into()),
-        };
+    let welcome = match tokio::time::timeout(
+        HELLO_WAIT,
+        handshake(&mut socket, status.genesis, &status.identity, key),
+    )
+    .await
+    {
+        Ok(Ok(welcome)) => welcome,
+        Ok(Err(stop)) => return stop,
+        Err(_) => return Stop::Lost("the node did not finish the handshake in time".into()),
+    };
     let chain = status.chain();
     crate::log(format!(
         "session open on {chain} as account {}",
@@ -161,10 +165,12 @@ where
     }
 }
 
-/// `Hello` → `Challenge` → `Proof` → `Welcome`, or the node's refusal.
+/// `Hello` → `Challenge` → `Proof` → `Welcome`, or the node's refusal. The proof names
+/// `node`, the key `/v1/status` gave, so it is a proof to that node alone.
 pub async fn handshake<S>(
     socket: &mut WebSocketStream<S>,
     chain: [u8; 32],
+    node: &[u8],
     key: &ed25519::PrivateKey,
 ) -> Result<Welcome, Stop>
 where
@@ -180,7 +186,7 @@ where
     let Control::Challenge(challenge) = control(socket).await? else {
         return Err(Stop::Lost("the node did not challenge the hello".into()));
     };
-    let preimage = live_wire::proof_preimage(&chain, &challenge.nonce, &public);
+    let preimage = live_wire::proof_preimage(&chain, node, &challenge.nonce, &public);
     let signature = key.sign(live_wire::NAMESPACE, &preimage).as_ref().to_vec();
     send(
         socket,

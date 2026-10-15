@@ -24,8 +24,8 @@
 use std::collections::VecDeque;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use ducktape_view_guest::Canvas;
-use ducktape_view_guest::prelude::*;
+use view::Canvas;
+use view::prelude::*;
 
 use crate::games::{Fact, Rng, square};
 

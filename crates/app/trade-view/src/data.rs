@@ -4,11 +4,11 @@
 //! declares them.
 use std::rc::Rc;
 
-use ducktape_view_guest::Paged;
-use ducktape_view_guest::host::Page;
-use ducktape_view_guest::prelude::*;
 use store::PageRequest;
 use trade::{MAX_ROWS, Op, Order, ask};
+use view::Paged;
+use view::host::Page;
+use view::prelude::*;
 
 use crate::Trade;
 use crate::chart::Candles;
