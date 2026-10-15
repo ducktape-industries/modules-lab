@@ -18,7 +18,7 @@ use arcade_view::tetris::Tetris;
 use arcade_view::versus::{Said, ask_track, asked, basis, board_track, deal, wait_track};
 use live_wire::Mode;
 
-use crate::ai::Player;
+use crate::ai::{Level, Player};
 
 /// What the bot asks the live client to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,6 +56,7 @@ pub enum Out {
 
 pub struct Bot {
     me: u64,
+    level: Level,
     /// What tells this lobby visit's tracks from the ones before it.
     nonce: String,
     /// The room's tracks up, each with the account that publishes it.
@@ -124,9 +125,10 @@ impl Match {
 
 impl Bot {
     /// The bot of account `me`, waiting in the lobby.
-    pub fn new(me: u64) -> Bot {
+    pub fn new(me: u64, level: Level) -> Bot {
         let mut bot = Bot {
             me,
+            level,
             nonce: String::new(),
             room: BTreeMap::new(),
             game: None,
@@ -193,7 +195,7 @@ impl Bot {
             tetris: deal(&basis, 0, me),
             basis,
             round: 0,
-            player: Player::default(),
+            player: Player::new(self.level),
             ask,
             said: 0,
             board,
@@ -334,7 +336,7 @@ mod tests {
 
     /// The bot in a match account 9 asked for under nonce `abc`.
     fn matched() -> Bot {
-        let mut bot = Bot::new(ME);
+        let mut bot = Bot::new(ME, Level::Normal);
         bot.announced(wait_track(THEM), THEM, true);
         bot.announced(ask_track(THEM, ME, "abc"), THEM, true);
         bot.out.clear();
@@ -348,7 +350,7 @@ mod tests {
 
     #[test]
     fn in_the_lobby_it_waits_and_never_challenges() {
-        let mut bot = Bot::new(ME);
+        let mut bot = Bot::new(ME, Level::Normal);
         assert_eq!(
             bot.out,
             [Out::Publish {
@@ -368,7 +370,7 @@ mod tests {
 
     #[test]
     fn a_challenge_is_asked_back_at_once_and_both_deal_alike() {
-        let mut bot = Bot::new(ME);
+        let mut bot = Bot::new(ME, Level::Normal);
         let nonce = bot.nonce.clone();
         bot.out.clear();
         bot.announced(ask_track(THEM, ME, "abc"), THEM, true);

@@ -136,7 +136,7 @@ async fn the_handshake_signs_the_nonce_and_a_refusal_is_the_nodes_word() {
 #[tokio::test(start_paused = true)]
 async fn a_challenge_from_the_room_is_a_match_over_the_wire() {
     let (bot, mut node) = linked().await;
-    let session = tokio::spawn(run(bot, NAMESPACE.into(), ME));
+    let session = tokio::spawn(run(bot, NAMESPACE.into(), ME, Level::Normal));
     let Control::Watch {
         request: room,
         namespace,
@@ -298,7 +298,7 @@ async fn a_challenge_from_the_room_is_a_match_over_the_wire() {
 #[tokio::test(start_paused = true)]
 async fn the_socket_is_kept_alive_and_a_silent_one_ends() {
     let (bot, mut node) = linked().await;
-    let session = tokio::spawn(run(bot, NAMESPACE.into(), ME));
+    let session = tokio::spawn(run(bot, NAMESPACE.into(), ME, Level::Normal));
     // the node reads, and reading answers each ping
     let mut pings = 0;
     while pings < 4 {

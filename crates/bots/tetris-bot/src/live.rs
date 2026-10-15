@@ -21,6 +21,7 @@ use tokio::time::{Instant, MissedTickBehavior};
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::ai::Level;
 use crate::versus::{Bot, Out};
 
 /// The keep-alive and the idle limit of a session: the app's.
@@ -85,7 +86,7 @@ pub fn namespace(chain: &str) -> String {
 
 /// One session with the node at `rpc` (`http(s)://host[:port]`), as the
 /// holder of `key`, to its end.
-pub async fn session(rpc: &str, key: &ed25519::PrivateKey) -> Stop {
+pub async fn session(rpc: &str, key: &ed25519::PrivateKey, level: Level) -> Stop {
     let rpc = rpc.trim_end_matches('/');
     let status = match status(rpc).await {
         Ok(status) => status,
@@ -113,7 +114,7 @@ pub async fn session(rpc: &str, key: &ed25519::PrivateKey) -> Stop {
         "session open on {chain} as account {}",
         welcome.account
     ));
-    run(socket, namespace(&chain), welcome.account).await
+    run(socket, namespace(&chain), welcome.account, level).await
 }
 
 async fn status(rpc: &str) -> Result<Status, String> {
@@ -463,11 +464,16 @@ fn aliased(frame: &mut WsFrame, alias: Alias) {
 
 /// The session as account `me`, the room `namespace` watched, to its end:
 /// the round's clock ticks the [`Bot`], and what it asks goes out.
-pub async fn run<S>(mut socket: WebSocketStream<S>, namespace: String, me: u64) -> Stop
+pub async fn run<S>(
+    mut socket: WebSocketStream<S>,
+    namespace: String,
+    me: u64,
+    level: Level,
+) -> Stop
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let mut bot = Bot::new(me);
+    let mut bot = Bot::new(me, level);
     let mut wire = Wire::new(namespace);
     let period = Duration::from_millis(arcade_view::tetris::PERIOD as u64);
     let mut clock = tokio::time::interval(period);

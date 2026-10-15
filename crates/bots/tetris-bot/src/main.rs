@@ -1,6 +1,6 @@
 //! tetris-bot: a Tetris versus player with an account of its own.
 //!
-//! `tetris-bot --rpc <node url> --key <device.key>`
+//! `tetris-bot --rpc <node url> --key <device.key> [--level easy|normal|hard|expert]`
 //!
 //! It holds one live session with the node at a time (`live.rs`) and plays
 //! from it as any other side does (`versus.rs`, `ai.rs`): it waits in the
@@ -15,6 +15,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use commonware_codec::DecodeExt as _;
 use commonware_cryptography::ed25519;
+
+use ai::Level;
 
 mod ai;
 mod live;
@@ -36,10 +38,12 @@ pub fn log(line: impl std::fmt::Display) {
 }
 
 fn main() -> ExitCode {
-    let (rpc, key) = match args() {
+    let (rpc, key, level) = match args() {
         Ok(read) => read,
         Err(why) => {
-            eprintln!("tetris-bot: {why}\nusage: tetris-bot --rpc <node url> --key <device.key>");
+            eprintln!(
+                "tetris-bot: {why}\nusage: tetris-bot --rpc <node url> --key <device.key> [--level easy|normal|hard|expert]"
+            );
             return ExitCode::from(2);
         }
     };
@@ -47,18 +51,26 @@ fn main() -> ExitCode {
         .enable_all()
         .build()
         .expect("a tokio runtime");
-    let why = runtime.block_on(serve(&rpc, &key));
+    log(format!("level {}", level.name()));
+    let why = runtime.block_on(serve(&rpc, &key, level));
     log(format!("stopped: {why}"));
     ExitCode::FAILURE
 }
 
-fn args() -> Result<(String, ed25519::PrivateKey), String> {
+fn args() -> Result<(String, ed25519::PrivateKey, Level), String> {
     let mut args = std::env::args().skip(1);
-    let (mut rpc, mut key) = (None, None);
+    let (mut rpc, mut key, mut level) = (None, None, Level::Normal);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--rpc" => rpc = args.next(),
             "--key" => key = args.next(),
+            "--level" => {
+                let name = args.next().unwrap_or_default();
+                level = Level::ALL
+                    .into_iter()
+                    .find(|level| level.name() == name)
+                    .ok_or(format!("no level {name}"))?;
+            }
             other => return Err(format!("unknown argument {other}")),
         }
     }
@@ -67,15 +79,15 @@ fn args() -> Result<(String, ed25519::PrivateKey), String> {
     let seed = std::fs::read(&path).map_err(|error| format!("{path}: {error}"))?;
     let key = ed25519::PrivateKey::decode(seed.as_slice())
         .map_err(|_| format!("{path} holds no ed25519 key"))?;
-    Ok((rpc, key))
+    Ok((rpc, key, level))
 }
 
 /// Sessions one after another, until the node refuses the account.
-async fn serve(rpc: &str, key: &ed25519::PrivateKey) -> String {
+async fn serve(rpc: &str, key: &ed25519::PrivateKey, level: Level) -> String {
     let mut failures = 0;
     loop {
         let opened = tokio::time::Instant::now();
-        let why = match live::session(rpc, key).await {
+        let why = match live::session(rpc, key, level).await {
             live::Stop::Refused(why) => return why,
             live::Stop::Lost(why) => why,
         };
