@@ -4,12 +4,12 @@
 //! can see: a price off the market's tick, an amount off the lot, an order
 //! the free funds do not cover. A reader with no account, or no link,
 //! reads the ticket and places nothing.
-use ducktape_view_guest::accesskit::Invalid;
-use ducktape_view_guest::design::Orientation;
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Div, FontWeight, Stateful, wire};
 use serde::{Deserialize, Serialize};
 use trade::{ASSETS, LOT, Level, Op, Side, UNIT};
+use view::accesskit::Invalid;
+use view::design::Orientation;
+use view::prelude::*;
+use view::{Div, FontWeight, Stateful, wire};
 
 use crate::chart::sided;
 use crate::{Trade, format, tabs};

@@ -6,8 +6,8 @@
 //! The board takes the keys: it is focused as the game starts, and every
 //! key the games read stops there. It hears Shift too, which gpui tells as
 //! a change of the modifiers, not as a key.
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{AnyElement, Div, FontWeight, Stateful};
+use view::prelude::*;
+use view::{AnyElement, Div, FontWeight, Stateful};
 
 use crate::data::Row;
 use crate::games::{Game, seed};

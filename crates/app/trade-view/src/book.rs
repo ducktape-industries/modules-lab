@@ -2,10 +2,10 @@
 //! are one list the arrows walk: the asks down to the best one, the last
 //! price between the sides, the bids from the best one down. A press on a
 //! row puts its price in the ticket.
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Div, FontWeight};
 use gpui::relative;
 use trade::{Book, Level, Side};
+use view::prelude::*;
+use view::{Div, FontWeight};
 
 use crate::chart::sided;
 use crate::data::DEPTH;

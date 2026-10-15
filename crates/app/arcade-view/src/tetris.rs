@@ -17,8 +17,8 @@
 //! other tick, and a turn, a drop or a hold does not repeat.
 use std::collections::VecDeque;
 
-use ducktape_view_guest::Canvas;
-use ducktape_view_guest::prelude::*;
+use view::Canvas;
+use view::prelude::*;
 
 use crate::games::{Fact, Rng, square};
 

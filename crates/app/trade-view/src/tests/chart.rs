@@ -2,8 +2,8 @@
 //! the wheel, a drag and the arrow keys. The pointer is where the host says
 //! it is, in the window's pixels; the chart is where `sample::chart_bounds`
 //! puts it.
-use ducktape_view_guest::wire::{CanvasCommand, CanvasShape, Node};
 use gpui::{MouseButton, MouseDownEvent, MouseMoveEvent, ScrollDelta, ScrollWheelEvent, point, px};
+use view::wire::{CanvasCommand, CanvasShape, Node};
 
 use super::*;
 

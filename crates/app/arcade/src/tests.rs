@@ -1,9 +1,9 @@
 //! The op once as meant and once as an attack: each refusal leaves the
 //! store exactly as it was. The harness is the [`Arcade`] module over a
 //! [`MockHost`]; the accounts that post each sign the env of their op.
-use guest::{Env, Error, MockHost, Module, QueryCtx, code};
+use ::program::{Env, Error, MockHost, Program, QueryCtx, code};
 
-use crate::{Arcade, Entry, GAMES, MAX_TOP, MODULE, Op, Query, Reply, describe};
+use crate::{Arcade, Entry, GAMES, MAX_TOP, Op, PROGRAM, Query, Reply, describe};
 
 const ADA: u64 = 1;
 const BO: u64 = 2;
@@ -20,7 +20,7 @@ struct Hall {
 
 impl Hall {
     fn env(&self) -> Env {
-        MockHost::env(MODULE)
+        MockHost::env(PROGRAM)
     }
 
     fn reads(&self) -> QueryCtx {

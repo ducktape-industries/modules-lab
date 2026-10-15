@@ -5,15 +5,15 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use ducktape_view_guest::host::Error;
-use ducktape_view_guest::methods::{HostSession, Query as Ask, Session, Submit};
-use ducktape_view_guest::testing::TestAppContext;
-use ducktape_view_guest::{Entity, MouseMoveEvent, Point, View, px};
 use store::{PageRequest, PageResponse};
 use trade::{
     Balance, Book, Candle, Fill, LOT, Level, Order, OrderState, Query, Reply, Side, Stats, Traded,
     UNIT,
 };
+use view::host::Error;
+use view::methods::{HostSession, Query as Ask, Session, Submit};
+use view::testing::TestAppContext;
+use view::{Entity, MouseMoveEvent, Point, View, px};
 
 /// 2026-10-07 14:00 UTC, the hour the boards' newest candle opens at.
 pub const NOW: u64 = 1_791_381_600_000;

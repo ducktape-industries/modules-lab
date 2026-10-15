@@ -1,8 +1,8 @@
 //! The ticket: the order it sends, what it works out from the funds and
 //! the book, and what it holds back.
-use ducktape_view_guest::methods::HostSession;
-use ducktape_view_guest::wire::Node;
 use trade::{LOT, Side};
+use view::methods::HostSession;
+use view::wire::Node;
 
 use super::*;
 
@@ -229,7 +229,7 @@ fn a_reader_with_no_account_reads_everything_and_sends_nothing() {
     assert!(!disabled(&cx, "trade-price"));
     assert!(reads(&cx)[4..].iter().all(|read| *read > 0));
     // the link lost: the ticket says so and places nothing
-    sessions.send(ducktape_view_guest::methods::Session {
+    sessions.send(view::methods::Session {
         connected: false,
         ..sample::session(Some(READER))
     });

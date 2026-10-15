@@ -21,9 +21,9 @@
 //! the newest of two held, and Space serves, lets a held ball go or fires.
 //! The field counts in units of 1/16 px, so a tick moves the ball by whole
 //! numbers and the same keys play the same game.
-use ducktape_view_guest::Canvas;
-use ducktape_view_guest::prelude::*;
 use gpui::point;
+use view::Canvas;
+use view::prelude::*;
 
 use crate::games::{Fact, Rng, square};
 

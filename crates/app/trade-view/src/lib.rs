@@ -17,14 +17,12 @@ mod ticket;
 
 use std::rc::Rc;
 
-use ducktape_view_guest::design::Orientation;
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{
-    Anchor, AnchoredPositionMode, Div, Edges, FontWeight, Paged, Point, Stateful,
-};
 use gpui::relative;
 use serde::{Deserialize, Serialize};
 use trade::{ASSETS, Balance, Book, Fill, MARKETS, Order, SPANS, Stats, Traded};
+use view::design::Orientation;
+use view::prelude::*;
+use view::{Anchor, AnchoredPositionMode, Div, Edges, FontWeight, Paged, Point, Stateful};
 
 use chart::Chart;
 use ticket::Ticket;
@@ -149,8 +147,8 @@ impl View for Trade {
         "Spot markets for practice funds: the chart, the book, your orders and balances.";
     const ICON: &'static str = "icons/chart-candlestick.svg";
     const CAPABILITIES: &'static [Capability] =
-        &[Capability::Module, Capability::Op, Capability::Host];
-    const TARGETS: &'static [&'static str] = &[trade::MODULE];
+        &[Capability::Program, Capability::Op, Capability::Host];
+    const TARGETS: &'static [&'static str] = &[trade::PROGRAM];
     // The pane layout's 256 px column, and beside it the 480 px a chart
     // needs for its tools and the panel for an order's columns.
     const MIN_WINDOW_WIDTH: u32 = 736;
