@@ -65,7 +65,7 @@ pub(crate) struct Versus {
     nonce: Option<String>,
     /// This side's challenge: to whom, and its `ask` track.
     pub(crate) ask: Option<(u64, Track<Said>)>,
-    pub(crate) game: Option<Match>,
+    pub(crate) game: Option<Playing>,
     /// What identity calls each account met; its number until it answers.
     names: BTreeMap<u64, String>,
     /// The program was asked to open the room: once, on the first
@@ -80,13 +80,10 @@ pub(crate) struct Versus {
     waits: Vec<Task<()>>,
 }
 
-/// A match: this side's well, and what it hears and sees of the other's.
-pub(crate) struct Match {
-    pub(crate) them: u64,
-    /// What every round is dealt from: both asks' accounts and nonces.
-    basis: String,
-    round: u64,
-    pub(crate) tetris: Box<Tetris>,
+/// A match on screen: the step both sides play ([`Match`]), and the
+/// tracks this view carries it on.
+pub(crate) struct Playing {
+    pub(crate) play: Match,
     board: Track<Vec<u8>>,
     /// The other side's `ask` track: what it says. Held: dropping it
     /// unsubscribes.
@@ -96,27 +93,52 @@ pub(crate) struct Match {
     theirs: String,
     seeing: Option<Task<()>>,
     pub(crate) their_well: Option<Well>,
-    pub(crate) end: Option<End>,
-    /// Who wants another round: this side, the other.
-    again: (bool, bool),
-    /// The other side left: no other round.
-    pub(crate) gone: bool,
     /// Shift is down, as the board last heard the modifiers.
     shift: bool,
 }
 
+/// A match as both sides play it, this view and `tetris-bot` alike: this
+/// side's well, what the other side said, and the rounds. Each step
+/// decides, and gives back what goes out on this side's tracks
+/// ([`Effect`]), which the caller carries out on its own.
+pub struct Match {
+    me: u64,
+    pub them: u64,
+    /// What every round is dealt from: both asks' accounts and nonces.
+    basis: String,
+    pub round: u64,
+    pub tetris: Box<Tetris>,
+    pub end: Option<End>,
+    /// Who wants another round: this side, the other.
+    pub again: (bool, bool),
+    /// The other side left: no other round.
+    pub gone: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum End {
+pub enum End {
     Won,
     Lost,
+}
+
+/// What a step of a [`Match`] sends on this side's tracks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Effect {
+    /// One object onto the `ask` track, in its current group.
+    Say(Said),
+    /// The well as it looks now onto the `board` track, in the round's
+    /// group.
+    Show,
+    /// A new round was dealt: the `ask` track goes on in a new group.
+    NewRound,
 }
 
 impl Versus {
     /// The clock's period while a round runs, and while its effects play
     /// out after it.
     pub(crate) fn period(&self) -> Option<i64> {
-        let game = self.game.as_ref()?;
-        (game.end.is_none() || game.tetris.animating()).then_some(tetris::PERIOD)
+        let play = &self.game.as_ref()?.play;
+        (play.running() || play.tetris.animating()).then_some(tetris::PERIOD)
     }
 
     fn name(&self, account: u64) -> String {
@@ -125,17 +147,113 @@ impl Versus {
             None => format!("account {account}"),
         }
     }
+
+    /// What a step of the match gave back, onto this side's tracks.
+    fn act(&mut self, effects: Vec<Effect>, host: &Host) {
+        let Some(game) = &mut self.game else {
+            return;
+        };
+        for effect in effects {
+            match effect {
+                Effect::Say(said) => {
+                    if let Some((_, ask)) = &mut self.ask {
+                        ask.send(host, &said);
+                    }
+                }
+                Effect::Show => {
+                    let cells = game.play.tetris.cells();
+                    game.board.send_latest(host, game.play.round, &cells);
+                }
+                Effect::NewRound => {
+                    if let Some((_, ask)) = &mut self.ask {
+                        ask.next_group(host);
+                    }
+                    game.their_well = None;
+                    self.focus = Some("versus-board");
+                }
+            }
+        }
+    }
 }
 
 impl Match {
-    /// The well as it looks now, to the other side.
-    fn show(&mut self, host: &Host) {
-        let cells = self.tetris.cells();
-        self.board.send_latest(host, self.round, &cells);
+    /// Round 0 of `me` against `them`, dealt from `basis`, and its well
+    /// shown.
+    pub fn new(me: u64, them: u64, basis: String) -> (Match, Vec<Effect>) {
+        let play = Match {
+            me,
+            them,
+            tetris: deal(&basis, 0, me),
+            basis,
+            round: 0,
+            end: None,
+            again: (false, false),
+            gone: false,
+        };
+        (play, vec![Effect::Show])
     }
 
-    fn running(&self) -> bool {
+    pub fn running(&self) -> bool {
         self.end.is_none()
+    }
+
+    /// One tick of the round: the well steps, and its attacks, its top-out
+    /// and its new look go out. After the round, nothing.
+    pub fn tick(&mut self) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        if !self.running() {
+            return effects;
+        }
+        let moved = self.tetris.tick();
+        let garbage = self.tetris.versus.as_mut().expect("a versus well");
+        let attacks = garbage.outgoing.drain(..);
+        effects.extend(attacks.map(|attack| Effect::Say(Said::Attack(attack))));
+        if self.tetris.over() {
+            effects.push(Effect::Say(Said::Out));
+            self.end = Some(End::Lost);
+        }
+        if moved {
+            effects.push(Effect::Show);
+        }
+        effects
+    }
+
+    /// What the other side said on its `ask` track.
+    pub fn heard(&mut self, said: Said) -> Vec<Effect> {
+        match said {
+            Said::Attack(attack) if self.running() && attack.fair() => {
+                self.tetris.receive(attack);
+                Vec::new()
+            }
+            Said::Out if self.running() => {
+                self.win();
+                Vec::new()
+            }
+            Said::Rematch => {
+                self.again.1 = true;
+                self.again()
+            }
+            // an attack after the round ended, or one no well sends
+            _ => Vec::new(),
+        }
+    }
+
+    /// The other side's `ask` track ended: it left, and this side wins.
+    pub fn left(&mut self) {
+        self.gone = true;
+        self.win();
+    }
+
+    /// This side wants another round, once this one ended and while the
+    /// other side is there.
+    pub fn rematch(&mut self) -> Vec<Effect> {
+        if self.running() || self.gone || self.again.0 {
+            return Vec::new();
+        }
+        self.again.0 = true;
+        let mut effects = vec![Effect::Say(Said::Rematch)];
+        effects.extend(self.again());
+        effects
     }
 
     /// The other side topped out or left: this one wins, and its well
@@ -145,6 +263,19 @@ impl Match {
             self.end = Some(End::Won);
             self.tetris.won();
         }
+    }
+
+    /// Both sides want another round: it is dealt from its number, and
+    /// each track goes on in a new group.
+    fn again(&mut self) -> Vec<Effect> {
+        if self.again != (true, true) || self.gone {
+            return Vec::new();
+        }
+        self.round += 1;
+        self.tetris = deal(&self.basis, self.round, self.me);
+        self.end = None;
+        self.again = (false, false);
+        vec![Effect::NewRound, Effect::Show]
     }
 }
 
@@ -365,7 +496,7 @@ impl Arcade {
             return;
         };
         if let Some(game) = &mut versus.game {
-            if game.seeing.is_none() && versus.room.get(&game.theirs) == Some(&game.them) {
+            if game.seeing.is_none() && versus.room.get(&game.theirs) == Some(&game.play.them) {
                 let board = track(game.theirs.clone());
                 game.seeing = Some(subscribe(cx, latest(board), Self::seen));
             }
@@ -378,30 +509,23 @@ impl Arcade {
         let Some(their_nonce) = asked(&versus.room, them, me) else {
             return;
         };
-        let basis = basis(me, nonce, them, &their_nonce);
+        let (play, shown) = Match::new(me, them, basis(me, nonce, them, &their_nonce));
         let board = Track::publish(
             cx,
             publish(board_track(me, nonce), LiveMode::Datagram),
             Self::published,
         );
         let their_ask = track(ask_track(them, me, &their_nonce));
-        let mut game = Match {
-            them,
-            tetris: deal(&basis, 0, me),
-            basis,
-            round: 0,
+        versus.game = Some(Playing {
+            play,
             board,
             _hearing: subscribe(cx, latest(their_ask), Self::heard),
             theirs: board_track(them, &their_nonce),
             seeing: None,
             their_well: None,
-            end: None,
-            again: (false, false),
-            gone: false,
             shift: false,
-        };
-        game.show(&cx.host());
-        versus.game = Some(game);
+        });
+        versus.act(shown, &cx.host());
         // waiting no more
         versus.waiting = None;
         versus.focus = Some("versus-board");
@@ -437,35 +561,27 @@ impl Arcade {
 
     /// What the other side said.
     fn heard(&mut self, said: Result<Received<Said>, Error>, cx: &mut Context<Self>) {
-        let Some(game) = self.versus.as_mut().and_then(|versus| versus.game.as_mut()) else {
+        let Some(versus) = &mut self.versus else {
+            return;
+        };
+        let Some(game) = &mut versus.game else {
             return;
         };
         match said {
-            Ok(Received::Object { value, .. }) => match value {
-                Said::Attack(attack) if game.running() && attack.fair() => {
-                    game.tetris.receive(attack)
-                }
-                Said::Out if game.running() => game.win(),
-                Said::Rematch => {
-                    game.again.1 = true;
-                    self.again(cx);
-                }
-                // an attack after the round ended, or one no well sends
-                _ => return,
-            },
+            Ok(Received::Object { value, .. }) => {
+                let effects = game.play.heard(value);
+                versus.act(effects, &cx.host());
+            }
             Ok(Received::Waiting | Received::Opened { .. } | Received::GroupEnd { .. }) => return,
             Err(refusal)
                 if refusal.code == refusal::PUBLISHER_GONE
                     || refusal.code == refusal::TRACK_ENDED =>
             {
-                game.gone = true;
-                game.win();
+                game.play.left();
                 // nobody is left to play again: this side's challenge ends
                 // with the match, or it reads as a fresh one when they
                 // come back
-                if let Some(versus) = &mut self.versus {
-                    versus.ask = None;
-                }
+                versus.ask = None;
             }
             Err(refusal) => return cx.log_refused("what the other side said", &refusal),
         }
@@ -486,94 +602,39 @@ impl Arcade {
         }
     }
 
-    /// One tick of a round: the well steps, and its attacks, its top-out
-    /// and its new look go to the other side. After the round only its
-    /// effects go on.
+    /// One tick of a round: the match steps, and what it says goes out.
+    /// After the round only its effects go on.
     pub(crate) fn versus_ticked(&mut self, cx: &mut Context<Self>) {
-        let Some(game) = self.versus.as_mut().and_then(|versus| versus.game.as_mut()) else {
+        let Some(versus) = &mut self.versus else {
             return;
         };
-        let faded = game.tetris.fade();
-        if faded {
-            cx.notify();
-        }
-        if !game.running() {
-            return self.settle(cx);
-        }
-        let Some(Versus {
-            game: Some(game),
-            ask: Some((_, ask)),
-            ..
-        }) = &mut self.versus
-        else {
+        let Some(game) = &mut versus.game else {
             return;
         };
-        let host = cx.host();
-        let moved = game.tetris.tick();
-        let garbage = game.tetris.versus.as_mut().expect("a versus well");
-        for attack in garbage.outgoing.drain(..) {
-            ask.send(&host, &Said::Attack(attack));
-        }
-        if game.tetris.over() {
-            ask.send(&host, &Said::Out);
-            game.end = Some(End::Lost);
-        }
-        if moved {
-            game.show(&host);
+        if game.play.tetris.fade() {
             cx.notify();
         }
-        if !game.running() {
+        let effects = game.play.tick();
+        let ended = !game.play.running();
+        if !effects.is_empty() {
+            versus.act(effects, &cx.host());
+            cx.notify();
+        }
+        if ended {
             self.settle(cx);
-            cx.notify();
         }
     }
 
     /// This side wants another round.
     fn rematch(&mut self, cx: &mut Context<Self>) {
-        let Some(Versus {
-            game: Some(game),
-            ask: Some((_, ask)),
-            ..
-        }) = &mut self.versus
-        else {
+        let Some(versus) = &mut self.versus else {
             return;
         };
-        if game.running() || game.gone || game.again.0 {
-            return;
-        }
-        game.again.0 = true;
-        ask.send(&cx.host(), &Said::Rematch);
-        self.again(cx);
-        cx.notify();
-    }
-
-    /// Both sides want another round: it is dealt from its number, and
-    /// each track goes on in a new group.
-    fn again(&mut self, cx: &mut Context<Self>) {
-        let Some(me) = self.session.account else {
+        let Some(game) = &mut versus.game else {
             return;
         };
-        let Some(Versus {
-            game: Some(game),
-            ask: Some((_, ask)),
-            focus,
-            ..
-        }) = &mut self.versus
-        else {
-            return;
-        };
-        if game.again != (true, true) || game.gone {
-            return;
-        }
-        let host = cx.host();
-        game.round += 1;
-        ask.next_group(&host);
-        game.tetris = deal(&game.basis, game.round, me);
-        game.end = None;
-        game.again = (false, false);
-        game.their_well = None;
-        game.show(&host);
-        *focus = Some("versus-board");
+        let effects = game.play.rematch();
+        versus.act(effects, &cx.host());
         self.settle(cx);
         cx.notify();
     }
@@ -590,7 +651,10 @@ impl Arcade {
 
     fn versus_key_down(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         if let Some(game) = self.running_game()
-            && game.tetris.key_down(&event.keystroke.key, event.is_held)
+            && game
+                .play
+                .tetris
+                .key_down(&event.keystroke.key, event.is_held)
         {
             cx.notify();
         }
@@ -598,7 +662,7 @@ impl Arcade {
 
     fn versus_key_up(&mut self, event: &KeyUpEvent) {
         if let Some(game) = self.running_game() {
-            game.tetris.key_up(&event.keystroke.key);
+            game.play.tetris.key_up(&event.keystroke.key);
         }
     }
 
@@ -612,15 +676,15 @@ impl Arcade {
             return;
         }
         if shift {
-            game.tetris.key_down("shift", false);
+            game.play.tetris.key_down("shift", false);
         } else {
-            game.tetris.key_up("shift");
+            game.play.tetris.key_up("shift");
         }
     }
 
-    fn running_game(&mut self) -> Option<&mut Match> {
+    fn running_game(&mut self) -> Option<&mut Playing> {
         let game = self.versus.as_mut()?.game.as_mut()?;
-        game.running().then_some(game)
+        game.play.running().then_some(game)
     }
 
     pub(crate) fn versus_screen(
@@ -637,7 +701,7 @@ impl Arcade {
         let against = versus
             .game
             .as_ref()
-            .map(|game| format!("against {}", versus.name(game.them)));
+            .map(|game| format!("against {}", versus.name(game.play.them)));
         let bar = div()
             .flex_none()
             .h(BAR_H)
@@ -782,7 +846,7 @@ impl Arcade {
         let theme = *theme;
         let versus = self.versus.as_ref().expect("versus is on screen");
         let game = versus.game.as_ref().expect("a match");
-        let them = versus.name(game.them);
+        let them = versus.name(game.play.them);
         let board = div()
             .id("versus-board")
             .border_1()
@@ -798,17 +862,17 @@ impl Arcade {
             .on_modifiers_changed(cx.listener(|view, event: &ModifiersChangedEvent, _, _| {
                 view.versus_modifiers(event)
             }));
-        let garbage = game.tetris.versus.as_ref().expect("a versus well");
+        let garbage = game.play.tetris.versus.as_ref().expect("a versus well");
         let stats = vec![
             ("Sent", garbage.sent.to_string()),
             ("Received", garbage.received.to_string()),
-            ("Level", game.tetris.level.to_string()),
+            ("Level", game.play.tetris.level.to_string()),
         ];
         tetris::stage(
             self.stage_room(),
-            &game.tetris,
+            &game.play.tetris,
             board,
-            self.ended(game, &them, cx, &theme),
+            self.ended(&game.play, &them, cx, &theme),
             stats,
             Some((them.clone(), game.their_well.as_ref())),
             &theme,

@@ -10,8 +10,9 @@ use view::methods::{
 use view::testing::Relay;
 
 use super::*;
+use crate::tetris::Attack;
 use crate::tetris::{self, COLS, Piece, ROWS};
-use crate::versus::{End, Match};
+use crate::versus::{Effect, End, Match, Said, basis, deal};
 
 /// Ada, account 1, and account 2, who has no name: each on its own host,
 /// linked, with the versus lobby open.
@@ -79,7 +80,15 @@ fn press(side: &mut Opened, keystroke: &str) {
 fn game<R>(side: &mut Opened, f: impl FnOnce(&mut Match) -> R) -> R {
     side.cx.update(&side.view, |arcade, _, _| {
         let versus = arcade.versus.as_mut().expect("versus on screen");
-        f(versus.game.as_mut().expect("a match"))
+        f(&mut versus.game.as_mut().expect("a match").play)
+    })
+}
+
+/// The other side's well, as `side` last saw it.
+fn their_well(side: &mut Opened) -> Option<tetris::Well> {
+    side.cx.update(&side.view, |arcade, _, _| {
+        let versus = arcade.versus.as_ref().expect("versus on screen");
+        versus.game.as_ref().expect("a match").their_well
     })
 }
 
@@ -137,8 +146,8 @@ fn two_in_the_lobby_see_each_other_and_a_challenge_accepted_starts_both_on_the_s
     // a round runs on both clocks, and each sees the other's well
     assert!(both.ada.ticks.subscribed() && both.two.ticks.subscribed());
     both.tick(1);
-    assert!(game(&mut both.ada, |game| game.their_well.is_some()));
-    assert!(game(&mut both.two, |game| game.their_well.is_some()));
+    assert!(their_well(&mut both.ada).is_some());
+    assert!(their_well(&mut both.two).is_some());
 }
 
 #[test]
@@ -202,7 +211,7 @@ fn a_tetris_sends_four_rows_that_rise_in_the_other_well_on_its_next_lock() {
         [row.clone(), row.clone(), row.clone(), row]
     );
     // and ada sees them in its view of the other well
-    let seen = game(&mut both.ada, |game| game.their_well.expect("their well"));
+    let seen = their_well(&mut both.ada).expect("their well");
     let floor = seen[ROWS as usize - 1];
     assert_eq!(floor[hole], None);
     assert_eq!(
@@ -428,4 +437,35 @@ fn a_grant_taken_back_stops_versus_and_asks_nothing_open() {
         &["Versus stopped: the room's program took the grant back"],
     );
     assert_eq!(both.ada.ops(), []);
+}
+
+#[test]
+fn the_match_step_alone_counts_an_attack_heard_and_deals_the_next_round_once_both_ask() {
+    let (mut play, shown) = Match::new(2, 1, basis(2, "b", 1, "a"));
+    assert_eq!(shown, [Effect::Show]);
+    let attack = Attack { lines: 3, hole: 4 };
+    assert_eq!(play.heard(Said::Attack(attack)), []);
+    let garbage = play.tetris.versus.as_ref().expect("a versus well");
+    assert_eq!((garbage.queued(), garbage.received), (3, 3));
+    // they top out: this side won, and wants another
+    assert_eq!(play.heard(Said::Out), []);
+    assert_eq!(play.end, Some(End::Won));
+    assert_eq!(play.tick(), [], "nothing steps after the round");
+    assert_eq!(play.rematch(), [Effect::Say(Said::Rematch)]);
+    assert_eq!(play.rematch(), [], "asked once");
+    // theirs deals round 1, from its number
+    assert_eq!(play.heard(Said::Rematch), [Effect::NewRound, Effect::Show]);
+    assert_eq!(
+        (play.round, play.end, play.again),
+        (1, None, (false, false))
+    );
+    let dealt = deal(&basis(2, "b", 1, "a"), 1, 2);
+    assert_eq!(
+        (play.tetris.piece, play.tetris.next),
+        (dealt.piece, dealt.next)
+    );
+    // a side that left: the other wins, and no round follows
+    play.left();
+    assert_eq!((play.end, play.gone), (Some(End::Won), true));
+    assert_eq!(play.rematch(), []);
 }

@@ -1,7 +1,8 @@
-//! The bot's side of Tetris versus, step for step as arcade-view plays a
-//! side (`arcade_view::versus`): the same track names, the same deal, the
-//! same words. It hears the room and the other side through the live
-//! client and says what to send in [`Bot::out`]:
+//! The bot's side of Tetris versus. The match is arcade-view's own step
+//! (`arcade_view::versus::Match`), the one a view plays: the same rules,
+//! track names, deal and words. This side routes it: it hears the room and
+//! the other side through the live client, and says what to send in
+//! [`Bot::out`]:
 //! - in the lobby it is up on `wait/<me>`;
 //! - the first challenge it sees it accepts by asking back, and it never
 //!   challenges; one match at a time;
@@ -14,8 +15,9 @@ use std::collections::BTreeMap;
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
 
-use arcade_view::tetris::Tetris;
-use arcade_view::versus::{Said, ask_track, asked, basis, board_track, deal, wait_track};
+use arcade_view::versus::{
+    Effect, End, Match, Said, ask_track, asked, basis, board_track, wait_track,
+};
 use live_wire::Mode;
 
 use crate::ai::{Level, Player};
@@ -61,66 +63,31 @@ pub struct Bot {
     nonce: String,
     /// The room's tracks up, each with the account that publishes it.
     room: BTreeMap<String, u64>,
-    game: Option<Match>,
+    game: Option<Playing>,
     pub out: Vec<Out>,
     /// What happened, a line an event.
     pub log: Vec<String>,
 }
 
-struct Match {
-    them: u64,
-    basis: String,
-    round: u64,
-    tetris: Box<Tetris>,
+/// A match the bot plays: the step every side plays ([`Match`]), its
+/// player, and the tracks it carries the match on.
+struct Playing {
+    play: Match,
     player: Player,
-    /// This side's ask track, and the objects said in its group.
+    /// This side's ask track, its group, and the objects said in it.
     ask: String,
+    group: u64,
     said: u32,
     /// This side's board track, and the wells shown this round.
     board: String,
     shown: u32,
     /// The other side's ask track: what it says.
     theirs: String,
-    end: Option<End>,
-    /// Who wants another round: this side, the other.
-    again: (bool, bool),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum End {
-    Won,
-    Lost,
 }
 
 /// A nonce no other lobby visit of this process drew.
 fn nonce() -> String {
     format!("{:016x}", RandomState::new().build_hasher().finish())
-}
-
-impl Match {
-    fn running(&self) -> bool {
-        self.end.is_none()
-    }
-
-    fn say(&mut self, out: &mut Vec<Out>, said: Said) {
-        out.push(Out::Send {
-            name: self.ask.clone(),
-            group: self.round,
-            body: borsh::to_vec(&said).expect("borsh encodes an in-memory value"),
-        });
-        self.said += 1;
-    }
-
-    /// The well as it looks now, to the other side.
-    fn show(&mut self, out: &mut Vec<Out>) {
-        out.push(Out::Latest {
-            name: self.board.clone(),
-            group: self.round,
-            object: self.shown,
-            body: borsh::to_vec(&self.tetris.cells()).expect("borsh encodes an in-memory value"),
-        });
-        self.shown += 1;
-    }
 }
 
 impl Bot {
@@ -173,7 +140,6 @@ impl Bot {
         let ask = ask_track(me, them, &self.nonce);
         let board = board_track(me, &self.nonce);
         let theirs = ask_track(them, me, &their_nonce);
-        let basis = basis(me, &self.nonce, them, &their_nonce);
         self.out.extend([
             Out::Publish {
                 name: ask.clone(),
@@ -190,46 +156,31 @@ impl Bot {
                 name: wait_track(me),
             },
         ]);
-        let mut game = Match {
-            them,
-            tetris: deal(&basis, 0, me),
-            basis,
-            round: 0,
+        let (play, shown) = Match::new(me, them, basis(me, &self.nonce, them, &their_nonce));
+        self.game = Some(Playing {
+            play,
             player: Player::new(self.level),
             ask,
+            group: 0,
             said: 0,
             board,
             shown: 0,
             theirs,
-            end: None,
-            again: (false, false),
-        };
-        game.show(&mut self.out);
+        });
         self.log
             .push(format!("challenge from account {them}: round 0"));
-        self.game = Some(game);
+        self.act(shown);
     }
 
-    /// One tick of the round's clock: a key at the player's pace, the
-    /// well's step, and what it sends.
+    /// One tick of the round's clock: a key at the player's pace, then the
+    /// match's step.
     pub fn tick(&mut self) {
-        let Some(game) = self.game.as_mut().filter(|game| game.running()) else {
+        let Some(game) = self.game.as_mut().filter(|game| game.play.running()) else {
             return;
         };
-        game.player.step(&mut game.tetris);
-        let moved = game.tetris.tick();
-        let garbage = game.tetris.versus.as_mut().expect("a versus well");
-        let attacks: Vec<_> = garbage.outgoing.drain(..).collect();
-        for attack in attacks {
-            game.say(&mut self.out, Said::Attack(attack));
-        }
-        if game.tetris.over() {
-            game.say(&mut self.out, Said::Out);
-            game.end = Some(End::Lost);
-        }
-        if moved {
-            game.show(&mut self.out);
-        }
+        game.player.step(&mut game.play.tetris);
+        let effects = game.play.tick();
+        self.act(effects);
         self.ended_round();
     }
 
@@ -238,19 +189,8 @@ impl Bot {
         let Some(game) = self.game.as_mut().filter(|game| game.theirs == name) else {
             return;
         };
-        match said {
-            Said::Attack(attack) if game.running() && attack.fair() => {
-                let garbage = game.tetris.versus.as_mut().expect("a versus well");
-                garbage.incoming.push_back(attack);
-            }
-            Said::Out if game.running() => game.end = Some(End::Won),
-            Said::Rematch => {
-                game.again.1 = true;
-                self.again();
-            }
-            // an attack after the round ended, or one no well sends
-            _ => {}
-        }
+        let effects = game.play.heard(said);
+        self.act(effects);
         self.ended_round();
     }
 
@@ -262,7 +202,7 @@ impl Bot {
         // gone, whether or not the room has said so yet
         self.room.remove(name);
         self.log
-            .push(format!("account {} left the match", game.them));
+            .push(format!("account {} left the match", game.play.them));
         self.out.extend([
             Out::Unpublish { name: game.ask },
             Out::Unpublish { name: game.board },
@@ -276,54 +216,74 @@ impl Bot {
         let Some(game) = self.game.as_mut() else {
             return;
         };
-        let Some(end) = game.end.filter(|_| !game.again.0) else {
+        let play = &mut game.play;
+        let Some(end) = play.end.filter(|_| !play.again.0) else {
             return;
         };
         self.log.push(format!(
             "round {} against account {}: {}, score {}, {} rows",
-            game.round,
-            game.them,
+            play.round,
+            play.them,
             match end {
                 End::Won => "won",
                 End::Lost => "lost",
             },
-            game.tetris.score(),
-            game.tetris.lines
+            play.tetris.score(),
+            play.tetris.lines
         ));
-        game.again.0 = true;
-        game.say(&mut self.out, Said::Rematch);
-        self.again();
+        let effects = play.rematch();
+        self.act(effects);
     }
 
-    /// Both sides want another round: it is dealt from its number, and the
-    /// ask track goes on in a new group.
-    fn again(&mut self) {
-        let Some(game) = self.game.as_mut().filter(|game| game.again == (true, true)) else {
+    /// What a step of the match gave back, onto the bot's tracks.
+    fn act(&mut self, effects: Vec<Effect>) {
+        let Some(game) = &mut self.game else {
             return;
         };
-        if game.said > 0 {
-            self.out.push(Out::EndGroup {
-                name: game.ask.clone(),
-                group: game.round,
-            });
+        for effect in effects {
+            match effect {
+                Effect::Say(said) => {
+                    self.out.push(Out::Send {
+                        name: game.ask.clone(),
+                        group: game.group,
+                        body: borsh::to_vec(&said).expect("borsh encodes an in-memory value"),
+                    });
+                    game.said += 1;
+                }
+                Effect::Show => {
+                    let cells = game.play.tetris.cells();
+                    self.out.push(Out::Latest {
+                        name: game.board.clone(),
+                        group: game.play.round,
+                        object: game.shown,
+                        body: borsh::to_vec(&cells).expect("borsh encodes an in-memory value"),
+                    });
+                    game.shown += 1;
+                }
+                Effect::NewRound => {
+                    if game.said > 0 {
+                        self.out.push(Out::EndGroup {
+                            name: game.ask.clone(),
+                            group: game.group,
+                        });
+                    }
+                    game.group += 1;
+                    game.said = 0;
+                    game.shown = 0;
+                    self.log.push(format!(
+                        "round {} against account {}",
+                        game.play.round, game.play.them
+                    ));
+                }
+            }
         }
-        game.round += 1;
-        game.said = 0;
-        game.shown = 0;
-        game.tetris = deal(&game.basis, game.round, self.me);
-        game.end = None;
-        game.again = (false, false);
-        game.show(&mut self.out);
-        self.log.push(format!(
-            "round {} against account {}",
-            game.round, game.them
-        ));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use arcade_view::tetris::{Attack, COLS, Piece, ROWS};
+    use arcade_view::versus::deal;
 
     use super::*;
 
@@ -344,7 +304,7 @@ mod tests {
         bot
     }
 
-    fn game(bot: &mut Bot) -> &mut Match {
+    fn game(bot: &mut Bot) -> &mut Playing {
         bot.game.as_mut().expect("a match")
     }
 
@@ -399,7 +359,7 @@ mod tests {
         assert_eq!(bot.log, ["challenge from account 9: round 0"]);
         // the other side deals from the same basis, its own way round
         let theirs = deal(&basis(THEM, "abc", ME, &nonce), 0, THEM);
-        let ours = &game(&mut bot).tetris;
+        let ours = &game(&mut bot).play.tetris;
         assert_eq!((ours.piece, ours.next), (theirs.piece, theirs.next));
         // one match at a time: a second challenge waits
         bot.out.clear();
@@ -411,6 +371,7 @@ mod tests {
     fn in_a_round_it_lands_pieces_shows_its_well_and_takes_garbage() {
         let mut bot = matched();
         game(&mut bot)
+            .play
             .tetris
             .versus
             .as_mut()
@@ -420,7 +381,7 @@ mod tests {
         for _ in 0..3000 {
             bot.tick();
         }
-        let tetris = &game(&mut bot).tetris;
+        let tetris = &game(&mut bot).play.tetris;
         let blocks = tetris
             .well
             .iter()
@@ -445,7 +406,7 @@ mod tests {
     fn rows_cleared_attack_on_its_ask_track() {
         let mut bot = matched();
         let ask = game(&mut bot).ask.clone();
-        let tetris = &mut game(&mut bot).tetris;
+        let tetris = &mut game(&mut bot).play.tetris;
         for row in &mut tetris.well[ROWS as usize - 4..] {
             *row = [Some(Piece::O); COLS as usize];
             row[0] = None;
@@ -479,7 +440,7 @@ mod tests {
         let mut bot = matched();
         let ask = game(&mut bot).ask.clone();
         bot.heard("ask/9/13/abc", Said::Out);
-        assert_eq!(game(&mut bot).end, Some(End::Won));
+        assert_eq!(game(&mut bot).play.end, Some(End::Won));
         assert_eq!(
             bot.out,
             [Out::Send {
@@ -498,24 +459,23 @@ mod tests {
                 group: 0
             }
         );
-        let (round, basis) = (game(&mut bot).round, game(&mut bot).basis.clone());
-        assert_eq!(round, 1);
-        assert_eq!(game(&mut bot).end, None);
-        let dealt = deal(&basis, 1, ME);
-        assert_eq!(game(&mut bot).tetris.next, dealt.next);
+        assert_eq!(game(&mut bot).play.round, 1);
+        assert_eq!(game(&mut bot).play.end, None);
+        let dealt = deal(&basis(ME, &bot.nonce, THEM, "abc"), 1, ME);
+        assert_eq!(game(&mut bot).play.tetris.next, dealt.next);
         // its well tops out: it says so, and asks for another
         bot.out.clear();
-        let tetris = &mut game(&mut bot).tetris;
+        let tetris = &mut game(&mut bot).play.tetris;
         // blocks where every piece comes in, beside a column the O falls
         for row in &mut tetris.well[..2] {
             row[3..7].fill(Some(Piece::Z));
         }
         tetris.piece = Piece::O;
         tetris.at = (7, 0);
-        while game(&mut bot).running() {
+        while game(&mut bot).play.running() {
             bot.tick();
         }
-        assert_eq!(game(&mut bot).end, Some(End::Lost));
+        assert_eq!(game(&mut bot).play.end, Some(End::Lost));
         let words: Vec<Said> = bot
             .out
             .iter()
@@ -555,6 +515,6 @@ mod tests {
         );
         assert_eq!(bot.log, ["account 9 left the match"]);
         bot.announced(ask_track(7, ME, "def"), 7, true);
-        assert_eq!(game(&mut bot).them, 7);
+        assert_eq!(game(&mut bot).play.them, 7);
     }
 }
