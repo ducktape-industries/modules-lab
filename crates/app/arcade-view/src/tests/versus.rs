@@ -678,3 +678,21 @@ fn a_round_off_screen_runs_on_and_lets_go_of_the_keys_it_held() {
     assert!(alone.ada.ticks.subscribed(), "the round runs on");
     assert_eq!(at(&mut alone.ada), start - 1);
 }
+
+#[test]
+fn a_hand_over_to_their_reconnected_app_ends_nothing() {
+    let mut alone = alone();
+    alone.opened(None);
+    alone.says(0, 0, Said::Attack(Attack { lines: 2, hole: 3 }));
+    // their app reconnected: the node hands this subscription to its new
+    // session, the open group cut short, and the host may open it anew
+    alone.said.send(LiveItem::GroupEnd {
+        group: 0,
+        complete: false,
+    });
+    alone.opened(Some(0));
+    alone.still_running();
+    assert_eq!(alone.queued(), 2);
+    alone.says(0, 1, Said::Out);
+    assert_eq!(game(&mut alone.ada, |game| game.end), Some(End::Won));
+}

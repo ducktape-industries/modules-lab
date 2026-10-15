@@ -186,7 +186,8 @@ track going on in a new group, numbered by the round: of the other side's
 `ask` a view acts on its round's group only, and in it only past what it
 acted on, so a re-open's replay counts nothing twice. A side whose `ask`
 track ends mid-match, whatever the node gives as the reason, hands the
-other the win. The match itself, the round's step, is `versus::Match`,
+other the win; an app that reconnects does not end it, the node handing
+its subscribers over to the new session. The match itself, the round's step, is `versus::Match`,
 which the bot plays too. Versus is played as the account the session
 seats: another one, or none, joins the lobby anew. A round runs on while
 the view is off screen, the keys it held let go. Versus posts no score:

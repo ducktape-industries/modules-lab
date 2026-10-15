@@ -20,7 +20,9 @@
 //! current round's group, and in it only past the newest object it acted
 //! on. A side whose `ask` track ends while the match is on, for any reason
 //! the node gives (`publisher_gone` when its app went, `track_ended` when
-//! it left), has left, and the other wins.
+//! it left), has left, and the other wins. A side's app that reconnects
+//! ends nothing: the node hands its subscribers over to the new session,
+//! its open group cut short.
 //!
 //! The node lets an account into the room only once the program wrote its
 //! grant row, and holds what the lobby asks till then: a `Waiting` sends
