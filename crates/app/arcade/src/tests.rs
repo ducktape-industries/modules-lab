@@ -169,14 +169,21 @@ fn a_game_that_is_not_there_is_refused() {
 }
 
 #[test]
-fn open_versus_grants_everyone_the_room_once_and_leaves_the_scores_be() {
+fn open_versus_grants_everyone_the_room_under_their_own_number_and_leaves_the_scores_be() {
     let mut hall = Hall::default();
     hall.ok(ADA, TETRIS, 1_200);
     let scores = hall.store.borrow().state.clone();
     hall.send(BO, Op::OpenVersus).expect("opened");
     let ctx = hall.store.exec(hall.env());
     let row: Option<Grant> = ctx.record(b"live/versus/*").expect("a row");
-    assert_eq!(row, Some(Grant::all()));
+    let own = ["wait/{account}", "ask/{account}/*", "board/{account}/*"];
+    assert_eq!(
+        row,
+        Some(Grant {
+            publish: own.map(String::from).to_vec(),
+            subscribe: vec!["*".into()],
+        })
+    );
     let opened = hall.store.borrow().state.clone();
     let added: Vec<_> = opened
         .keys()
