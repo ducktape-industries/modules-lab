@@ -1,7 +1,8 @@
 //! A game on screen: a bar with the way back and the pause, the board, and
 //! beside it the panel, its score, the reader's best and the game's own
 //! facts. Paused or over, an overlay lies on the board and the panel shows
-//! the game's top ten.
+//! the game's top ten. Tetris has no panel: its screen is the Guideline's
+//! ([`tetris::stage`]), and its overlay holds the top ten.
 //!
 //! The board takes the keys: it is focused as the game starts, and every
 //! key the games read stops there. It hears Shift too, which gpui tells as
@@ -16,7 +17,7 @@ use crate::{Arcade, Play, Post, breakout, invaders, merge, mines, snake, tetris}
 
 /// The bar over the board, the panel's width and the room around a board.
 pub(crate) const BAR_H: Pixels = px(44.);
-pub(crate) const PANEL_W: f32 = 216.;
+const PANEL_W: f32 = 216.;
 const GUTTER: f32 = 16.;
 
 /// Every key a game or the screen reads: the board keeps them from the
@@ -125,11 +126,16 @@ impl Arcade {
     }
 
     /// What the bar and the panel leave a board.
-    pub(crate) fn room(&self) -> (f32, f32) {
+    fn room(&self) -> (f32, f32) {
         (
             self.viewport.0 - PANEL_W - 2. * GUTTER,
             self.viewport.1 - f32::from(BAR_H) - 2. * GUTTER,
         )
+    }
+
+    /// What the bar leaves Tetris's screen.
+    pub(crate) fn stage_room(&self) -> (f32, f32) {
+        (self.viewport.0, self.viewport.1 - f32::from(BAR_H))
     }
 
     /// A press on Minesweeper's field: the left button shows the cell under
@@ -229,14 +235,42 @@ impl Arcade {
             )
             .child(div().flex_1())
             .children(pause);
-        div().flex_1().min_h_0().flex().flex_col().child(bar).child(
-            div()
+        let body = match play.game.ready() {
+            Some(Game::Tetris(tetris)) => self.tetris(tetris, cx, &theme).into_any_element(),
+            _ => div()
                 .flex_1()
                 .min_h_0()
                 .flex()
                 .child(self.stage(cx, &theme))
-                .child(self.panel(&theme)),
+                .child(self.panel(&theme))
+                .into_any_element(),
+        };
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(bar)
+            .child(body)
+    }
+
+    /// Tetris's screen: its score, lines, level and the reader's best
+    /// under hold, and on the well the overlay, with the top ten.
+    fn tetris(&self, tetris: &Tetris, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
+        let play = self.play.as_ref().expect("a game is on screen");
+        let mut stats = vec![("Score", design::grouped(tetris.score()))];
+        stats.extend(tetris.facts());
+        stats.push(("Your best", self.best_shown(play.which, tetris.score())));
+        tetris::stage(
+            self.stage_room(),
+            tetris,
+            self.board(cx, theme),
+            self.overlay(cx, theme, true),
+            stats,
+            None,
+            theme,
         )
+        .id("arcade-stage")
     }
 
     /// The board, centred in what the bar and the panel leave, with the
@@ -244,15 +278,10 @@ impl Arcade {
     fn stage(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
         let play = self.play.as_ref().expect("a game is on screen");
         let room = self.room();
-        let label = match play.game.ready() {
-            Some(game) => label(game, play),
-            None => format!("{} board", arcade::GAMES[play.which]),
-        };
-        // Minesweeper's field tells where the host laid it, so a press's
-        // place in the window is a cell
-        let mines = matches!(play.game.ready(), Some(Game::Mines(_)));
         let drawn = match play.game.ready() {
             Some(Game::Mines(field)) => {
+                // Minesweeper's field tells where the host laid it, so a
+                // press's place in the window is a cell
                 let measured = cx.listener(|view: &mut Arcade, bounds: &Bounds<Pixels>, _, _| {
                     if let Some(play) = &mut view.play {
                         play.field = Some((bounds.origin.x.into(), bounds.origin.y.into()));
@@ -265,7 +294,29 @@ impl Arcade {
             Some(game) => draw(game, room, theme),
             None => div().into_any_element(),
         };
-        let board = div()
+        div()
+            .id("arcade-stage")
+            .relative()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(theme.background)
+            .child(self.board(cx, theme).child(drawn))
+            .children(self.overlay(cx, theme, false))
+    }
+
+    /// The board's frame, which takes the keys, and on Minesweeper's field
+    /// the presses.
+    fn board(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
+        let play = self.play.as_ref().expect("a game is on screen");
+        let label = match play.game.ready() {
+            Some(game) => label(game, play),
+            None => format!("{} board", arcade::GAMES[play.which]),
+        };
+        let mines = matches!(play.game.ready(), Some(Game::Mines(_)));
+        div()
             .id("arcade-board")
             .relative()
             .flex_none()
@@ -298,22 +349,11 @@ impl Arcade {
                         }),
                     )
             })
-            .child(drawn);
-        div()
-            .id("arcade-stage")
-            .relative()
-            .flex_1()
-            .min_w_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(theme.background)
-            .child(board)
-            .children(self.overlay(cx, theme))
     }
 
-    /// What lies on the board: why there is no game, the pause, or the end.
-    fn overlay(&self, cx: &mut Context<Self>, theme: &Theme) -> Option<Div> {
+    /// What lies on the board: why there is no game, the pause, or the
+    /// end; with `top`, the top ten under it.
+    fn overlay(&self, cx: &mut Context<Self>, theme: &Theme, top: bool) -> Option<Div> {
         let theme = *theme;
         let play = self.play.as_ref()?;
         let back = design::button(
@@ -367,6 +407,7 @@ impl Arcade {
             .ready()
             .filter(|game| game.over())
             .map(|game| design::mono(design::grouped(game.score())).text_size(px(28.)));
+        let top = top.then(|| self.top(&theme).w_full());
         Some(
             div()
                 .absolute()
@@ -407,7 +448,8 @@ impl Arcade {
                                 .gap(design::space::SM)
                                 .children(first)
                                 .child(back),
-                        ),
+                        )
+                        .children(top),
                 ),
         )
     }
@@ -436,10 +478,7 @@ impl Arcade {
                 )
         };
         let score = game.map_or(0, Game::score);
-        let best = match (self.session.account, self.best(play.which)) {
-            (None, _) => "—".to_owned(),
-            (Some(_), best) => design::grouped(best.unwrap_or(0).max(score)),
-        };
+        let best = self.best_shown(play.which, score);
         let facts = game
             .map(Game::facts)
             .unwrap_or_default()
@@ -474,12 +513,17 @@ impl Arcade {
             )
             .child(fact("Your best", best))
             .children(facts)
-            .children(match game {
-                Some(Game::Tetris(tetris)) => Some(pieces(tetris, &theme)),
-                _ => None,
-            })
             .children(game.map(|game| design::quiet(game.keys(), &theme)))
             .when(still, |panel| panel.child(self.top(&theme)))
+    }
+
+    /// The reader's best of game `which` with `score` played: none without
+    /// an account.
+    fn best_shown(&self, which: usize, score: u64) -> String {
+        match (self.session.account, self.best(which)) {
+            (None, _) => "—".to_owned(),
+            (Some(_), best) => design::grouped(best.unwrap_or(0).max(score)),
+        }
     }
 
     /// The game's top ten, or what stands in for them.
@@ -525,28 +569,6 @@ impl Arcade {
     }
 }
 
-/// Tetris's Hold and Next, side by side under their captions.
-pub(crate) fn pieces(tetris: &Tetris, theme: &Theme) -> Div {
-    let boxed = |label: &'static str, drawn| {
-        div()
-            .flex()
-            .flex_col()
-            .gap(design::space::XS)
-            .child(
-                div()
-                    .text_size(design::text::CAPTION)
-                    .text_color(theme.muted)
-                    .child(label),
-            )
-            .child(drawn)
-    };
-    div()
-        .flex()
-        .gap(design::space::LG)
-        .child(boxed("Hold", tetris.draw_hold(16., theme)))
-        .child(boxed("Next", tetris.draw_next(16., theme)))
-}
-
 /// One row of the top ten: the rank, the name and the score; the reader's
 /// own in ink.
 fn entry(rank: usize, row: &Row, mine: Option<u64>, theme: &Theme) -> Div {
@@ -581,9 +603,7 @@ fn posted(post: &Post) -> String {
 /// The game's board, as large as `room` holds it.
 fn draw(game: &Game, room: (f32, f32), theme: &Theme) -> AnyElement {
     match game {
-        Game::Tetris(tetris) => tetris
-            .draw(cell(room, (tetris::COLS, tetris::ROWS)), theme)
-            .into_any_element(),
+        Game::Tetris(_) => unreachable!("Tetris lays out its own screen"),
         Game::Snake(snake) => snake
             .draw(cell(room, (snake::COLS, snake::ROWS)), theme)
             .into_any_element(),
@@ -607,7 +627,7 @@ fn draw(game: &Game, room: (f32, f32), theme: &Theme) -> AnyElement {
 }
 
 /// The whole pixels a cell of a `cols` x `rows` grid takes in `room`.
-pub(crate) fn cell(room: (f32, f32), (cols, rows): (i32, i32)) -> f32 {
+fn cell(room: (f32, f32), (cols, rows): (i32, i32)) -> f32 {
     (room.0 / cols as f32)
         .min(room.1 / rows as f32)
         .floor()

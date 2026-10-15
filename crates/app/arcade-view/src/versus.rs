@@ -35,11 +35,8 @@ use program::role::Identity;
 
 use crate::Arcade;
 use crate::games::seed;
-use crate::play::{self, BAR_H, PANEL_W};
+use crate::play::{self, BAR_H};
 use crate::tetris::{self, Attack, Tetris, Well};
-
-/// The px a cell of the other side's well takes beside the panel's text.
-const THEIR_CELL: f32 = 10.;
 
 /// What a side says on its `ask` track once the match is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -409,7 +406,7 @@ impl Arcade {
             Ok(Received::Object { value, .. }) => match value {
                 Said::Attack(attack) if game.running() && attack.fair() => {
                     let garbage = game.tetris.versus.as_mut().expect("a versus well");
-                    garbage.incoming.push_back(attack);
+                    garbage.receive(attack);
                 }
                 Said::Out if game.running() => game.end = Some(End::Won),
                 Said::Rematch => {
@@ -730,19 +727,15 @@ impl Arcade {
             .children(empty)
     }
 
-    /// The match: this side's well, taking the keys, and beside it the
-    /// other's, with this side's hold, next and the garbage on its way.
-    fn match_view(&self, cx: &mut Context<Self>, theme: &Theme) -> Div {
+    /// The match: this side's well, taking the keys, its hold, next and
+    /// the garbage on its way, and beside it the other's.
+    fn match_view(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
         let theme = *theme;
         let versus = self.versus.as_ref().expect("versus is on screen");
         let game = versus.game.as_ref().expect("a match");
-        let room = self.room();
-        let cell = play::cell(room, (tetris::COLS, tetris::ROWS));
         let them = versus.name(game.them);
         let board = div()
             .id("versus-board")
-            .relative()
-            .flex_none()
             .border_1()
             .border_color(theme.border)
             .role(Role::Figure)
@@ -753,87 +746,24 @@ impl Arcade {
                 cx.listener(|view, event: &KeyDownEvent, _, cx| view.versus_key_down(event, cx)),
             )
             .on_key_up(cx.listener(|view, event: &KeyUpEvent, _, _| view.versus_key_up(event)))
-            .on_modifiers_changed(
-                cx.listener(|view, event: &ModifiersChangedEvent, _, _| {
-                    view.versus_modifiers(event)
-                }),
-            )
-            .child(game.tetris.draw(cell, &theme));
-        let stage = div()
-            .id("versus-stage")
-            .relative()
-            .flex_1()
-            .min_w_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(theme.background)
-            .child(board)
-            .children(self.ended(game, &them, cx, &theme));
-        let empty = [[None; tetris::COLS as usize]; tetris::ROWS as usize];
-        let their_well = tetris::draw_well(
-            game.their_well.as_ref().unwrap_or(&empty),
-            THEIR_CELL,
+            .on_modifiers_changed(cx.listener(|view, event: &ModifiersChangedEvent, _, _| {
+                view.versus_modifiers(event)
+            }));
+        let garbage = game.tetris.versus.as_ref().expect("a versus well");
+        let stats = vec![
+            ("Sent", garbage.sent.to_string()),
+            ("Received", garbage.received.to_string()),
+        ];
+        tetris::stage(
+            self.stage_room(),
+            &game.tetris,
+            board,
+            self.ended(game, &them, cx, &theme),
+            stats,
+            Some((them.clone(), game.their_well.as_ref())),
             &theme,
-        );
-        let queued = game
-            .tetris
-            .versus
-            .as_ref()
-            .map_or(0, |garbage| garbage.queued());
-        let caption = |label: &'static str| {
-            div()
-                .text_size(design::text::CAPTION)
-                .text_color(theme.muted)
-                .child(label)
-        };
-        let panel = div()
-            .flex_none()
-            .w(px(PANEL_W))
-            .p(design::space::LG)
-            .flex()
-            .flex_col()
-            .gap(design::space::MD)
-            .border_l_1()
-            .border_color(theme.border)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(design::space::XS)
-                    .child(caption("Against"))
-                    .child(
-                        div()
-                            .font_weight(FontWeight::MEDIUM)
-                            .truncate()
-                            .child(them.clone()),
-                    )
-                    .child(
-                        div()
-                            .id("versus-theirs")
-                            .flex_none()
-                            .border_1()
-                            .border_color(theme.border)
-                            .role(Role::Figure)
-                            .aria_label(format!("{them}'s well"))
-                            .child(their_well),
-                    ),
-            )
-            .child(play::pieces(&game.tetris, &theme))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(1.))
-                    .child(caption("Incoming"))
-                    .child(
-                        design::mono(queued.to_string())
-                            .text_size(design::text::SECTION)
-                            .font_weight(FontWeight::MEDIUM),
-                    ),
-            )
-            .child(design::quiet(tetris::KEYS, &theme));
-        div().flex_1().min_h_0().flex().child(stage).child(panel)
+        )
+        .id("versus-stage")
     }
 
     /// What lies on the well once a round ends: who won, and another round

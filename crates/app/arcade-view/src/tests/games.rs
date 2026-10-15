@@ -16,7 +16,10 @@ fn a_tetris_key_moves_the_piece_on_the_next_tick_and_an_idle_tick_draws_nothing(
     let mut opened = seated();
     opened.start(TETRIS);
     assert_eq!(opened.clocks(), [tetris::PERIOD]);
-    shows(&opened.cx, &["Level", "Lines", "Next"]);
+    shows(
+        &opened.cx,
+        &["HOLD", "NEXT", "SCORE", "LEVEL", "LINES", "YOUR BEST"],
+    );
     let at = |opened: &mut Opened| {
         opened.game(|game| match game {
             Game::Tetris(tetris) => tetris.at,
@@ -36,10 +39,18 @@ fn a_tetris_key_moves_the_piece_on_the_next_tick_and_an_idle_tick_draws_nothing(
 }
 
 #[test]
+fn tetris_paused_shows_the_top_ten_on_its_well() {
+    let mut opened = seated();
+    opened.start(TETRIS);
+    assert!(!opened.cx.has_text("Top 10"));
+    opened.key("p");
+    shows(&opened.cx, &["Paused", "Top 10", "No scores yet."]);
+}
+
+#[test]
 fn a_held_arrow_slides_the_tetris_piece_to_the_wall_and_c_puts_it_in_hold() {
     let mut opened = seated();
     opened.start(TETRIS);
-    shows(&opened.cx, &["Hold", "Next"]);
     let piece = |opened: &mut Opened| {
         opened.game(|game| match game {
             Game::Tetris(tetris) => (tetris.piece, tetris.hold, tetris.falling()),

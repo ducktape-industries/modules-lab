@@ -4,8 +4,8 @@
 //! drop is 1 and a cell of hard drop 2. Ten rows clear a level, and the
 //! level sets how many ticks a row of fall takes, 48 at level 0 down to
 //! one from level 29. The tick is 16 ms, a frame: the pieces come from a
-//! shuffled bag of the seven, each once a bag, and the panel shows the
-//! next three. A key is read on the next tick. The rest is the Tetris Guideline's: a turn that does not fit
+//! shuffled bag of the seven, each once a bag, and the queue shows the
+//! next five. A key is read on the next tick. The rest is the Tetris Guideline's: a turn that does not fit
 //! tries SRS's kicks, the I its own; a piece that lands locks after half a
 //! second, which a move or a turn on the ground starts again, 15 times a
 //! piece at most (the 16th locks it); a hard drop locks at once; C or
@@ -24,15 +24,15 @@
 use std::collections::VecDeque;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use ducktape_view_guest::Canvas;
 use ducktape_view_guest::prelude::*;
+use ducktape_view_guest::{Canvas, Div, FontWeight, Stateful};
 
 use crate::games::{Fact, Rng, square};
 
 pub(crate) const COLS: i32 = 10;
 pub(crate) const ROWS: i32 = 20;
 pub(crate) const KEYS: &str =
-    "← → move, ↑ or X turns, Z turns back, ↓ drops a row, Space drops, C or Shift holds";
+    "← → move   ↑ X turn   Z turn back   ↓ soft drop   Space drop   C Shift hold";
 pub(crate) const PERIOD: i64 = 16;
 
 /// The ticks a row of fall takes at each level; one from level 29 on.
@@ -43,8 +43,12 @@ const GRAVITY: [u32; 29] = [
 const CLEARED: [u64; 5] = [0, 40, 100, 300, 1200];
 /// The keys that may wait for a tick.
 const WAITING: usize = 8;
-/// The pieces the panel shows coming.
-const NEXT: usize = 3;
+/// The pieces the queue shows coming.
+const NEXT: usize = 5;
+/// A piece in hold or coming, as a fraction of the well's cell: the held
+/// one and the next larger, the rest of the queue smaller.
+const NEAR: f32 = 0.75;
+const FAR: f32 = 0.6;
 /// SRS's kicks for a clockwise turn out of each of the four states, as the
 /// Guideline writes them (x right, y up); a turn back out of state s + 1
 /// tries the same, negated. The first that fits is the turn.
@@ -173,6 +177,10 @@ pub(crate) struct Garbage {
     /// Where an attack's hole goes. Never the bag's own: a draw from it
     /// would deal this side other pieces than the other side's.
     holes: Rng,
+    /// The rows this well's attacks carried, and the rows the other
+    /// side's brought, this round.
+    pub(crate) sent: u32,
+    pub(crate) received: u32,
 }
 
 impl Garbage {
@@ -182,7 +190,15 @@ impl Garbage {
             outgoing: Vec::new(),
             tetris: false,
             holes: Rng::new(seed),
+            sent: 0,
+            received: 0,
         }
+    }
+
+    /// The other side's attack, queued to rise.
+    pub(crate) fn receive(&mut self, attack: Attack) {
+        self.received += u32::from(attack.lines);
+        self.incoming.push_back(attack);
     }
 
     /// The rows queued to rise.
@@ -217,6 +233,7 @@ impl Garbage {
         if lines > 0 {
             let hole = self.holes.below(COLS as u64) as u8;
             self.outgoing.push(Attack { lines, hole });
+            self.sent += u32::from(lines);
         }
         false
     }
@@ -666,27 +683,24 @@ impl Tetris {
         drawn
     }
 
-    /// The pieces coming, the first on top, each in a box of four by two
-    /// cells of `cell` px and half a cell apart.
-    pub(crate) fn draw_next(&self, cell: f32, theme: &Theme) -> Canvas {
-        let drawn = canvas()
-            .w(px(4. * cell))
-            .h(px((2.5 * NEXT as f32 - 0.5) * cell));
+    /// The pieces coming, `width` px wide beside a well of `cell` px: the
+    /// first on top, each centred in its slot.
+    pub(crate) fn draw_next(&self, width: f32, cell: f32, theme: &Theme) -> Canvas {
+        let drawn = canvas().w(px(width)).h(px(queue(cell)));
+        let mut top = 0.;
         (0..).zip(self.next).fold(drawn, |drawn, (at, coming)| {
-            piece(
-                drawn,
-                coming,
-                cell,
-                2.5 * at as f32 * cell,
-                coming.color(theme),
-            )
+            let size = ((if at == 0 { NEAR } else { FAR }) * cell).floor();
+            let slot = square(0., top, width, 3. * size);
+            top += 3. * size;
+            piece(drawn, coming, size, slot, coming.color(theme))
         })
     }
 
-    /// The piece in hold, as one coming is drawn; faint once hold is used
+    /// The piece in hold, as the next is drawn; faint once hold is used
     /// for the piece falling.
-    pub(crate) fn draw_hold(&self, cell: f32, theme: &Theme) -> Canvas {
-        let drawn = canvas().w(px(4. * cell)).h(px(2. * cell));
+    pub(crate) fn draw_hold(&self, width: f32, cell: f32, theme: &Theme) -> Canvas {
+        let size = (NEAR * cell).floor();
+        let drawn = canvas().w(px(width)).h(px(3. * size));
         let Some(held) = self.hold else {
             return drawn;
         };
@@ -694,8 +708,14 @@ impl Tetris {
             true => theme.border_strong,
             false => held.color(theme),
         };
-        piece(drawn, held, cell, 0., color)
+        piece(drawn, held, size, square(0., 0., width, 3. * size), color)
     }
+}
+
+/// The px the queue takes beside a well of `cell` px: a slot a piece, its
+/// two rows and one between, at the piece's own size.
+fn queue(cell: f32) -> f32 {
+    3. * ((NEAR * cell).floor() + (NEXT - 1) as f32 * (FAR * cell).floor())
 }
 
 /// Every block a cell may hold, in [`Tetris::cells`]' order.
@@ -749,6 +769,242 @@ pub(crate) fn draw_well(well: &Well, cell: f32, theme: &Theme) -> Canvas {
     drawn
 }
 
+/// The least and the most px a cell of the well takes on screen.
+const CELL_MIN: u16 = 16;
+const CELL_MAX: u16 = 40;
+/// The screen's px beside its cells: the least room at an edge and
+/// between versus's two groups; a box's border, both sides; a box's label;
+/// and under the well a gap, then a line for the garbage coming and one
+/// for the keys.
+const GUTTER: f32 = 16.;
+const FRAME: f32 = 2.;
+const LABEL: f32 = 20.;
+const FOOT_GAP: f32 = 6.;
+const LINE: f32 = 17.;
+const FOOTER: f32 = FOOT_GAP + 2. * LINE;
+
+/// Where the screen's parts lie in its room, in px from its top left.
+pub(crate) struct Layout {
+    /// A cell of the well.
+    pub(crate) cell: f32,
+    pub(crate) hold: Bounds<Pixels>,
+    /// Under hold, down to the well's foot.
+    pub(crate) stats: Bounds<Pixels>,
+    /// Versus: the garbage meter, between hold and the well.
+    pub(crate) meter: Option<Bounds<Pixels>>,
+    /// The well in its frame.
+    pub(crate) well: Bounds<Pixels>,
+    pub(crate) next: Bounds<Pixels>,
+    /// Under hold, the well and next: the garbage coming and the keys.
+    pub(crate) footer: Bounds<Pixels>,
+    /// Versus: the other side's name and well, at half the cell.
+    pub(crate) theirs: Option<Bounds<Pixels>>,
+}
+
+/// The screen in a room `width` by `height`: the largest whole cell from
+/// [`CELL_MIN`] to [`CELL_MAX`] at which the well's rows and the footer
+/// fit the height, and hold, the well and next (and the other's well)
+/// the width. Hold and next lie hard against the well, level with its
+/// top; the group, or versus's two, spaced evenly across.
+pub(crate) fn layout((width, height): (f32, f32), versus: bool) -> Layout {
+    let half = |cell: f32| (cell / 2.).floor();
+    let widths = |cell: f32| {
+        let meter = if versus { half(cell) } else { 0. };
+        let theirs = if versus {
+            COLS as f32 * half(cell) + FRAME
+        } else {
+            0.
+        };
+        (
+            meter,
+            8. * cell + meter + COLS as f32 * cell + FRAME,
+            theirs,
+        )
+    };
+    let gaps = if versus { 3. } else { 2. };
+    let fits = |cell: &f32| {
+        let (_, own, theirs) = widths(*cell);
+        own + theirs + gaps * GUTTER <= width
+            && ROWS as f32 * cell + FRAME + FOOTER + 2. * GUTTER <= height
+    };
+    let cell = (CELL_MIN..=CELL_MAX)
+        .rev()
+        .map(f32::from)
+        .find(fits)
+        .unwrap_or(f32::from(CELL_MIN));
+    let (meter, own, theirs) = widths(cell);
+    let (side, tall) = (4. * cell, ROWS as f32 * cell + FRAME);
+    let left = ((width - own - theirs) / gaps).floor().max(0.);
+    let top = ((height - tall - FOOTER) / 2.).floor().max(0.);
+    let hold = square(left, top, side, FRAME + LABEL + 3. * (NEAR * cell).floor());
+    let below = top + f32::from(hold.size.height) + half(cell);
+    let well = left + side + meter;
+    Layout {
+        cell,
+        hold,
+        stats: square(left, below, side, top + tall - below),
+        meter: versus.then(|| square(left + side, top, meter, tall)),
+        well: square(well, top, COLS as f32 * cell + FRAME, tall),
+        next: square(
+            well + COLS as f32 * cell + FRAME,
+            top,
+            side,
+            FRAME + LABEL + queue(cell),
+        ),
+        footer: square(left, top + tall, own, FOOTER),
+        theirs: versus.then(|| {
+            let tall = LABEL + ROWS as f32 * half(cell) + FRAME;
+            square(2. * left + own, top, theirs, tall)
+        }),
+    }
+}
+
+/// The screen in `room`, alone or in versus: hold and `stats` under it,
+/// the well drawn in `board`, the element that takes the keys, with
+/// `card` centred on it, the queue, and under them the keys; in versus
+/// the garbage meter and `theirs`, the other side's name and well.
+pub(crate) fn stage(
+    room: (f32, f32),
+    tetris: &Tetris,
+    board: Stateful<Div>,
+    card: Option<Div>,
+    stats: Vec<Fact>,
+    theirs: Option<(String, Option<&Well>)>,
+    theme: &Theme,
+) -> Div {
+    let garbage = tetris.versus.as_ref();
+    let at = layout(room, garbage.is_some());
+    let cell = at.cell;
+    let caps = |text: &str| {
+        div()
+            .text_size(design::text::CAPTION)
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(theme.muted)
+            .child(text.to_uppercase())
+    };
+    let boxed = |bounds: Bounds<Pixels>, name: &str, drawn: Canvas| {
+        place(div(), bounds)
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.surface)
+            .flex()
+            .flex_col()
+            .items_center()
+            .child(caps(name).h(px(LABEL)).flex().items_center())
+            .child(drawn)
+    };
+    let inside = f32::from(at.hold.size.width) - FRAME;
+    let stats = place(div(), at.stats)
+        .flex()
+        .flex_col()
+        .gap(design::space::SM)
+        .children(stats.into_iter().map(|(name, value)| {
+            div().flex().flex_col().child(caps(name)).child(
+                design::mono(value)
+                    .text_size(design::text::SECTION)
+                    .font_weight(FontWeight::MEDIUM),
+            )
+        }));
+    let queued = garbage.map_or(0, Garbage::queued);
+    let meter = at.meter.map(|bounds| {
+        let (width, height) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+        let ground = canvas()
+            .w(px(width))
+            .h(px(height))
+            .rect(square(0., 0., width, height), theme.surface);
+        // a well's cell a row coming, from the floor up
+        let drawn = (1..=queued.min(ROWS as u32)).fold(ground, |drawn, row| {
+            let y = height - 1. - row as f32 * cell;
+            drawn.rect(square(1., y + 1., width - 2., cell - 2.), theme.danger)
+        });
+        place(div(), bounds).child(drawn)
+    });
+    let coming = (queued > 0).then(|| {
+        div()
+            .flex()
+            .gap(design::space::XXS)
+            .child(caps("Incoming").text_color(theme.danger))
+            .child(
+                design::mono(queued.to_string())
+                    .text_size(design::text::CAPTION)
+                    .text_color(theme.danger),
+            )
+    });
+    let footer = place(div(), at.footer)
+        .pt(px(FOOT_GAP))
+        .flex()
+        .flex_col()
+        .child(div().h(px(LINE)).pl(at.hold.size.width).children(coming))
+        .child(
+            div().h(px(LINE)).flex().justify_center().child(
+                div()
+                    .flex_none()
+                    .whitespace_nowrap()
+                    .text_size(design::text::CAPTION)
+                    .text_color(theme.muted)
+                    .child(KEYS),
+            ),
+        );
+    let theirs = at.theirs.zip(theirs).map(|(bounds, (name, well))| {
+        let empty = [[None; COLS as usize]; ROWS as usize];
+        place(div(), bounds)
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .h(px(LABEL))
+                    .text_size(design::text::SECONDARY)
+                    .font_weight(FontWeight::MEDIUM)
+                    .truncate()
+                    .child(name.clone()),
+            )
+            .child(
+                div()
+                    .id("versus-theirs")
+                    .border_1()
+                    .border_color(theme.border)
+                    .role(Role::Figure)
+                    .aria_label(format!("{name}'s well"))
+                    .child(draw_well(
+                        well.unwrap_or(&empty),
+                        (cell / 2.).floor(),
+                        theme,
+                    )),
+            )
+    });
+    div()
+        .relative()
+        .flex_1()
+        .min_h_0()
+        .bg(theme.background)
+        .child(boxed(
+            at.hold,
+            "Hold",
+            tetris.draw_hold(inside, cell, theme),
+        ))
+        .child(stats)
+        .children(meter)
+        .child(place(board, at.well).child(tetris.draw(cell, theme)))
+        .child(boxed(
+            at.next,
+            "Next",
+            tetris.draw_next(inside, cell, theme),
+        ))
+        .child(footer)
+        .children(theirs)
+        .children(card.map(|card| place(div(), at.well).child(card)))
+}
+
+/// `element` at `bounds` in its parent.
+fn place<E: Styled>(element: E, bounds: Bounds<Pixels>) -> E {
+    element
+        .absolute()
+        .left(bounds.origin.x)
+        .top(bounds.origin.y)
+        .w(bounds.size.width)
+        .h(bounds.size.height)
+}
+
 /// The key's move, if it is one.
 fn read(key: &str) -> Option<Move> {
     Some(match key {
@@ -763,15 +1019,24 @@ fn read(key: &str) -> Option<Move> {
     })
 }
 
-/// `shown` unturned in `color` on `drawn`, `cell` px a cell, in a box of
-/// four by two cells `top` px down.
-fn piece(mut drawn: Canvas, shown: Piece, cell: f32, top: f32, color: Hsla) -> Canvas {
-    // the I lies in its box's second row: drawn a row up
-    let up = i32::from(shown == Piece::I);
-    for (x, y) in shown.cells(0) {
+/// `shown` unturned in `color` on `drawn`, `cell` px a cell, centred in
+/// `slot`.
+fn piece(mut drawn: Canvas, shown: Piece, cell: f32, slot: Bounds<Pixels>, color: Hsla) -> Canvas {
+    let cells = shown.cells(0);
+    // the first cell and the px across, on one axis, centred in `room`
+    let span = |axis: fn(&(i32, i32)) -> i32, room: Pixels| {
+        let first = cells.iter().map(axis).min().unwrap_or(0);
+        let last = cells.iter().map(axis).max().unwrap_or(0);
+        let across = (last - first + 1) as f32 * cell;
+        (first, ((f32::from(room) - across) / 2.).floor())
+    };
+    let (left, x) = span(|cell| cell.0, slot.size.width);
+    let (top, y) = span(|cell| cell.1, slot.size.height);
+    let (x, y) = (f32::from(slot.origin.x) + x, f32::from(slot.origin.y) + y);
+    for (dx, dy) in cells {
         let at = square(
-            x as f32 * cell + 1.,
-            top + (y - up) as f32 * cell + 1.,
+            x + (dx - left) as f32 * cell + 1.,
+            y + (dy - top) as f32 * cell + 1.,
             cell - 2.,
             cell - 2.,
         );
@@ -1187,12 +1452,12 @@ mod tests {
     }
 
     #[test]
-    fn the_panel_shows_three_coming_and_they_come_in_that_order() {
+    fn the_queue_shows_five_coming_and_they_come_in_that_order() {
         let mut tetris = Tetris::new(9);
         let coming = tetris.next;
-        assert_eq!(coming.len(), 3);
+        assert_eq!(coming.len(), 5);
         let mut came = Vec::new();
-        for _ in 0..3 {
+        for _ in 0..5 {
             tetris.tap("space");
             tetris.tick();
             came.push(tetris.piece);
@@ -1203,7 +1468,7 @@ mod tests {
         tetris.tap("c");
         tetris.tick();
         assert_eq!(tetris.piece, after[0]);
-        assert_eq!(tetris.next[..2], after[1..]);
+        assert_eq!(tetris.next[..4], after[1..]);
     }
 
     /// The attacks `garbage` made, emptied.
@@ -1247,15 +1512,19 @@ mod tests {
     fn what_is_sent_cancels_the_garbage_queued_first() {
         let mut garbage = Garbage::new(1);
         let mut well = [[None; COLS as usize]; ROWS as usize];
-        garbage
-            .incoming
-            .extend([Attack { lines: 3, hole: 0 }, Attack { lines: 2, hole: 9 }]);
+        garbage.receive(Attack { lines: 3, hole: 0 });
+        garbage.receive(Attack { lines: 2, hole: 9 });
         garbage.trade(4, &mut well);
         assert!(sent(&mut garbage).is_empty(), "four cancel four");
         assert_eq!(garbage.incoming, [Attack { lines: 1, hole: 9 }]);
         garbage.trade(3, &mut well);
         assert_eq!(sent(&mut garbage), [1], "two cancel one and send one");
         assert!(garbage.incoming.is_empty());
+        assert_eq!(
+            (garbage.sent, garbage.received),
+            (1, 5),
+            "sent counts what left, received what came, cancelled or not"
+        );
     }
 
     #[test]
@@ -1355,6 +1624,108 @@ mod tests {
         let mut past = cells.clone();
         past[0] = 9;
         assert_eq!(read_cells(&past), None, "no block is 9");
+    }
+
+    /// `bounds`' left, top, right and bottom.
+    fn edges(bounds: Bounds<Pixels>) -> [f32; 4] {
+        let (x, y) = (f32::from(bounds.origin.x), f32::from(bounds.origin.y));
+        let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+        [x, y, x + w, y + h]
+    }
+
+    #[test]
+    fn the_screen_takes_one_cell_from_the_room_and_lays_its_parts_apart_inside_it() {
+        // the three windows as the view's pane, less the bar: the cell,
+        // the group's left edge and top, and versus's other well's left
+        // edge; then the panes the app leaves the view in those windows
+        // (its sidebar and title bar off), the narrowest the app lays the
+        // view out at, a narrower one, and the tests' own pane
+        let placed = [
+            ((1600., 956.), false, Some((40., 439., 57., None))),
+            ((1600., 956.), true, Some((40., 218., 57., Some(1178.)))),
+            ((1000., 656.), false, Some((29., 238., 17., None))),
+            ((1000., 656.), true, Some((29., 106., 17., Some(750.)))),
+            ((700., 856.), false, Some((37., 16., 37., None))),
+            ((700., 856.), true, Some((27., 22., 137., Some(545.)))),
+        ];
+        let panes = [
+            (1380., 920.),
+            (780., 620.),
+            (560., 820.),
+            (480., 820.),
+            (766., 457.),
+        ]
+        .into_iter()
+        .flat_map(|room| [(room, false, None), (room, true, None)]);
+        for (room, versus, place) in placed.into_iter().chain(panes) {
+            let (width, height) = room;
+            let case = format!("{width} x {height}, versus {versus}");
+            let at = layout(room, versus);
+            let cell = at.cell;
+            let [left, top, ..] = edges(at.hold);
+            if let Some(place) = place {
+                let theirs = at.theirs.map(|theirs| edges(theirs)[0]);
+                assert_eq!((cell, left, top, theirs), place, "{case}");
+            }
+            assert!(
+                (f32::from(CELL_MIN)..=f32::from(CELL_MAX)).contains(&cell),
+                "{case}"
+            );
+            let mut parts = vec![at.hold, at.stats, at.well, at.next, at.footer];
+            parts.extend(at.meter.into_iter().chain(at.theirs));
+            assert_eq!(parts.len(), if versus { 7 } else { 5 }, "{case}");
+            for (n, part) in parts.iter().enumerate() {
+                let [l, t, r, b] = edges(*part);
+                assert!(
+                    l >= 0. && t >= 0. && r <= width && b <= height,
+                    "{case}: {part:?} leaves the room"
+                );
+                for other in &parts[n + 1..] {
+                    assert!(!part.intersects(other), "{case}: {part:?} on {other:?}");
+                }
+            }
+            // the well is ten by twenty cells in its frame; hold, or in
+            // versus the meter, and next lie against it, level with its top
+            let [wl, wt, wr, wb] = edges(at.well);
+            assert_eq!(
+                (wr - wl, wb - wt),
+                (10. * cell + 2., 20. * cell + 2.),
+                "{case}"
+            );
+            let [_, hold_top, hold_right, hold_bottom] = edges(at.hold);
+            let [next_left, next_top, next_right, _] = edges(at.next);
+            assert_eq!((hold_top, next_top, next_left), (wt, wt, wr), "{case}");
+            match at.meter.map(edges) {
+                Some([ml, mt, mr, mb]) => {
+                    assert_eq!((ml, mr, mt, mb), (hold_right, wl, wt, wb), "{case}")
+                }
+                None => assert_eq!(hold_right, wl, "{case}"),
+            }
+            // under hold, room for four stats; under it all, the footer
+            let [stats_left, stats_top, _, stats_bottom] = edges(at.stats);
+            assert!(stats_left == left && stats_top > hold_bottom, "{case}");
+            assert!(stats_bottom - stats_top >= 4. * 40., "{case}");
+            let [fl, ft, fr, fb] = edges(at.footer);
+            assert_eq!((fl, ft, fr), (left, wb, next_right), "{case}");
+            // even margins: above and below, and either side of each group
+            assert!(top >= GUTTER && (height - fb - top).abs() <= 1., "{case}");
+            let gaps = match at.theirs.map(edges) {
+                Some([tl, tt, tr, tb]) => {
+                    let half = (cell / 2.).floor();
+                    assert_eq!(
+                        (tr - tl, tb - tt, tt),
+                        (10. * half + 2., LABEL + 20. * half + 2., wt),
+                        "{case}: the other well at half the cell, level with ours"
+                    );
+                    vec![left, tl - next_right, width - tr]
+                }
+                None => vec![left, width - next_right],
+            };
+            let (least, most) = gaps
+                .iter()
+                .fold((f32::MAX, 0f32), |(l, m), gap| (l.min(*gap), m.max(*gap)));
+            assert!(least >= GUTTER && most - least <= 2., "{case}: {gaps:?}");
+        }
     }
 
     #[test]

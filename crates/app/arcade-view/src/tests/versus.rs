@@ -120,12 +120,13 @@ fn two_in_the_lobby_see_each_other_and_a_challenge_accepted_starts_both_on_the_s
     assert_eq!(game(&mut both.two, |game| game.them), 1);
     shows(
         &both.ada.cx,
-        &["against account 2", "Incoming", "Hold", "Next"],
+        &["against account 2", "HOLD", "NEXT", "SENT", "RECEIVED"],
     );
+    assert!(!both.ada.cx.has_text("INCOMING"), "nothing on its way yet");
     shows(&both.two.cx, &["against ada"]);
     assert_eq!(both.ada.focused().as_deref(), Some("versus-board"));
     assert_eq!(both.two.focused().as_deref(), Some("versus-board"));
-    // one deal for both: the piece falling and the three coming
+    // one deal for both: the piece falling and the five coming
     let dealt = |side: &mut Opened| game(side, |game| (game.tetris.piece, game.tetris.next));
     assert_eq!(dealt(&mut both.ada), dealt(&mut both.two));
     // a round runs on both clocks, and each sees the other's well
@@ -173,7 +174,15 @@ fn a_tetris_sends_four_rows_that_rise_in_the_other_well_on_its_next_lock() {
     });
     assert_eq!(queued.len(), 1);
     assert_eq!(queued[0].lines, 4);
-    shows(&both.two.cx, &["Incoming", "4"]);
+    shows(&both.two.cx, &["INCOMING", "4"]);
+    let counts = |side: &mut Opened| {
+        game(side, |game| {
+            let garbage = game.tetris.versus.as_ref().unwrap();
+            (garbage.sent, garbage.received)
+        })
+    };
+    assert_eq!(counts(&mut both.ada), (4, 0));
+    assert_eq!(counts(&mut both.two), (0, 4));
     // a drop that clears nothing: the four rise under it
     press(&mut both.two, "space");
     both.tick(1);
