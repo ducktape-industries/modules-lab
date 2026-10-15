@@ -12,10 +12,11 @@ it is.
 | `crates/app/arcade` | the high scores of six classic games, and the door to Tetris versus's live room: the program |
 | `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, the boards, and Tetris versus over live tracks |
 | `crates/app/browser-view` | a view alone, no program: web pages in tabs on the SDK's `web` piece |
+| `crates/bots/tetris-bot` | a Tetris versus player with an account of its own: a client of the node's live lane, playing the view's own match step |
 
-The SDK is modules `dev` at the rev the app pins (`Cargo.toml`, `sdk-line`).
-The app refuses a view built against another wire, so the pin moves when the
-app's does.
+The SDK is programs at the rev the app pins (`Cargo.toml`'s `sdk-line`,
+programs `pin/app-live` today). The app refuses a view built against another
+wire, so the pin moves when the app's does.
 
 ## trade
 
@@ -100,14 +101,15 @@ key that holds no account posts nothing.
 
 Tetris versus never touches the chain: the two views talk through the
 node's live tracks in the room `versus`. The node lets an account into a
-room only as the module's program granted it, in a row the program writes;
+room only as the view's program granted it, in a row the program writes;
 `Op::OpenVersus` writes the room's one row, and the same row each time:
 every account may subscribe to every track, and publish only the tracks
 named by its own number (`wait/{account}`, `ask/{account}/*`,
-`board/{account}/*`), so no one plays as another. The view sends it on
-the node's first `Waiting`; the node holds the view's asks until the
-row's block, and the view asks nothing again. A `not_granted` is the row
-taken back, and stops versus.
+`board/{account}/*`), so no one plays as another. The view sends it when
+the node tells it `Waiting`, one at a time, and again on the next
+`Waiting` when the program refused it; the node holds the view's asks
+until the row's block, and the view asks nothing again. A `not_granted`
+is the row taken back, and stops versus.
 
 **Nothing checks a score.** The games run in the view, on the reader's
 machine, and the view says what the score was: anyone can post any number.
@@ -118,10 +120,12 @@ The boards are practice, a place to compare, not proof of anything.
 A hub of seven cards, the six games and Tetris versus, each a button with
 the game's name, a line of what it is, a still picture and the reader's
 best; pressed, the game starts with its board taking the keys. A game is its board, a panel with the score,
-the reader's best and the game's own facts (Tetris's level, lines, hold
-and next three pieces; Snake's length; 2048's best tile; Minesweeper's
-mines left and time; Breakout's stage, lives and items on; Invaders' lives
-and wave), and a pause. Paused or
+the reader's best and the game's own facts (Snake's length; 2048's best
+tile; Minesweeper's mines left and time; Breakout's stage, lives and items
+on; Invaders' lives and wave), and a pause. Tetris has no panel: its
+screen is the Guideline's, hold with the score, lines, level and the
+reader's best under it on the left of the well and the next five pieces
+on its right. Paused or
 over, an overlay lies on the board and the panel shows the game's top ten,
 each account by the name identity gives it, by its number where it has
 none. An ended game's score is sent once when an account is seated,
@@ -169,16 +173,44 @@ asks' accounts and nonces, so on the same pieces. The `ask` track goes on
 to carry, in order, what the side says: an attack (rows and the column of
 their hole), its top-out, a rematch. Its well goes out on
 `board/<me>/<nonce>`, a byte a cell, newest wins, whenever it moves, and
-the other side draws it small beside its own. Rows cleared at once send 2 →
-1, 3 → 2, 4 → 4, a Tetris after a Tetris one more; what a side sends
-cancels the garbage queued against it first; a lock that clears nothing
-lets every queued row rise from the floor, and a block pushed out of the
-top tops the well out. The holes come from a draw of their own, so
-garbage never changes a side's pieces. A round ends at a top-out, won or
-lost; both pressing Rematch deal the next round, each track going on in a
-new group. A side whose `ask` track ends mid-match (its app gone, or it
-left) hands the other the win. Versus posts no score: the boards are the
-single games'.
+the other side draws it small beside its own. What a lock sends is Tetris
+99's table: by the rows it cleared and whether a T-spin or a mini cleared
+them, plus back-to-back, the combo and an all clear;
+what a side sends cancels the garbage queued against it first; a lock
+that clears nothing raises at most 8 of the queued rows from the floor,
+and a block pushed out of the top tops the well out. The tables, and where
+each comes from, are `tetris.rs`'s module doc. The holes come from a draw
+of their own, so garbage never changes a side's pieces. A round ends at a
+top-out, won or lost; both pressing Rematch deal the next round, each
+track going on in a new group, numbered by the round: of the other side's
+`ask` a view acts on its round's group only, and in it only past what it
+acted on, so a re-open's replay counts nothing twice. A side whose `ask`
+track ends mid-match, whatever the node gives as the reason, hands the
+other the win. The match itself, the round's step, is `versus::Match`,
+which the bot plays too. Versus is played as the account the session
+seats: another one, or none, joins the lobby anew. A round runs on while
+the view is off screen, the keys it held let go. Versus posts no score:
+the boards are the single games'.
+
+## tetris-bot
+
+A Tetris versus player with an account of its own, as an app is one: it
+speaks the node's live lane over its websocket, never a view. It waits in
+the lobby, accepts every challenge (it never challenges), plays each round
+with the view's own match step and asks for another, and waits again when
+the other side leaves. Its player drops each piece where Pierre
+Dellacherie's six features score best, one key every 640, 352, 176 or
+96 ms by level (`easy` never holds, and misjudges).
+
+```sh
+cargo run -p tetris-bot -- --rpc https://node.example --key device.key --level hard
+```
+
+`--key` is the account's device key as the app keeps it, the ed25519
+seed's 32 bytes; `--level` is `easy`, `normal` (when not given), `hard` or
+`expert`. A lost session opens again after a wait that doubles with each
+failure, and one the node sent away after the wait it named; a node that
+will not let the account play ends it, non-zero.
 
 ## browser-view
 

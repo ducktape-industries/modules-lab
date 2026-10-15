@@ -33,8 +33,8 @@ pub(crate) fn score(ctx: &ExecCtx, account: u64, game_id: u8, posted: u64) -> Re
 /// The versus room's grant row: every account that acts on the chain may
 /// subscribe to every track in it and publish its own, under its number
 /// (`{account}`), so no one waits, asks or plays as another. The node
-/// reads the row; the view sends this op on the node's first
-/// `not_granted`, and its asks wait for the row.
+/// reads the row; the view sends this op when the node tells it
+/// `Waiting`, and its asks wait for the row.
 pub(crate) fn open_versus(ctx: &ExecCtx) -> Result<(), Error> {
     grant(ctx, VERSUS, None, versus_room());
     Ok(())
