@@ -13,8 +13,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use commonware_cryptography::{Signer as _, ed25519};
 use futures_util::{SinkExt as _, StreamExt as _};
 use live_wire::{
-    Alias, Code, Control, DEFAULT_PRIORITY, DatagramHeader, End, GroupHeader, Hello, KeyScheme,
-    Proof, RequestId, Start, Track, Welcome, WsFrame,
+    Alias, Code, Control, DEFAULT_PRIORITY, DatagramHeader, GroupHeader, Hello, KeyScheme, Proof,
+    RequestId, Start, Track, Welcome, WsFrame,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::{Instant, MissedTickBehavior};
@@ -414,11 +414,12 @@ impl Wire {
                     self.aliases.retain(|_, held| *held != name);
                     bot.ended(&name);
                 }
-                Some(Kind::Publish(name)) if reason != End::NodeClosing => {
+                Some(Kind::Publish(name)) => {
                     self.published.remove(&name);
                     crate::log(format!("the node ended {name}: {reason:?}"));
                 }
-                Some(_) => {
+                // the room's list ended: nothing is heard of the room
+                Some(Kind::Watch) => {
                     return Err(Stop::Lost(format!(
                         "the node ended the session: {reason:?}"
                     )));
@@ -472,11 +473,7 @@ impl Wire {
 }
 
 fn group_frame(group: u64, objects: Vec<Vec<u8>>, end: bool) -> WsFrame {
-    let header = GroupHeader {
-        alias: 0,
-        group,
-        priority: DEFAULT_PRIORITY,
-    };
+    let header = GroupHeader { alias: 0, group };
     WsFrame::Group {
         header,
         objects,
