@@ -1,8 +1,8 @@
 //! Tetris versus between two views, each on its fake host, linked by the
 //! SDK's relay as one node links two apps: the lobby, a match on the same
 //! pieces, a Tetris's garbage, a top-out, a rematch, and a side that goes.
-//! The room's grant is the relay's to give; the refusal for want of one is
-//! the last test's, on a host with no relay.
+//! The room's grant is the relay's to give: held, the lobby waits for it;
+//! taken back, the lobby stops.
 use view::methods::{LiveAnnounce, LiveMode, LivePublishTrack, LiveTracks, Method, refusal};
 use view::testing::Relay;
 
@@ -19,10 +19,14 @@ struct Two {
 }
 
 fn lobby() -> Two {
+    lobby_in(Relay::new())
+}
+
+/// The lobby open on both sides of `relay`.
+fn lobby_in(relay: Relay) -> Two {
     let ada = opened(World::default(), Some(1));
     let two = opened(World::default(), Some(2));
     // the relay's n-th link acts as account n
-    let relay = Relay::new();
     relay.link(&ada.cx).link(&two.cx);
     let mut both = Two { relay, ada, two };
     both.ada.cx.simulate_click("arcade-card-versus");
@@ -312,20 +316,73 @@ fn an_object_the_node_drops_leaves_the_round_running() {
 }
 
 #[test]
-fn the_room_opens_through_the_program_once_when_the_node_refuses_for_want_of_a_grant() {
+fn a_room_not_open_yet_is_opened_through_the_program_once_and_the_lobby_goes_in_on_its_grant() {
+    let relay = Relay::new();
+    relay.hold(arcade::VERSUS);
+    let mut both = lobby_in(relay);
+    // the watch and `wait/<me>` each heard `not_granted`: one op a side
+    for side in [&both.ada, &both.two] {
+        assert_eq!(side.ops(), [Op::OpenVersus], "the room was asked open once");
+    }
+    assert!(!both.ada.cx.has_text("account 2"));
+    assert!(
+        !both.ada.cx.has_text("Versus stopped"),
+        "{:?}",
+        both.ada.cx.texts()
+    );
+    // the block that writes the row lets the waiting asks in
+    both.relay.grant(arcade::VERSUS);
+    both.settle();
+    shows(
+        &both.ada.cx,
+        &["Who is waiting", "account 2", "Waiting", "Challenge"],
+    );
+    shows(&both.two.cx, &["ada", "Waiting"]);
+    // asked once: nothing asked again
+    assert_eq!(both.ada.cx.host().requests::<LiveTracks>().len(), 1);
+    assert_eq!(both.ada.cx.host().requests::<LivePublishTrack>().len(), 1);
+    assert_eq!(both.ada.ops(), [Op::OpenVersus]);
+}
+
+#[test]
+fn a_grant_taken_back_stops_versus_and_asks_nothing_open() {
     let mut opened = opened(World::default(), Some(1));
-    let host = opened.cx.host();
-    host.refuse::<LiveTracks>(refusal::NOT_GRANTED, "no grant covers this room");
-    host.refuse::<LivePublishTrack>(refusal::NOT_GRANTED, "no grant covers this room");
+    let tracks = opened.cx.host().stream::<LiveTracks>();
     opened.cx.simulate_click("arcade-card-versus");
     opened.cx.run_until_parked();
-    assert_eq!(
-        opened.ops(),
-        [Op::OpenVersus],
-        "the room was asked open once"
-    );
-    // asked again once it landed, and refused again: no third time
-    assert_eq!(opened.cx.host().requests::<LiveTracks>().len(), 2);
-    assert_eq!(opened.cx.host().requests::<LivePublishTrack>().len(), 2);
-    shows(&opened.cx, &["Versus stopped: no grant covers this room"]);
+    // inside: account 2 waits and asks; ada accepts
+    for name in ["wait/2", "ask/2/1/0b"] {
+        tracks.send(LiveAnnounce {
+            name: name.into(),
+            by: 2,
+            mode: LiveMode::Datagram,
+            up: true,
+        });
+    }
+    opened.cx.run_until_parked();
+    opened.cx.simulate_click("versus-player-2");
+    let board = opened
+        .cx
+        .last_frame()
+        .requests
+        .iter()
+        .find(|request| {
+            request.kind == LivePublishTrack::KIND
+                && LivePublishTrack::decode_request(&request.payload)
+                    .is_ok_and(|publish| publish.track.name.starts_with("board/1/"))
+        })
+        .map(|request| request.id)
+        .expect("the match publishes its board");
+    opened.cx.run_until_parked();
+    opened.cx.simulate_event(wire::Event::Response {
+        id: board,
+        result: Err(view::host::Error::new(
+            refusal::NOT_GRANTED,
+            "the grant was taken back",
+        )),
+        done: true,
+    });
+    opened.cx.run_until_parked();
+    shows(&opened.cx, &["Versus stopped: the grant was taken back"]);
+    assert_eq!(opened.ops(), []);
 }
