@@ -191,15 +191,17 @@ under its account (`left: publisher_gone` when that app went away).
 The node lets an account into a room only as the module's program granted
 it, in a row the program writes. The program keeps nothing else: its one
 op, `Open { room }`, writes the grant that lets every account on the chain
-publish and subscribe to every track of the room
-(`guest::live::grant(ctx, room, None, Grant::all())`). On a network
-nobody opened the lobby on, the first publish is refused `not_granted`;
-the view sends `Open`, once a session, and joins again on the next block
-of the program.
+subscribe to every track of the room and publish only its own,
+`echo/{account}`, the asking account's number in the pattern
+(`program::live::grant(ctx, room, None, open)`). On a network nobody
+opened the lobby on, the first publish hears a `not_granted` that ends
+nothing: the node holds the view's asks until the grant's block. The view
+sends `Open`, once a session, and asks nothing again.
 
 `src/tests.rs` links two and three views with the SDK's `testing::Relay`,
 which answers `live.*` as one node would: a line crosses, a late reader
-is replayed the last one, an app that goes away shows `publisher_gone`.
+is replayed the last one, an app that goes away shows `publisher_gone`,
+and a lobby the relay holds is opened once and let in on its grant.
 
 ## Loop
 

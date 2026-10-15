@@ -34,7 +34,11 @@ fn opening_a_room_writes_the_grant_every_account_reads() {
     let store = MockHost::default();
     assert_eq!(row(&store, LOBBY), None);
     open(&store, Some(ADA), LOBBY).unwrap();
-    assert_eq!(row(&store, LOBBY), Some(Grant::all()));
+    let own_line = Grant {
+        publish: vec!["echo/{account}".into()],
+        subscribe: vec!["*".into()],
+    };
+    assert_eq!(row(&store, LOBBY), Some(own_line));
     // again: the same row
     let kept = store.borrow().state.clone();
     open(&store, Some(ADA), LOBBY).unwrap();

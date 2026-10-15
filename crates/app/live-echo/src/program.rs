@@ -5,6 +5,10 @@ use ::program::{Error, ExecCtx, Program, QueryCtx, invalid};
 
 use crate::{MAX_ROOM, Op, PROGRAM};
 
+/// The one track each account may publish in an open room: its own line,
+/// under its number.
+const OWN: &str = "echo/{account}";
+
 pub struct LiveEcho;
 
 impl Program for LiveEcho {
@@ -27,7 +31,11 @@ impl Program for LiveEcho {
                         "a room is 1 to {MAX_ROOM} bytes with no `/`"
                     )));
                 }
-                grant(ctx, &room, None, Grant::all());
+                let open = Grant {
+                    publish: vec![OWN.into()],
+                    subscribe: vec!["*".into()],
+                };
+                grant(ctx, &room, None, open);
                 Ok(())
             }
         }

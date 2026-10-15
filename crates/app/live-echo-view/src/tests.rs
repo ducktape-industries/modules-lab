@@ -1,10 +1,12 @@
 //! The view on fake hosts: two or three readers linked by a
-//! [`Relay`] that answers `live.*` as one node would, and one alone on a
-//! host that refuses the lobby until it is opened. Every frame is held to
-//! the host's sanitizer and accessibility audit.
+//! [`Relay`] that answers `live.*` as one node would, the lobby held
+//! until it is opened, and one reader alone on a host that takes the
+//! grant back. Every frame is held to the host's sanitizer and
+//! accessibility audit.
 use live_echo::{LOBBY, LiveEcho, Op};
-use view::methods::{Changes, HostSession, LivePublishTrack, LiveTracks, Session, Submit, refusal};
+use view::methods::{HostSession, LivePublishTrack, Method, Publishing, Session, Submit, refusal};
 use view::testing::{Relay, TestAppContext};
+use view::wire;
 
 use crate::Echo;
 
@@ -77,37 +79,81 @@ fn a_reader_whose_app_went_away_shows_publisher_gone() {
 }
 
 #[test]
-fn a_lobby_nobody_opened_is_opened_once_and_joined_on_the_next_block() {
-    let mut cx = TestAppContext::new();
-    cx.host()
-        .refuse::<LivePublishTrack>(refusal::NOT_GRANTED, "no grant covers the room");
-    cx.host()
-        .refuse::<LiveTracks>(refusal::NOT_GRANTED, "no grant covers the room");
-    cx.host().handle::<Submit<LiveEcho>>(|_| Ok(Vec::new()));
-    cx.open::<Echo>();
-    seat(&mut cx, 7);
+fn a_lobby_nobody_opened_is_opened_once_and_the_readers_go_in_on_its_block() {
+    let (mut a, mut b) = (TestAppContext::new(), TestAppContext::new());
+    let relay = Relay::new();
+    relay.hold(LOBBY).link(&a).link(&b);
+    for (cx, account) in [(&mut a, 1), (&mut b, 2)] {
+        cx.host().handle::<Submit<LiveEcho>>(|_| Ok(Vec::new()));
+        cx.open::<Echo>();
+        seat(cx, account);
+    }
     let open = Op::Open {
         room: LOBBY.to_owned(),
     };
+    // the track and the room's list each heard `not_granted`: one `Open`
     assert_eq!(
-        cx.host().requests::<Submit<LiveEcho>>(),
+        a.host().requests::<Submit<LiveEcho>>(),
         std::slice::from_ref(&open)
     );
-    assert!(cx.has_text("Opening the lobby…"), "{:?}", cx.texts());
-    // the block that wrote the grant: the reader publishes again
-    cx.host().stream::<Changes<LiveEcho>>().send(None);
+    assert!(a.has_text("Opening the lobby…"), "{:?}", a.texts());
+    // the block that writes the grant lets the waiting asks in
+    relay.grant(LOBBY);
+    a.run_until_parked();
+    b.run_until_parked();
+    a.run_until_parked();
+    assert!(a.has_text("1 listening"), "{:?}", a.texts());
+    say(&mut a, "first in");
+    b.run_until_parked();
+    assert!(b.has_text("first in"), "{:?}", b.texts());
+    // asked once: nothing asked again
+    assert_eq!(a.host().requests::<LivePublishTrack>().len(), 1);
+    assert_eq!(
+        a.host().requests::<Submit<LiveEcho>>(),
+        std::slice::from_ref(&open)
+    );
+}
+
+#[test]
+fn a_grant_taken_back_once_in_is_shown_and_opens_nothing() {
+    let mut cx = TestAppContext::new();
+    let counts = cx.host().stream::<LivePublishTrack>();
+    cx.open::<Echo>();
+    cx.host().stream::<HostSession>().send(Session {
+        connected: true,
+        account: Some(7),
+        ..Session::default()
+    });
+    // the frame that publishes the reader's track
+    let mine = (0..8)
+        .find_map(|_| {
+            cx.tick(Vec::new());
+            cx.last_frame()
+                .requests
+                .iter()
+                .find(|request| request.kind == LivePublishTrack::KIND)
+                .map(|request| request.id)
+        })
+        .expect("the reader publishes its track");
     cx.run_until_parked();
-    assert_eq!(cx.host().requests::<LivePublishTrack>().len(), 2);
-    // still refused: shown, and no second `Open`
+    counts.send(Publishing::Subscribers(0));
+    cx.run_until_parked();
+    assert!(cx.has_text("0 listening"), "{:?}", cx.texts());
+    cx.simulate_event(wire::Event::Response {
+        id: mine,
+        result: Err(view::host::Error::new(
+            refusal::NOT_GRANTED,
+            "the grant was taken back",
+        )),
+        done: true,
+    });
+    cx.run_until_parked();
     assert!(
         cx.has_text("The lobby refused: not_granted"),
         "{:?}",
         cx.texts()
     );
-    assert_eq!(
-        cx.host().requests::<Submit<LiveEcho>>(),
-        std::slice::from_ref(&open)
-    );
+    assert!(cx.host().requests::<Submit<LiveEcho>>().is_empty());
 }
 
 #[test]

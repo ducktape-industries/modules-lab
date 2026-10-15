@@ -10,11 +10,12 @@
 //! of, and lists the lines by account. A track that ends says why under
 //! its account (`publisher_gone` when its app went away).
 //!
-//! The node lets an account into the room only as the program granted it.
-//! A network nobody opened the lobby on refuses the first publish with
-//! `not_granted`; the view then sends `live-echo`'s `Open { room }`, once
-//! a session, and joins again on the next block of the program. A second
-//! `not_granted` is shown, not retried.
+//! The node lets an account into the room only as the program granted it,
+//! and holds what the reader asks until it has. On a network nobody opened
+//! the lobby on, the first publish hears a `not_granted` that ends
+//! nothing; the view then sends `live-echo`'s `Open { room }`, once a
+//! session, and its asks go through on the op's block. A `not_granted`
+//! once in is the grant taken back: shown, not retried.
 use std::collections::BTreeMap;
 
 use live_echo::{LOBBY, LiveEcho, Op};
@@ -44,8 +45,8 @@ pub struct Echo {
     /// Where the lobby stands for this reader.
     #[serde(skip)]
     pub(crate) lobby: Lobby,
-    /// This session sent `Open` already: a second `not_granted` is shown,
-    /// not answered with another.
+    /// This session sent `Open` already: the next `not_granted` while
+    /// joining sends no other.
     #[serde(skip)]
     opened: bool,
     /// The reader's track: dropping it unpublishes.
@@ -72,11 +73,11 @@ pub(crate) enum Lobby {
     /// The session has not said who reads, or the reader holds no account.
     #[default]
     Away,
-    /// Published and listening.
+    /// Asked in, not let in yet: the node holds the asks while the lobby
+    /// is not open, and `Open` goes on the first `not_granted`.
+    Joining,
+    /// Let in: published and listening.
     In,
-    /// The node refused the reader the room; `Open` is on its way, and the
-    /// block that writes the grant joins again.
-    Opening,
     /// What the node or the host refused, in its code: nothing more is
     /// tried until the session changes.
     Refused(String),
@@ -86,14 +87,10 @@ impl View for Echo {
     const NAME: &'static str = "Live echo";
     const DESCRIPTION: &'static str = "Lines typed in the lobby, live, by account.";
     const ICON: &'static str = "icons/radio.svg";
-    // `live`: the tracks; `host`: the session; `program` and `op`: the
-    // program's blocks and the op that opens the lobby
-    const CAPABILITIES: &'static [Capability] = &[
-        Capability::Live,
-        Capability::Host,
-        Capability::Program,
-        Capability::Op,
-    ];
+    // `live`: the tracks; `host`: the session; `op`: the op that opens
+    // the lobby
+    const CAPABILITIES: &'static [Capability] =
+        &[Capability::Live, Capability::Host, Capability::Op];
     const TARGETS: &'static [&'static str] = &[live_echo::PROGRAM];
     const MIN_WINDOW_WIDTH: u32 = 320;
 
@@ -101,13 +98,6 @@ impl View for Echo {
         cx.follow::<HostSession>((), |view, session, cx| match session {
             Ok(next) => view.session_changed(next, cx),
             Err(refusal) => cx.log_refused("the session", &refusal),
-        })
-        .detach();
-        // the block that wrote the lobby's grant lets the reader in
-        cx.follow::<Changes<LiveEcho>>((), |view, change, cx| match change {
-            Ok(_) if view.lobby == Lobby::Opening => view.join(cx),
-            Ok(_) => {}
-            Err(refusal) => cx.log_refused("live-echo's blocks", &refusal),
         })
         .detach();
     }
@@ -138,7 +128,7 @@ impl Echo {
             self.lobby = Lobby::Away;
             return;
         };
-        self.lobby = Lobby::In;
+        self.lobby = Lobby::Joining;
         self.people.entry(me).or_default();
         self.mine = Some(Track::publish(
             cx,
@@ -146,6 +136,7 @@ impl Echo {
             LiveMode::Stream,
             |view: &mut Echo, item, cx| match item {
                 Ok(Publishing::Subscribers(count)) => {
+                    view.let_in();
                     view.listeners = count;
                     cx.notify();
                 }
@@ -163,6 +154,8 @@ impl Echo {
     /// A track of the lobby came up or went down. The reader hears every
     /// `echo/*` but its own.
     fn announced(&mut self, announce: LiveAnnounce, cx: &mut Context<Self>) {
+        self.let_in();
+        cx.notify();
         let LiveAnnounce { name, by, up, .. } = announce;
         if !name.starts_with(ECHO) || Some(by) == self.session.account || !up {
             return;
@@ -190,38 +183,50 @@ impl Echo {
         cx.notify();
     }
 
+    /// The node answered the reader's track or the room's list: the
+    /// reader is in.
+    fn let_in(&mut self) {
+        if self.lobby == Lobby::Joining {
+            self.lobby = Lobby::In;
+        }
+    }
+
     /// A refusal on the reader's track or on the room's list. A refused
-    /// line goes to the log and the track goes on; the first `not_granted`
-    /// opens the lobby; anything else ended the track and stays on screen.
+    /// line goes to the log and the track goes on; a `not_granted` while
+    /// joining is the lobby not open yet, and the first sends `Open`;
+    /// anything else ended the track and stays on screen.
     fn refused(&mut self, refusal: Error, cx: &mut Context<Self>) {
         let one_line = [refusal::TOO_LARGE, refusal::RATE_LIMIT].contains(&refusal.code.as_str());
         match &self.lobby {
             Lobby::In if one_line => return cx.log_refused("a line", &refusal),
-            Lobby::In if refusal.code == refusal::NOT_GRANTED && !self.opened => self.open(cx),
-            // the room's list and the track both refuse; one opens
-            Lobby::Opening if refusal.code == refusal::NOT_GRANTED => {}
-            _ => {
-                self.mine = None;
-                self.watch = None;
-                self.lobby = Lobby::Refused(refusal.code);
+            // the room's list and the track both wait; one opens
+            Lobby::Joining if refusal.code == refusal::NOT_GRANTED => {
+                if !std::mem::replace(&mut self.opened, true) {
+                    self.open(cx);
+                }
             }
+            _ => self.stop(refusal.code),
         }
         cx.notify();
     }
 
-    /// `Open { room: "lobby" }`, once a session. Its block joins again
-    /// (`attach`); a refused op is shown.
-    fn open(&mut self, cx: &mut Context<Self>) {
+    /// The lobby refused the reader: nothing more is asked until the
+    /// session changes.
+    fn stop(&mut self, code: String) {
         self.mine = None;
         self.watch = None;
-        self.lobby = Lobby::Opening;
-        self.opened = true;
+        self.lobby = Lobby::Refused(code);
+    }
+
+    /// `Open { room: "lobby" }`, once a session: the asks wait for its
+    /// block. A refused op is shown.
+    fn open(&mut self, cx: &mut Context<Self>) {
         let submit = cx.host().ask::<Submit<LiveEcho>>(Op::Open {
             room: LOBBY.to_owned(),
         });
         cx.land(submit, |view, answer, cx| {
             if let Err(refusal) = answer {
-                view.lobby = Lobby::Refused(refusal.code);
+                view.stop(refusal.code);
                 cx.notify();
             }
         })
@@ -260,7 +265,8 @@ impl Render for Echo {
         let me = self.session.account;
         let status = match &self.lobby {
             Lobby::Away => "Take an account to talk in the lobby.".to_owned(),
-            Lobby::Opening => "Opening the lobby…".to_owned(),
+            Lobby::Joining if self.opened => "Opening the lobby…".to_owned(),
+            Lobby::Joining => "Joining the lobby…".to_owned(),
             Lobby::Refused(code) => format!("The lobby refused: {code}"),
             Lobby::In => match self.listeners {
                 1 => "1 listening".to_owned(),

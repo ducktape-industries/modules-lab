@@ -1,8 +1,9 @@
 //! The `live-echo` program: the one behind the live echo view. It keeps
 //! nothing of its own. Its one op opens a room: it writes the live grant
-//! that lets every account on the chain publish and subscribe to every
-//! track of the room through its node. The lines themselves never touch
-//! the chain; they are live tracks the view publishes.
+//! that lets every account on the chain subscribe to every track of the
+//! room through its node, and publish its own line, `echo/<account>`. The
+//! lines themselves never touch the chain; they are live tracks the view
+//! publishes.
 //!
 //! - `lib.rs` (here): the op and [`describe()`]
 //! - `program.rs`: [`LiveEcho`], the program
@@ -26,8 +27,9 @@ pub const MAX_ROOM: usize = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum Op {
-    /// Every account that acts on the chain may publish and subscribe to
-    /// every track of `room`. Opening an open room writes the same row.
+    /// Every account that acts on the chain may subscribe to every track
+    /// of `room` and publish `echo/<its number>`, no one else's. Opening an
+    /// open room writes the same row.
     Open { room: String },
 }
 
