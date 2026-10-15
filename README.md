@@ -105,8 +105,9 @@ room only as the module's program granted it, in a row the program writes;
 every account may subscribe to every track, and publish only the tracks
 named by its own number (`wait/{account}`, `ask/{account}/*`,
 `board/{account}/*`), so no one plays as another. The view sends it on
-the node's first `not_granted`; the node holds the view's asks until the
-row's block, and the view asks nothing again.
+the node's first `Waiting`; the node holds the view's asks until the
+row's block, and the view asks nothing again. A `not_granted` is the row
+taken back, and stops versus.
 
 **Nothing checks a score.** The games run in the view, on the reader's
 machine, and the view says what the score was: anyone can post any number.

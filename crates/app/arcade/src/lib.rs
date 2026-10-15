@@ -45,6 +45,20 @@ pub const MAX_TOP: u32 = 50;
 /// through the node, never the chain.
 pub const VERSUS: &str = "versus";
 
+/// The [`VERSUS`] room's one row, every account's ([`Op::OpenVersus`]):
+/// anyone may subscribe to any track, and publish only the tracks named by
+/// its own number, so no one plays as another.
+pub fn versus_room() -> ::program::live::Grant {
+    ::program::live::Grant {
+        publish: vec![
+            "wait/{account}".into(),
+            "ask/{account}/*".into(),
+            "board/{account}/*".into(),
+        ],
+        subscribe: vec!["*".into()],
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum Op {
     /// The score a game of the sender's ended on. It becomes the sender's
