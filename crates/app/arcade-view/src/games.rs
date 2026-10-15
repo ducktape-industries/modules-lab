@@ -2,8 +2,8 @@
 //! seeded randomness they share. A game is its own rules: it hears keys,
 //! steps on a tick, and says its score and whether it is over. Nothing
 //! here knows the view; the view knows each game's board (`play.rs`).
-use ducktape_view_guest::prelude::*;
 use gpui::{point, size};
+use view::prelude::*;
 
 use crate::breakout::{self, Breakout};
 use crate::invaders::{self, Invaders};

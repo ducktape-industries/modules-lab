@@ -3,10 +3,8 @@
 //! pieces, a Tetris's garbage, a top-out, a rematch, and a side that goes.
 //! The room's grant is the relay's to give; the refusal for want of one is
 //! the last test's, on a host with no relay.
-use ducktape_view_guest::methods::{
-    LiveAnnounce, LiveMode, LivePublishTrack, LiveTracks, Method, refusal,
-};
-use ducktape_view_guest::testing::Relay;
+use view::methods::{LiveAnnounce, LiveMode, LivePublishTrack, LiveTracks, Method, refusal};
+use view::testing::Relay;
 
 use super::*;
 use crate::tetris::{self, COLS, Piece, ROWS};
@@ -327,7 +325,7 @@ fn an_object_the_node_drops_leaves_the_round_running() {
     // track goes on
     opened.cx.simulate_event(wire::Event::Response {
         id: board,
-        result: Err(ducktape_view_guest::host::Error::new(
+        result: Err(view::host::Error::new(
             refusal::RATE_LIMIT,
             "too many objects a second",
         )),

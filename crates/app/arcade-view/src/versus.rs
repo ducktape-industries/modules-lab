@@ -25,13 +25,12 @@
 //! `Op::OpenVersus`, and when it lands the lobby asks again, once.
 use std::collections::{BTreeMap, BTreeSet};
 
-use abi::role::identity;
+use ::identity::Identity;
 use arcade::Op;
 use borsh::{BorshDeserialize, BorshSerialize};
-use ducktape_view_guest::live::{Received, Track, subscribe};
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{AnyElement, Div, FontWeight, Stateful};
-use program::role::Identity;
+use view::live::{Received, Track, subscribe};
+use view::prelude::*;
+use view::{AnyElement, Div, FontWeight, Stateful};
 
 use crate::Arcade;
 use crate::games::seed;
@@ -333,11 +332,11 @@ impl Arcade {
             versus.names.insert(by, format!("account {by}"));
             let profile = cx
                 .host()
-                .ask::<Query<Identity>>(identity::Query::Profile(by));
+                .ask::<Query<Identity>>(::identity::Query::Profile { number: by });
             versus
                 .waits
                 .push(cx.land(profile, move |view, profile, cx| {
-                    if let (Some(versus), Ok(identity::Reply::Profile(Some(profile)))) =
+                    if let (Some(versus), Ok(::identity::Reply::Profile(Some(profile)))) =
                         (&mut view.versus, profile)
                     {
                         versus.names.insert(by, profile.name);

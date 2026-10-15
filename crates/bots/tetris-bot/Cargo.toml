@@ -10,15 +10,16 @@ publish = false
 # the rules, the deal, the track names and what a side says, as the view
 # has them
 arcade-view = { path = "../../app/arcade-view" }
-# the module and the room versus is played in
+# the program and the room versus is played in
 arcade.workspace = true
 borsh.workspace = true
-# the live wire and the key scheme of core d6bdc3e10: the rev garage's node
-# runs and the app pins
-live-wire = { git = "https://github.com/ducktape-industries/ducktape", rev = "d6bdc3e107b14f442e09506789f79efe7b28a895" }
-keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "d6bdc3e107b14f442e09506789f79efe7b28a895" }
-# `/v1/status` decodes into the node's own types
-core-abi = { package = "abi", git = "https://github.com/ducktape-industries/ducktape", rev = "d6bdc3e107b14f442e09506789f79efe7b28a895" }
+# the live wire and the key scheme of core `feat/live-lane` 66453b797: the
+# rev the node runs and the app pins
+live-wire = { git = "https://github.com/ducktape-industries/ducktape", rev = "66453b797cf67af032c8b9c11d9ba3e2d6d99598" }
+keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "66453b797cf67af032c8b9c11d9ba3e2d6d99598" }
+# `/v1/status` decodes into the node's own types (the workspace patches
+# core's abi to the programs copy, so it is that one)
+core-abi = { package = "abi", git = "https://github.com/ducktape-industries/ducktape", rev = "66453b797cf67af032c8b9c11d9ba3e2d6d99598" }
 # the device key, signed with as the app signs
 commonware-cryptography = "2026.9.0"
 commonware-codec = "2026.9.0"
@@ -28,5 +29,5 @@ tokio = { version = "1", features = ["macros", "net", "rt", "time"] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 
 [dev-dependencies]
-keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "d6bdc3e107b14f442e09506789f79efe7b28a895", features = ["testkit"] }
+keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "66453b797cf67af032c8b9c11d9ba3e2d6d99598", features = ["testkit"] }
 tokio = { version = "1", features = ["test-util"] }

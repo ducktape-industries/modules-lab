@@ -10,6 +10,8 @@ use tokio_tungstenite::tungstenite::protocol::Role;
 use super::*;
 
 const CHAIN: [u8; 32] = [5; 32];
+/// The node's key, as `/v1/status` names it.
+const NODE: [u8; 32] = [3; 32];
 const NAMESPACE: &str = "lab#05050505/arcade/versus";
 const ME: u64 = 13;
 
@@ -70,7 +72,7 @@ async fn welcome(node: &mut Socket) {
     let Control::Proof(proof) = control(node).await else {
         panic!("a proof");
     };
-    let preimage = live_wire::proof_preimage(&CHAIN, &nonce, &hello.key);
+    let preimage = live_wire::proof_preimage(&CHAIN, &NODE, &nonce, &hello.key);
     assert!(KeyScheme::Ed25519.verify(
         &hello.key,
         live_wire::NAMESPACE,
@@ -96,15 +98,17 @@ fn the_room_is_named_on_the_chain_as_the_app_names_it() {
         root: core_abi::Root([0; 32]),
         epoch: 0,
         identity: Vec::new(),
-        contract: 4,
+        contract: 5,
         genesis: [
             0xab, 0x01, 0xff, 0x10, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
             7, 7, 7, 7, 7, 7, 7,
         ],
         roles: core_abi::Roles {
-            registry: "module-registry".into(),
+            programs: "programs".into(),
             validators: "valset".into(),
             identity: "identity".into(),
+            blobs: "blobs".into(),
+            awaits: "awaits".into(),
         },
     };
     let garage = status("garage");
@@ -118,7 +122,7 @@ fn the_room_is_named_on_the_chain_as_the_app_names_it() {
 async fn the_handshake_signs_the_nonce_and_a_refusal_is_the_nodes_word() {
     let key = key();
     let (mut bot, mut node) = linked().await;
-    let (welcomed, ()) = tokio::join!(handshake(&mut bot, CHAIN, &key), welcome(&mut node));
+    let (welcomed, ()) = tokio::join!(handshake(&mut bot, CHAIN, &NODE, &key), welcome(&mut node));
     assert_eq!(welcomed.unwrap().account, ME);
 
     let (mut bot, mut node) = linked().await;
@@ -129,7 +133,7 @@ async fn the_handshake_signs_the_nonce_and_a_refusal_is_the_nodes_word() {
         let code = Code::NoAccount;
         tell(&mut node, Control::Refused { request: 0, code }).await;
     };
-    let (refused, ()) = tokio::join!(handshake(&mut bot, CHAIN, &key), refuse);
+    let (refused, ()) = tokio::join!(handshake(&mut bot, CHAIN, &NODE, &key), refuse);
     assert!(matches!(refused, Err(Stop::Refused(why)) if why.ends_with("no_account")));
 }
 

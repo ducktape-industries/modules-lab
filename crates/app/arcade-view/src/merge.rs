@@ -8,8 +8,8 @@
 //! (`Motion`): the tiles slide, then a merged tile pulses and the new one
 //! pops in, about 150 ms, and a key before the end lands them at once. A
 //! board at rest asks for no clock.
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Canvas, Div, FontWeight};
+use view::prelude::*;
+use view::{Canvas, Div, FontWeight};
 
 use crate::games::{Fact, Rng, square};
 

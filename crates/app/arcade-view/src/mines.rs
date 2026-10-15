@@ -10,9 +10,9 @@
 //! tick a second, only to count them.
 use std::collections::VecDeque;
 
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Canvas, Div, FontWeight};
 use gpui::point;
+use view::prelude::*;
+use view::{Canvas, Div, FontWeight};
 
 use crate::games::{Fact, Rng, square};
 

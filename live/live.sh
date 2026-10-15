@@ -55,7 +55,7 @@ for tool in cargo git python3 wasm-opt wasm-tools ps; do
 done
 
 # The modules rev a Cargo.toml pins.
-pin() { sed -n 's|.*ducktape-industries/modules", rev = "\([0-9a-f]*\)".*|\1|p' "$1" | sort -u; }
+pin() { sed -n 's|.*ducktape-industries/programs", rev = "\([0-9a-f]*\)".*|\1|p' "$1" | sort -u; }
 modules=$(pin Cargo.toml)
 case $modules in
 '' | *[!0-9a-f]*) die "Cargo.toml does not pin one modules rev (its sdk-line)" ;;

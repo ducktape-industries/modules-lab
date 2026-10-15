@@ -29,9 +29,9 @@ mod snake;
 pub mod tetris;
 pub mod versus;
 
-use ducktape_view_guest::prelude::*;
 use gpui::relative;
 use serde::{Deserialize, Serialize};
+use view::prelude::*;
 
 use data::Row;
 use games::Game;
@@ -101,16 +101,13 @@ impl View for Arcade {
     const DESCRIPTION: &'static str = "Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, with a board of everyone's best scores, and Tetris versus.";
     const ICON: &'static str = "icons/gamepad-2.svg";
     const CAPABILITIES: &'static [Capability] = &[
-        Capability::Module,
+        Capability::Program,
         Capability::Op,
         Capability::Host,
         Capability::Clock,
         Capability::Live,
     ];
-    const TARGETS: &'static [&'static str] = &[
-        arcade::MODULE,
-        <program::role::Identity as ducktape_view_guest::methods::Program>::NAME,
-    ];
+    const TARGETS: &'static [&'static str] = &[arcade::PROGRAM, ::identity::PROGRAM];
 
     fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         self.watch(cx);

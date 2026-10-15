@@ -85,8 +85,8 @@
 use std::collections::VecDeque;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Canvas, Div, FontWeight, Stateful};
+use view::prelude::*;
+use view::{Canvas, Div, FontWeight, Stateful};
 
 use crate::games::{Fact, Rng, square};
 

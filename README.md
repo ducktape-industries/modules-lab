@@ -1,9 +1,9 @@
 # modules-lab
 
-Experiments written against the ducktape modules SDK, out of tree. A crate
-here keeps the shape of modules' `crates/app/*` (a view is a cdylib for
-wasm32-unknown-unknown on `ducktape-view-guest`), so one that earns its place
-moves over as it is.
+Experiments written against the ducktape programs SDK, out of tree. A crate
+here keeps the shape of programs' `crates/app/*` (a view is a cdylib for
+wasm32-unknown-unknown on `view`), so one that earns its place moves over as
+it is.
 
 | Path | What |
 |---|---|
