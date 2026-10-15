@@ -253,7 +253,7 @@ pub enum Spin {
     Full,
 }
 
-/// What one lock did, as the module's rules name it: the one record the
+/// What one lock did, as the rules above name it: the one record the
 /// score, the garbage and the screen's effects read.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Clear {
@@ -653,8 +653,10 @@ pub struct Tetris {
     chain: bool,
     /// The combo count of the last lock, if it cleared rows.
     combo: Option<u32>,
-    /// The last lock's record.
-    pub last: Option<Clear>,
+    /// The last lock's record, for the tests to read: the effects are
+    /// handed theirs.
+    #[cfg(test)]
+    last: Option<Clear>,
     /// Ticks since the game was dealt: versus's level.
     ticks: u64,
     pub lines: u64,
@@ -688,6 +690,7 @@ impl Tetris {
             turned: None,
             chain: false,
             combo: None,
+            #[cfg(test)]
             last: None,
             ticks: 0,
             lines: 0,
@@ -883,7 +886,10 @@ impl Tetris {
                 false
             }
         };
-        self.last = Some(clear);
+        #[cfg(test)]
+        {
+            self.last = Some(clear);
+        }
         self.effects.locked(&clear, full);
         if out {
             self.over = true;

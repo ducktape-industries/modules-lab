@@ -1,5 +1,5 @@
-//! The program (its name and types, which a view names it by) and the
-//! module: the op and every query, each handed to its function in
+//! The program (its name and types, which a view names it by) and its
+//! dispatch: the op and every query, each handed to its function in
 //! `rules.rs` or `queries.rs`.
 use ::program::{Error, ExecCtx, Program, QueryCtx};
 

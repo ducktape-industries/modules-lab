@@ -1,5 +1,5 @@
 //! The op once as meant and once as an attack: each refusal leaves the
-//! store exactly as it was. The harness is the [`Arcade`] module over a
+//! store exactly as it was. The harness is the [`Arcade`] program over a
 //! [`MockHost`]; the accounts that post each sign the env of their op.
 use ::program::live::Grant;
 use ::program::{Env, Error, MockHost, Program, QueryCtx, code};

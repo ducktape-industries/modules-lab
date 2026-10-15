@@ -1,4 +1,4 @@
-//! The `arcade` module: the shared high scores of six classic games. The
+//! The `arcade` program: the shared high scores of six classic games. The
 //! games themselves run in the view and never touch the chain; an account
 //! posts the score a game ended on, and the program keeps each account's
 //! best of each game and ranks them. Nothing checks a score: the client
@@ -10,11 +10,11 @@
 //!   [`describe()`]
 //! - `state.rs`: the tables
 //! - `program.rs`: [`Arcade`], the program (its name and types, which a view
-//!   names it by) and the module: one match over every op and one over
+//!   names it by) and its dispatch: one match over every op and one over
 //!   every query
 //! - `rules.rs`: what the op checks and writes
 //! - `queries.rs`: one function per question
-//! - `tests.rs`: the module natively over `::program::MockHost`
+//! - `tests.rs`: the program natively over `::program::MockHost`
 mod program;
 mod queries;
 mod rules;
