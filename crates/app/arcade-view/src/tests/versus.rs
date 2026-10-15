@@ -3,7 +3,9 @@
 //! pieces, a Tetris's garbage, a top-out, a rematch, and a side that goes.
 //! The room's grant is the relay's to give: held, the lobby waits for it;
 //! taken back, the lobby stops.
-use view::methods::{LiveAnnounce, LiveMode, LivePublishTrack, LiveTracks, Method, refusal};
+use view::methods::{
+    LiveAnnounce, LiveMode, LivePublishTrack, LiveTracks, Method, Watching, refusal,
+};
 use view::testing::Relay;
 
 use super::*;
@@ -302,12 +304,12 @@ fn an_object_the_node_drops_leaves_the_round_running() {
     opened.cx.run_until_parked();
     // account 2 waits and asks; ada accepts
     for name in ["wait/2", "ask/2/1/0b"] {
-        tracks.send(LiveAnnounce {
+        tracks.send(Watching::Announce(LiveAnnounce {
             name: name.into(),
             by: 2,
             mode: LiveMode::Datagram,
             up: true,
-        });
+        }));
     }
     opened.cx.run_until_parked();
     opened.cx.simulate_click("versus-player-2");
@@ -325,23 +327,19 @@ fn an_object_the_node_drops_leaves_the_round_running() {
         .expect("the match publishes its board");
     opened.cx.run_until_parked();
     assert!(opened.ticks.subscribed(), "the round runs");
-    // too many objects a second: the node drops one, says so, and the
-    // track goes on
+    // an object over its cap: the node drops it, says so, and the track
+    // goes on
     opened.cx.simulate_event(wire::Event::Response {
         id: board,
         result: Err(view::host::Error::new(
-            refusal::RATE_LIMIT,
-            "too many objects a second",
+            refusal::TOO_LARGE,
+            "an object over its cap",
         )),
         done: false,
     });
     opened.cx.run_until_parked();
     assert!(opened.ticks.subscribed(), "still running");
-    assert!(
-        !opened
-            .cx
-            .has_text("Versus stopped: too many objects a second")
-    );
+    assert!(!opened.cx.has_text("Versus stopped: an object over its cap"));
 }
 
 #[test]
@@ -349,7 +347,7 @@ fn a_room_not_open_yet_is_opened_through_the_program_once_and_the_lobby_goes_in_
     let relay = Relay::new();
     relay.hold(arcade::VERSUS);
     let mut both = lobby_in(relay);
-    // the watch and `wait/<me>` each heard `not_granted`: one op a side
+    // the watch and `wait/<me>` each heard `Waiting`: one op a side
     for side in [&both.ada, &both.two] {
         assert_eq!(side.ops(), [Op::OpenVersus], "the room was asked open once");
     }
@@ -360,7 +358,8 @@ fn a_room_not_open_yet_is_opened_through_the_program_once_and_the_lobby_goes_in_
         both.ada.cx.texts()
     );
     // the block that writes the row lets the waiting asks in
-    both.relay.grant(arcade::VERSUS);
+    both.relay
+        .grant(arcade::VERSUS, None, arcade::versus_room());
     both.settle();
     shows(
         &both.ada.cx,
@@ -375,43 +374,13 @@ fn a_room_not_open_yet_is_opened_through_the_program_once_and_the_lobby_goes_in_
 
 #[test]
 fn a_grant_taken_back_stops_versus_and_asks_nothing_open() {
-    let mut opened = opened(World::default(), Some(1));
-    let tracks = opened.cx.host().stream::<LiveTracks>();
-    opened.cx.simulate_click("arcade-card-versus");
-    opened.cx.run_until_parked();
-    // inside: account 2 waits and asks; ada accepts
-    for name in ["wait/2", "ask/2/1/0b"] {
-        tracks.send(LiveAnnounce {
-            name: name.into(),
-            by: 2,
-            mode: LiveMode::Datagram,
-            up: true,
-        });
-    }
-    opened.cx.run_until_parked();
-    opened.cx.simulate_click("versus-player-2");
-    let board = opened
-        .cx
-        .last_frame()
-        .requests
-        .iter()
-        .find(|request| {
-            request.kind == LivePublishTrack::KIND
-                && LivePublishTrack::decode_request(&request.payload)
-                    .is_ok_and(|publish| publish.track.name.starts_with("board/1/"))
-        })
-        .map(|request| request.id)
-        .expect("the match publishes its board");
-    opened.cx.run_until_parked();
-    opened.cx.simulate_event(wire::Event::Response {
-        id: board,
-        result: Err(view::host::Error::new(
-            refusal::NOT_GRANTED,
-            "the grant was taken back",
-        )),
-        done: true,
-    });
-    opened.cx.run_until_parked();
-    shows(&opened.cx, &["Versus stopped: the grant was taken back"]);
-    assert_eq!(opened.ops(), []);
+    let mut both = lobby();
+    shows(&both.ada.cx, &["account 2"]);
+    both.relay.revoke(arcade::VERSUS, None);
+    both.settle();
+    shows(
+        &both.ada.cx,
+        &["Versus stopped: the room's program took the grant back"],
+    );
+    assert_eq!(both.ada.ops(), []);
 }
