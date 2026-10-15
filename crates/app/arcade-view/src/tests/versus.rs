@@ -266,6 +266,17 @@ fn a_side_that_goes_mid_match_hands_the_other_the_win_and_no_rematch() {
     );
     assert!(!both.ada.cx.has_text("Rematch"));
     assert!(!both.ada.ticks.subscribed());
+    // her challenge ended with the match: account 2 back in the lobby
+    // finds no stale one to accept
+    let asking = both.ada.cx.update(&both.ada.view, |arcade, _, _| {
+        arcade
+            .versus
+            .as_ref()
+            .expect("versus on screen")
+            .ask
+            .is_some()
+    });
+    assert!(!asking);
     // leaving goes back to the lobby, waiting again
     both.ada.cx.simulate_click("versus-lobby-back");
     both.ada.cx.run_until_parked();

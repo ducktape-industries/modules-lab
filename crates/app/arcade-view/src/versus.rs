@@ -63,7 +63,7 @@ pub(crate) struct Versus {
     /// lobby opens.
     nonce: Option<String>,
     /// This side's challenge: to whom, and its `ask` track.
-    ask: Option<(u64, Track<Said>)>,
+    pub(crate) ask: Option<(u64, Track<Said>)>,
     pub(crate) game: Option<Match>,
     /// What identity calls each account met; its number until it answers.
     names: BTreeMap<u64, String>,
@@ -424,6 +424,12 @@ impl Arcade {
                 game.gone = true;
                 if game.running() {
                     game.end = Some(End::Won);
+                }
+                // nobody is left to play again: this side's challenge ends
+                // with the match, or it reads as a fresh one when they
+                // come back
+                if let Some(versus) = &mut self.versus {
+                    versus.ask = None;
                 }
             }
             Err(refusal) => return cx.log_refused("what the other side said", &refusal),
