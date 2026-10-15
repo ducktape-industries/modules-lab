@@ -193,15 +193,17 @@ it, in a row the program writes. The program keeps nothing else: its one
 op, `Open { room }`, writes the grant that lets every account on the chain
 subscribe to every track of the room and publish only its own,
 `echo/{account}`, the asking account's number in the pattern
-(`program::live::grant(ctx, room, None, open)`). On a network nobody
-opened the lobby on, the first publish hears a `not_granted` that ends
-nothing: the node holds the view's asks until the grant's block. The view
-sends `Open`, once a session, and asks nothing again.
+(`program::live::grant(ctx, room, None, open_row())`). On a network nobody
+opened the lobby on, the reader's track and the room's list hear
+`Waiting`: the node holds the view's asks until the grant's block. The
+view sends `Open`, once a session, and asks nothing again. A
+`not_granted` is the grant taken back, and is shown.
 
 `src/tests.rs` links two and three views with the SDK's `testing::Relay`,
 which answers `live.*` as one node would: a line crosses, a late reader
 is replayed the last one, an app that goes away shows `publisher_gone`,
-and a lobby the relay holds is opened once and let in on its grant.
+a lobby the relay holds is opened once and let in on its grant, and a
+grant taken back is shown.
 
 ## Loop
 
