@@ -3,7 +3,7 @@
 //! until it is opened, and its row taken back. Every frame is held to the
 //! host's sanitizer and accessibility audit.
 use live_echo::{LOBBY, LiveEcho, Op, open_row};
-use view::methods::{HostSession, LivePublishTrack, Session, Submit};
+use view::methods::{HostLog, HostSession, LivePublishTrack, Publishing, Session, Submit};
 use view::testing::{Relay, TestAppContext};
 
 use crate::Echo;
@@ -149,5 +149,23 @@ fn a_key_with_no_account_publishes_nothing() {
         cx.has_text("Take an account to talk in the lobby."),
         "{:?}",
         cx.texts()
+    );
+}
+
+#[test]
+fn a_line_the_host_cut_leaves_the_reader_in_the_lobby() {
+    let mut cx = TestAppContext::new();
+    let mine = cx.host().stream::<LivePublishTrack>();
+    cx.open::<Echo>();
+    seat(&mut cx, 1);
+    mine.send(Publishing::Subscribers(1));
+    cx.run_until_parked();
+    say(&mut cx, "lost in the queue");
+    mine.send(Publishing::Cut { group: 0 });
+    cx.run_until_parked();
+    assert!(cx.has_text("1 listening"), "{:?}", cx.texts());
+    assert_eq!(
+        cx.host().requests::<HostLog>(),
+        ["Live echo: the host cut line 0 of the reader's track"]
     );
 }

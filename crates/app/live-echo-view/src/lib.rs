@@ -145,6 +145,13 @@ impl Echo {
                     view.listeners = count;
                     cx.notify();
                 }
+                // the host could not queue a line's group: that line is
+                // lost, and each line after it goes in a newer group of its
+                // own already
+                Ok(Publishing::Cut { group }) => cx.host().log(format!(
+                    "{}: the host cut line {group} of the reader's track",
+                    <Echo as View>::NAME
+                )),
                 Err(refusal) => view.refused(refusal, cx),
             },
         ));
