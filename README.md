@@ -187,8 +187,10 @@ replayed each person's last line. The view follows the room's tracks
 (`live.tracks`), subscribes to every `echo/*` it hears of, and lists the
 lines by account, the reader's own first. A track opened anew (a
 reconnect) starts that person's lines over from the last one the node
-replays. A track that ends says why under its account (`left:
-publisher_gone` when that app went away).
+replays. A line whose group the host cut (its queue to the node full) is
+lost: the view logs it and says nothing again, each next line already in
+a newer group of its own. A track that ends says why under its account
+(`left: publisher_gone` when that app went away).
 
 The node lets an account into a room only as the view's program granted
 it, in a row the program writes. The program keeps nothing else: its one
