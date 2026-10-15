@@ -7,8 +7,10 @@
 //! stream mode: a line is one object, alone in its group, so a reader who
 //! comes later is replayed each person's last line. The view follows the
 //! room's tracks (`live.tracks`) and subscribes to every `echo/*` it hears
-//! of, and lists the lines by account. A track that ends says why under
-//! its account (`publisher_gone` when its app went away).
+//! of, and lists the lines by account: an opening, a reconnect's too,
+//! starts a person's lines over from the last one the node replays. A
+//! track that ends says why under its account (`publisher_gone` when its
+//! app went away).
 //!
 //! The node lets an account into the room only as the program granted it,
 //! and holds what the reader asks until it has. On a network nobody opened
@@ -19,6 +21,7 @@
 use std::collections::BTreeMap;
 
 use live_echo::{LOBBY, LiveEcho, Op};
+use program::code;
 use serde::{Deserialize, Serialize};
 use view::live::{DEFAULT_PRIORITY, Received, Track, subscribe};
 use view::prelude::*;
@@ -186,12 +189,14 @@ impl Echo {
                     let over = person.lines.len().saturating_sub(KEPT);
                     person.lines.drain(..over);
                 }
-                Ok(Received::Waiting | Received::Opened { .. } | Received::GroupEnd { .. }) => {
-                    return;
-                }
+                // the track opened, or opened anew (a reconnect): the node
+                // replays its latest group, the person's last line, and the
+                // lines start over from it
+                Ok(Received::Opened { .. }) => person.lines.clear(),
+                Ok(Received::Waiting | Received::GroupEnd { .. }) => return,
                 // a body another build wrote (the SDK's `unexpected_reply`):
                 // the subscription goes on
-                Err(refusal) if refusal.code == "unexpected_reply" => {
+                Err(refusal) if refusal.code == code::UNEXPECTED_REPLY => {
                     return cx.log_refused("a line", &refusal);
                 }
                 Err(refusal) => person.gone = Some(refusal.code),

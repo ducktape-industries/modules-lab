@@ -2295,7 +2295,9 @@ dependencies = [
 name = "live-echo-view"
 version = "0.1.0"
 dependencies = [
+ "borsh",
  "live-echo",
+ "program",
  "serde",
  "view",
 ]

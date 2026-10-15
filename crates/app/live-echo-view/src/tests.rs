@@ -3,7 +3,10 @@
 //! until it is opened, and its row taken back. Every frame is held to the
 //! host's sanitizer and accessibility audit.
 use live_echo::{LOBBY, LiveEcho, Op, open_row};
-use view::methods::{HostLog, HostSession, LivePublishTrack, Publishing, Session, Submit};
+use view::methods::{
+    HostLog, HostSession, LiveAnnounce, LiveItem, LiveMode, LivePublishTrack, LiveSubscribeTrack,
+    LiveTracks, Publishing, Session, Submit, Watching,
+};
 use view::testing::{Relay, TestAppContext};
 
 use crate::Echo;
@@ -168,4 +171,41 @@ fn a_line_the_host_cut_leaves_the_reader_in_the_lobby() {
         cx.host().requests::<HostLog>(),
         ["Live echo: the host cut line 0 of the reader's track"]
     );
+}
+
+#[test]
+fn a_reopened_track_starts_the_lines_over_and_shows_its_last_once() {
+    let mut cx = TestAppContext::new();
+    let room = cx.host().stream::<LiveTracks>();
+    let line = cx.host().stream::<LiveSubscribeTrack>();
+    cx.open::<Echo>();
+    seat(&mut cx, 1);
+    room.send(Watching::Announce(LiveAnnounce {
+        name: "echo/2".into(),
+        by: 2,
+        mode: LiveMode::Stream,
+        up: true,
+    }));
+    cx.run_until_parked();
+    let said = |text: &str, group| LiveItem::Object {
+        group,
+        object: 0,
+        body: borsh::to_vec(&text.to_owned()).unwrap(),
+    };
+    let opened = |latest| LiveItem::Opened {
+        by: 2,
+        mode: LiveMode::Stream,
+        latest,
+    };
+    line.send(opened(None));
+    line.send(said("first", 0));
+    line.send(said("hi", 1));
+    cx.run_until_parked();
+    // the host opened the track anew: the node replays the last line
+    line.send(opened(Some(1)));
+    line.send(said("hi", 1));
+    cx.run_until_parked();
+    let his = cx.texts().iter().filter(|text| *text == "hi").count();
+    assert_eq!(his, 1, "{:?}", cx.texts());
+    assert!(!cx.has_text("first"), "{:?}", cx.texts());
 }

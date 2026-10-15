@@ -14,3 +14,9 @@ view.workspace = true
 serde.workspace = true
 # the program's types, linked with `program` off: the op that opens the lobby
 live-echo.workspace = true
+# the refusal codes (`code::UNEXPECTED_REPLY`)
+program.workspace = true
+
+[dev-dependencies]
+# a line's body, as the host carries it
+borsh.workspace = true
