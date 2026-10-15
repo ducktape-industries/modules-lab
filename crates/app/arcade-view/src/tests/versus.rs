@@ -9,7 +9,7 @@ use ducktape_view_guest::methods::{
 use ducktape_view_guest::testing::Relay;
 
 use super::*;
-use crate::tetris::{COLS, Piece, ROWS};
+use crate::tetris::{self, COLS, Piece, ROWS};
 use crate::versus::{End, Match};
 
 /// Ada, account 1, and account 2, who has no name: each on its own host,
@@ -227,6 +227,12 @@ fn a_top_out_ends_the_round_for_both_and_a_rematch_deals_the_next_alike() {
     both.tick(1);
     assert_eq!(game(&mut both.two, |game| game.end), Some(End::Lost));
     assert_eq!(game(&mut both.ada, |game| game.end), Some(End::Won));
+    // each well flashes first, its clock running until it is done
+    for side in [&mut both.ada, &mut both.two] {
+        assert!(!side.cx.has_text("Rematch"), "the card waits");
+        assert!(side.ticks.subscribed());
+    }
+    both.tick(tetris::ENDING as usize);
     shows(
         &both.ada.cx,
         &["You win", "account 2 topped out.", "Rematch", "Leave"],
@@ -262,6 +268,7 @@ fn a_side_that_goes_mid_match_hands_the_other_the_win_and_no_rematch() {
         game(&mut both.ada, |game| (game.end, game.gone)),
         (Some(End::Won), true)
     );
+    both.tick(tetris::ENDING as usize);
     shows(
         &both.ada.cx,
         &["You win", "account 2 left the match.", "Leave"],

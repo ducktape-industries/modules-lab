@@ -4,6 +4,7 @@ use ducktape_view_guest::{MouseButton, MouseDownEvent, Point, px};
 
 use super::*;
 use crate::mines::{self, Mark};
+use crate::tetris::{COLS, Piece, ROWS};
 use crate::{merge, tetris};
 
 const TETRIS: usize = 0;
@@ -36,6 +37,79 @@ fn a_tetris_key_moves_the_piece_on_the_next_tick_and_an_idle_tick_draws_nothing(
     opened.tick(1);
     assert_eq!(at(&mut opened), (from.0 - 1, from.1));
     assert_eq!(opened.cx.renders(), renders + 1);
+}
+
+/// The Tetris on screen, changed as `f` changes it.
+fn tetris<R>(opened: &mut Opened, f: impl FnOnce(&mut tetris::Tetris) -> R) -> R {
+    opened.game(|game| match game {
+        Game::Tetris(tetris) => f(tetris),
+        _ => panic!("tetris is on screen"),
+    })
+}
+
+#[test]
+fn a_tetris_clear_draws_its_effects_a_frame_a_tick_and_once_they_end_no_more() {
+    let mut opened = seated();
+    opened.start(TETRIS);
+    tetris(&mut opened, |tetris| {
+        // four rows full but for the first column, a block over them, the
+        // I upright over the column
+        for row in &mut tetris.well[ROWS as usize - 4..] {
+            *row = [Some(Piece::O); COLS as usize];
+            row[0] = None;
+        }
+        tetris.well[ROWS as usize - 5][9] = Some(Piece::O);
+        (tetris.piece, tetris.turn, tetris.at) = (Piece::I, 1, (-2, 0));
+    });
+    opened.key("space");
+    opened.tick(1);
+    shows(&opened.cx, &["TETRIS"]);
+    let renders = opened.cx.renders();
+    opened.tick(10);
+    assert_eq!(
+        opened.cx.renders(),
+        renders + 10,
+        "a frame a tick while it fades"
+    );
+    opened.tick(tetris::CALLOUT as usize - 10);
+    assert!(!opened.cx.has_text("TETRIS"));
+    assert!(!tetris(&mut opened, |tetris| tetris.animating()));
+    // a tick that moves nothing draws nothing again
+    let mut idle = 0;
+    for _ in 0..3 {
+        let (renders, at) = (opened.cx.renders(), tetris(&mut opened, |tetris| tetris.at));
+        opened.tick(1);
+        if tetris(&mut opened, |tetris| tetris.at) == at {
+            assert_eq!(opened.cx.renders(), renders);
+            idle += 1;
+        }
+    }
+    assert!(idle >= 2, "gravity moves the piece once in 48 ticks");
+}
+
+#[test]
+fn a_tetris_top_out_flashes_the_well_before_the_end_card_and_then_drops_the_clock() {
+    let mut opened = seated();
+    opened.start(TETRIS);
+    tetris(&mut opened, |tetris| {
+        // blocks where every piece comes in, beside a column the drop
+        // falls down
+        for row in &mut tetris.well[..2] {
+            row[3..7].fill(Some(Piece::Z));
+        }
+        (tetris.piece, tetris.turn, tetris.at) = (Piece::O, 0, (7, 0));
+    });
+    opened.key("space");
+    opened.tick(1);
+    assert!(tetris(&mut opened, |tetris| tetris.over()));
+    assert!(
+        !opened.cx.has_text("Game over"),
+        "the card waits for the flash"
+    );
+    assert!(opened.ticks.subscribed());
+    opened.tick(tetris::ENDING as usize);
+    shows(&opened.cx, &["Game over", "Play again"]);
+    assert!(!opened.ticks.subscribed());
 }
 
 #[test]

@@ -255,7 +255,8 @@ impl Arcade {
     }
 
     /// Tetris's screen: its score, lines, level and the reader's best
-    /// under hold, and on the well the overlay, with the top ten.
+    /// under hold, and on the well the overlay, with the top ten, once the
+    /// well's end has flashed.
     fn tetris(&self, tetris: &Tetris, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
         let play = self.play.as_ref().expect("a game is on screen");
         let mut stats = vec![("Score", design::grouped(tetris.score()))];
@@ -265,7 +266,7 @@ impl Arcade {
             self.stage_room(),
             tetris,
             self.board(cx, theme),
-            self.overlay(cx, theme, true),
+            self.overlay(cx, theme, true).filter(|_| !tetris.ending()),
             stats,
             None,
             theme,

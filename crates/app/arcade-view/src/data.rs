@@ -161,13 +161,14 @@ impl Arcade {
     /// Asks for the clock at the running game's period, or a versus
     /// round's, drops it when none runs, and asks again when the period
     /// changes. A versus round runs on off screen: the other side plays on.
+    /// An ended game's effects play out first.
     fn run_clock(&mut self, cx: &mut Context<Self>) {
         let running = self
             .play
             .as_ref()
             .filter(|play| !play.paused && !self.hidden)
             .and_then(|play| play.game.ready())
-            .filter(|game| !game.over());
+            .filter(|game| !game.over() || game.animating());
         let period = running
             .and_then(Game::period)
             .or_else(|| self.versus.as_ref().and_then(Versus::period));
