@@ -182,9 +182,14 @@ and a block pushed out of the top tops the well out. The tables, and where
 each comes from, are `tetris.rs`'s module doc. The holes come from a draw
 of their own, so garbage never changes a side's pieces. A round ends at a
 top-out, won or lost; both pressing Rematch deal the next round, each
-track going on in a new group, numbered by the round: of the other side's
-`ask` a view acts on its round's group only, and in it only past what it
-acted on, so a re-open's replay counts nothing twice. A side whose `ask`
+track going on in a new group. Each word on `ask` names its round, and a
+group holds one round's words from its first, so an object's number is the
+word's place in its round: of the other side's `ask` a view acts on its
+round's words only, and of those only past what it acted on, so a
+re-open's replay counts nothing twice. A group the host cut (its queue to
+the node full) is said again whole in a newer one, the last round's words
+first when the cut group held them, its rematch maybe among them; the
+board needs nothing of the kind, each of its objects the whole well. A side whose `ask`
 track ends mid-match, whatever the node gives as the reason, hands the
 other the win; an app that reconnects does not end it, the node handing
 its subscribers over to the new session. The match itself, the round's step, is `versus::Match`,

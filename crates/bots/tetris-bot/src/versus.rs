@@ -16,7 +16,7 @@ use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
 
 use arcade_view::versus::{
-    Effect, End, Match, Said, ask_track, asked, basis, board_track, wait_track,
+    Effect, End, Match, Word, ask_track, asked, basis, board_track, wait_track,
 };
 use live_wire::Mode;
 
@@ -83,6 +83,20 @@ struct Playing {
     shown: u32,
     /// The other side's ask track: what it says.
     theirs: String,
+}
+
+impl Playing {
+    /// The ask track goes on in a new group, the one it was in closed.
+    fn next_group(&mut self, out: &mut Vec<Out>) {
+        if self.said > 0 {
+            out.push(Out::EndGroup {
+                name: self.ask.clone(),
+                group: self.group,
+            });
+        }
+        self.group += 1;
+        self.said = 0;
+    }
 }
 
 /// A nonce no other lobby visit of this process drew.
@@ -184,13 +198,13 @@ impl Bot {
         self.ended_round();
     }
 
-    /// What the other side said on its ask track `name`: object `object`
-    /// of group `group`.
-    pub fn heard(&mut self, name: &str, group: u64, object: u32, said: Said) {
+    /// What the other side said on its ask track `name`: `word`, object
+    /// `object` of its group.
+    pub fn heard(&mut self, name: &str, object: u32, word: Word) {
         let Some(game) = self.game.as_mut().filter(|game| game.theirs == name) else {
             return;
         };
-        let effects = game.play.heard(group, object, said);
+        let effects = game.play.heard(object, word);
         self.act(effects);
         self.ended_round();
     }
@@ -243,14 +257,15 @@ impl Bot {
         };
         for effect in effects {
             match effect {
-                Effect::Say(said) => {
+                Effect::Say(word) => {
                     self.out.push(Out::Send {
                         name: game.ask.clone(),
                         group: game.group,
-                        body: borsh::to_vec(&said).expect("borsh encodes an in-memory value"),
+                        body: borsh::to_vec(&word).expect("borsh encodes an in-memory value"),
                     });
                     game.said += 1;
                 }
+                Effect::NextGroup => game.next_group(&mut self.out),
                 Effect::Show => {
                     let cells = game.play.tetris.cells();
                     self.out.push(Out::Latest {
@@ -262,14 +277,7 @@ impl Bot {
                     game.shown += 1;
                 }
                 Effect::NewRound => {
-                    if game.said > 0 {
-                        self.out.push(Out::EndGroup {
-                            name: game.ask.clone(),
-                            group: game.group,
-                        });
-                    }
-                    game.group += 1;
-                    game.said = 0;
+                    game.next_group(&mut self.out);
                     game.shown = 0;
                     self.log.push(format!(
                         "round {} against account {}",
@@ -284,15 +292,15 @@ impl Bot {
 #[cfg(test)]
 mod tests {
     use arcade_view::tetris::{Attack, COLS, Piece, ROWS};
-    use arcade_view::versus::deal;
+    use arcade_view::versus::{Said, deal};
 
     use super::*;
 
     const ME: u64 = 13;
     const THEM: u64 = 9;
 
-    fn said(said: Said) -> Vec<u8> {
-        borsh::to_vec(&said).unwrap()
+    fn word(round: u64, said: Said) -> Word {
+        Word { round, said }
     }
 
     /// The bot in a match account 9 asked for under nonce `abc`.
@@ -426,12 +434,18 @@ mod tests {
                     name,
                     group: 0,
                     body,
-                } if *name == ask => borsh::from_slice::<Said>(body).ok(),
+                } if *name == ask => borsh::from_slice::<Word>(body).ok(),
                 _ => None,
             })
             .collect();
         assert!(
-            matches!(attacks[0], Said::Attack(Attack { lines: 4, .. })),
+            matches!(
+                attacks[0],
+                Word {
+                    round: 0,
+                    said: Said::Attack(Attack { lines: 4, .. })
+                }
+            ),
             "{attacks:?}"
         );
     }
@@ -440,19 +454,19 @@ mod tests {
     fn a_round_won_or_lost_asks_for_another_and_both_asking_deals_it() {
         let mut bot = matched();
         let ask = game(&mut bot).ask.clone();
-        bot.heard("ask/9/13/abc", 0, 0, Said::Out);
+        bot.heard("ask/9/13/abc", 0, word(0, Said::Out));
         assert_eq!(game(&mut bot).play.end, Some(End::Won));
         assert_eq!(
             bot.out,
             [Out::Send {
                 name: ask.clone(),
                 group: 0,
-                body: said(Said::Rematch)
+                body: borsh::to_vec(&word(0, Said::Rematch)).unwrap()
             }]
         );
         assert!(bot.log[0].starts_with("round 0 against account 9: won, score 0"));
         bot.out.clear();
-        bot.heard("ask/9/13/abc", 0, 1, Said::Rematch);
+        bot.heard("ask/9/13/abc", 1, word(0, Said::Rematch));
         assert_eq!(
             bot.out[0],
             Out::EndGroup {
@@ -477,7 +491,7 @@ mod tests {
             bot.tick();
         }
         assert_eq!(game(&mut bot).play.end, Some(End::Lost));
-        let words: Vec<Said> = bot
+        let words: Vec<Word> = bot
             .out
             .iter()
             .filter_map(|out| match out {
@@ -489,7 +503,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(words, [Said::Out, Said::Rematch]);
+        assert_eq!(words, [word(1, Said::Out), word(1, Said::Rematch)]);
     }
 
     #[test]

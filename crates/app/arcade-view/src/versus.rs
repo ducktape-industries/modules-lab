@@ -9,16 +9,20 @@
 //!   waits;
 //! - `ask/<me>/<them>/<nonce>`: a challenge to `<them>`, and accepting
 //!   one is asking back. Once each has asked the other the match is on,
-//!   and the track goes on to carry what this side [`Said`]: its attacks,
-//!   its top-out, a rematch; in order and reliably (stream mode, a group a
-//!   round);
+//!   and the track goes on to carry what this side [`Said`], each a
+//!   [`Word`] that names its round: its attacks, its top-out, a rematch;
+//!   in order and reliably (stream mode). A round starts a new group, and
+//!   a group the host cut is said again from the round's first word in a
+//!   newer one;
 //! - `board/<me>/<nonce>`: the well as the other side draws it beside its
-//!   own, a byte a cell, the newest wins (datagram mode, a group a round).
+//!   own, a byte a cell, the newest wins (datagram mode, a group a round:
+//!   a full queue drops the oldest, and each object is the whole well).
 //!
 //! Both sides deal from both asks' accounts and nonces, so both get the
-//! same pieces. Of the other side's `ask` track a side acts only on its
-//! current round's group, and in it only past the newest object it acted
-//! on. A side whose `ask` track ends while the match is on, for any reason
+//! same pieces. Of the other side's `ask` track a side acts only on the
+//! words of its current round, and of those only on the ones past what it
+//! acted on: an object's number in its group is the word's place in its
+//! round. A side whose `ask` track ends while the match is on, for any reason
 //! the node gives (`publisher_gone` when its app went, `track_ended` when
 //! it left), has left, and the other wins. A side's app that reconnects
 //! ends nothing: the node hands its subscribers over to the new session,
@@ -60,6 +64,16 @@ pub enum Said {
     Rematch,
 }
 
+/// One object of a side's `ask` track once the match is on: what it said,
+/// in which round. A group holds one round's words from its first, so an
+/// object's number in its group is the word's place in the round, and a
+/// group the host cut is said again whole in a newer one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Word {
+    pub round: u64,
+    pub said: Said,
+}
+
 /// The versus screen: its lobby, and the match once there is one.
 #[derive(Default)]
 pub(crate) struct Versus {
@@ -74,7 +88,7 @@ pub(crate) struct Versus {
     /// lobby opens.
     nonce: Option<String>,
     /// This side's challenge: to whom, and its `ask` track.
-    pub(crate) ask: Option<(u64, Track<Said>)>,
+    pub(crate) ask: Option<(u64, Track<Word>)>,
     pub(crate) game: Option<Playing>,
     /// What identity calls each account met; its number until it answers.
     names: BTreeMap<u64, String>,
@@ -133,9 +147,35 @@ pub struct Match {
     pub again: (bool, bool),
     /// The other side left: no other round.
     pub gone: bool,
-    /// The newest `(group, object)` of the other side's `ask` track acted
-    /// on: what a replay of its group (a re-open) says again is behind it.
-    heard: Option<(u64, u32)>,
+    /// The `ask` group the next word goes in, counted as the track counts
+    /// them.
+    group: u64,
+    /// This round's words, and the last round's: its `Rematch` may be what
+    /// a cut kept from the other side.
+    words: Spoken,
+    last: Option<Spoken>,
+    /// How many of the other side's words of this round were acted on: a
+    /// re-open replays its group, and a cut round comes again whole.
+    heard: u32,
+}
+
+/// One round's words, in order, and the `ask` group they went out in last.
+#[derive(Debug, Default)]
+struct Spoken {
+    group: u64,
+    words: Vec<Said>,
+}
+
+impl Spoken {
+    /// These words, round `round`'s, said again in a newer group `group`.
+    fn again(&mut self, group: u64, round: u64) -> Vec<Effect> {
+        self.group = group;
+        let words = self
+            .words
+            .iter()
+            .map(|said| Effect::Say(Word { round, said: *said }));
+        std::iter::once(Effect::NextGroup).chain(words).collect()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -148,10 +188,12 @@ pub enum End {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     /// One object onto the `ask` track, in its current group.
-    Say(Said),
+    Say(Word),
     /// The well as it looks now onto the `board` track, in the round's
     /// group.
     Show,
+    /// The `ask` track goes on in a new group, the round the same.
+    NextGroup,
     /// A new round was dealt: the `ask` track goes on in a new group.
     NewRound,
 }
@@ -178,9 +220,14 @@ impl Versus {
         };
         for effect in effects {
             match effect {
-                Effect::Say(said) => {
+                Effect::Say(word) => {
                     if let Some((_, ask)) = &mut self.ask {
-                        ask.send(host, &said);
+                        ask.send(host, &word);
+                    }
+                }
+                Effect::NextGroup => {
+                    if let Some((_, ask)) = &mut self.ask {
+                        ask.next_group(host);
                     }
                 }
                 Effect::Show => {
@@ -212,7 +259,10 @@ impl Match {
             end: None,
             again: (false, false),
             gone: false,
-            heard: None,
+            group: 0,
+            words: Spoken::default(),
+            last: None,
+            heard: 0,
         };
         (play, vec![Effect::Show])
     }
@@ -230,10 +280,12 @@ impl Match {
         }
         let moved = self.tetris.tick();
         let garbage = self.tetris.versus.as_mut().expect("a versus well");
-        let attacks = garbage.outgoing.drain(..);
-        effects.extend(attacks.map(|attack| Effect::Say(Said::Attack(attack))));
+        let attacks: Vec<_> = garbage.outgoing.drain(..).collect();
+        for attack in attacks {
+            effects.push(self.say(Said::Attack(attack)));
+        }
         if self.tetris.over() {
-            effects.push(Effect::Say(Said::Out));
+            effects.push(self.say(Said::Out));
             self.end = Some(End::Lost);
         }
         if moved {
@@ -242,21 +294,20 @@ impl Match {
         effects
     }
 
-    /// What the other side said on its `ask` track, object `object` of
-    /// group `group`. Each side numbers its groups by the round, so only
-    /// the current round's group counts, and in it only what is past the
-    /// newest object acted on: a re-open replays the node's latest group,
-    /// which right after a rematch is still the last round's. A word of the
-    /// next round heard before the other side's rematch is lost with it:
-    /// groups are independent streams, and a lost attack beats a misapplied
-    /// one.
-    pub fn heard(&mut self, group: u64, object: u32, said: Said) -> Vec<Effect> {
-        let newer = self.heard.is_none_or(|heard| (group, object) > heard);
-        if group != self.round || !newer {
+    /// What the other side said on its `ask` track: `word`, object
+    /// `object` of its group, which is the word's place in its round. Only
+    /// the current round's words count, and of them only those past the
+    /// ones acted on: a re-open replays the node's latest group, which
+    /// right after a rematch is still the last round's, and a round the
+    /// host cut comes again from its first word. A word of the next round
+    /// heard before the other side's rematch is lost with it: groups are
+    /// independent streams, and a lost attack beats a misapplied one.
+    pub fn heard(&mut self, object: u32, word: Word) -> Vec<Effect> {
+        if word.round != self.round || object < self.heard {
             return Vec::new();
         }
-        self.heard = Some((group, object));
-        match said {
+        self.heard = object + 1;
+        match word.said {
             Said::Attack(attack) if self.running() && attack.fair() => {
                 self.tetris.receive(attack);
                 Vec::new()
@@ -288,9 +339,36 @@ impl Match {
             return Vec::new();
         }
         self.again.0 = true;
-        let mut effects = vec![Effect::Say(Said::Rematch)];
+        let mut effects = vec![self.say(Said::Rematch)];
         effects.extend(self.again());
         effects
+    }
+
+    /// The host cut `group` of this side's `ask` track: the other side
+    /// hears none of what it held past the cut. The round it held is said
+    /// again whole in a newer group; when that was the last round, its
+    /// words first (its `Rematch` among them), then this round's in a group
+    /// after them. A cut of an older group is behind both sides.
+    pub fn cut(&mut self, group: u64) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        if let Some(last) = self.last.as_mut().filter(|last| last.group == group) {
+            self.group += 1;
+            effects = last.again(self.group, self.round - 1);
+        } else if self.words.group != group {
+            return effects;
+        }
+        self.group += 1;
+        effects.extend(self.words.again(self.group, self.round));
+        effects
+    }
+
+    /// `said` goes out in this round's group, and is kept to say again.
+    fn say(&mut self, said: Said) -> Effect {
+        self.words.words.push(said);
+        Effect::Say(Word {
+            round: self.round,
+            said,
+        })
     }
 
     /// The other side topped out or left: this one wins, and its well
@@ -312,6 +390,13 @@ impl Match {
         self.tetris = deal(&self.basis, self.round, self.me);
         self.end = None;
         self.again = (false, false);
+        self.group += 1;
+        let words = Spoken {
+            group: self.group,
+            words: Vec::new(),
+        };
+        self.last = Some(std::mem::replace(&mut self.words, words));
+        self.heard = 0;
         vec![Effect::NewRound, Effect::Show]
     }
 }
@@ -444,19 +529,28 @@ impl Arcade {
 
     /// What the host says of one of this side's tracks: that it waits for
     /// the room; how many listen, which nothing here needs; a group it cut,
-    /// or an object it dropped (`too_large`), after which the track goes on
-    /// and so does the round; or why the track ended.
+    /// which the match says again in a newer one, or an object it dropped
+    /// (`too_large`), after which the track goes on and so does the round;
+    /// or why the track ended.
     fn published(&mut self, said: Result<Publishing, Error>, cx: &mut Context<Self>) {
         match said {
             Ok(Publishing::Waiting) => self.knock(cx),
             Ok(Publishing::Subscribers(_)) => {}
             // only `ask/` sends stream objects (`wait/` sends none, `board/`
-            // is datagram mode): the round's group, its queue to the node
-            // full. Not a reason to end the match.
-            Ok(Publishing::Cut { group }) => cx.host().log(format!(
-                "{}: the host cut group {group} of this side's versus ask",
-                <Self as View>::NAME
-            )),
+            // is datagram mode, where nothing is cut): a group of it, its
+            // queue to the node full. Not a reason to end the match.
+            Ok(Publishing::Cut { group }) => {
+                cx.host().log(format!(
+                    "{}: the host cut group {group} of this side's versus ask; it is said again",
+                    <Self as View>::NAME
+                ));
+                if let Some(versus) = &mut self.versus
+                    && let Some(game) = &mut versus.game
+                {
+                    let effects = game.play.cut(group);
+                    versus.act(effects, &cx.host());
+                }
+            }
             Err(dropped) if dropped.code == refusal::TOO_LARGE => {
                 cx.log_refused("an object on a versus track", &dropped)
             }
@@ -621,7 +715,7 @@ impl Arcade {
     }
 
     /// What the other side said.
-    fn heard(&mut self, said: Result<Received<Said>, Error>, cx: &mut Context<Self>) {
+    fn heard(&mut self, said: Result<Received<Word>, Error>, cx: &mut Context<Self>) {
         let Some(versus) = &mut self.versus else {
             return;
         };
@@ -629,17 +723,13 @@ impl Arcade {
             return;
         };
         match said {
-            Ok(Received::Object {
-                group,
-                object,
-                value,
-            }) => {
-                let effects = game.play.heard(group, object, value);
+            Ok(Received::Object { object, value, .. }) => {
+                let effects = game.play.heard(object, value);
                 versus.act(effects, &cx.host());
             }
-            // a re-open (`Opened`) replays the node's latest group: what the
-            // match acted on already is behind its newest `(group, object)`,
-            // so nothing built from it starts over
+            // a re-open (`Opened`) replays the node's latest group, and a
+            // cut group (`GroupEnd`) comes again whole in a newer one: what
+            // the match acted on is behind its count of the round's words
             Ok(Received::Waiting | Received::Opened { .. } | Received::GroupEnd { .. }) => return,
             // a body that does not decode, the one item that does not end
             // the subscription

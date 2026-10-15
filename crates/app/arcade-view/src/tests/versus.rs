@@ -4,15 +4,15 @@
 //! The room's grant is the relay's to give: held, the lobby waits for it;
 //! taken back, the lobby stops.
 use view::methods::{
-    HostLog, HostSession, LiveAnnounce, LiveItem, LiveMode, LivePublishTrack, LiveSubscribeTrack,
-    LiveTracks, Method, Publishing, Watching, refusal,
+    HostLog, HostSession, LiveAnnounce, LiveItem, LiveMode, LivePublishTrack, LiveSendObject,
+    LiveSubscribeTrack, LiveTracks, Method, Publishing, Watching, refusal,
 };
 use view::testing::Relay;
 
 use super::*;
 use crate::tetris::Attack;
 use crate::tetris::{self, COLS, Piece, ROWS};
-use crate::versus::{Effect, End, Match, Said, basis, deal};
+use crate::versus::{Effect, End, Match, Said, Word, basis, deal};
 
 /// Ada, account 1, and account 2, who has no name: each on its own host,
 /// linked, with the versus lobby open.
@@ -386,12 +386,13 @@ impl Alone {
         self.ada.cx.run_until_parked();
     }
 
-    /// Account 2 says `said`, object `object` of group `group`.
-    fn says(&mut self, group: u64, object: u32, said: Said) {
+    /// Account 2 says `said` of round `round`, object `object` of group
+    /// `group`.
+    fn says(&mut self, group: u64, object: u32, round: u64, said: Said) {
         self.said.send(LiveItem::Object {
             group,
             object,
-            body: borsh::to_vec(&said).unwrap(),
+            body: borsh::to_vec(&Word { round, said }).unwrap(),
         });
         self.ada.cx.run_until_parked();
     }
@@ -434,15 +435,60 @@ fn an_object_the_node_drops_leaves_the_round_running() {
 }
 
 #[test]
-fn a_group_the_host_cut_leaves_the_round_running() {
+fn a_group_the_host_cut_is_said_again_whole_in_a_newer_one() {
     let mut alone = alone();
     alone.tell(alone.ask, Ok(Publishing::Cut { group: 0 }));
     alone.still_running();
     let logged = alone.ada.cx.host().requests::<HostLog>();
     assert_eq!(
         logged,
-        ["Arcade: the host cut group 0 of this side's versus ask"]
+        ["Arcade: the host cut group 0 of this side's versus ask; it is said again"]
     );
+    // round 0 ends, and ada's rematch goes out in group 1
+    alone.opened(None);
+    alone.says(0, 0, 0, Said::Out);
+    alone.ada.tick(tetris::ENDING as usize);
+    alone.ada.cx.simulate_click("versus-again");
+    alone.ada.cx.run_until_parked();
+    let sent = |alone: &Alone| {
+        let sent = alone.ada.cx.host().requests::<LiveSendObject>();
+        let sent = sent
+            .into_iter()
+            .filter(|send| send.track.name.starts_with("ask/"));
+        let sent = sent.map(|send| (send.group, send.object, send.end, send.body));
+        sent.collect::<Vec<_>>()
+    };
+    let rematch = borsh::to_vec(&Word {
+        round: 0,
+        said: Said::Rematch,
+    })
+    .unwrap();
+    assert_eq!(sent(&alone), [(1, 0, false, rematch.clone())]);
+    // that group cut too: closed, and its round said again in group 2
+    alone.tell(alone.ask, Ok(Publishing::Cut { group: 1 }));
+    assert_eq!(
+        sent(&alone)[1..],
+        [(1, 1, true, Vec::new()), (2, 0, false, rematch)]
+    );
+}
+
+#[test]
+fn a_round_said_again_after_a_cut_queues_only_what_is_new() {
+    let mut alone = alone();
+    let attack = Said::Attack(Attack { lines: 2, hole: 3 });
+    alone.opened(None);
+    alone.says(0, 0, 0, attack);
+    assert_eq!(alone.queued(), 2);
+    // account 2's group 0 was cut: round 0 comes again whole in group 1
+    alone.said.send(LiveItem::GroupEnd {
+        group: 0,
+        complete: false,
+    });
+    alone.says(1, 0, 0, attack);
+    alone.still_running();
+    assert_eq!(alone.queued(), 2, "the word said again queues nothing");
+    alone.says(1, 1, 0, attack);
+    assert_eq!(alone.queued(), 4, "the round's next word counts");
 }
 
 #[test]
@@ -493,18 +539,19 @@ fn the_match_step_alone_counts_an_attack_heard_and_deals_the_next_round_once_bot
     let (mut play, shown) = Match::new(2, 1, basis(2, "b", 1, "a"));
     assert_eq!(shown, [Effect::Show]);
     let attack = Attack { lines: 3, hole: 4 };
-    assert_eq!(play.heard(0, 0, Said::Attack(attack)), []);
+    let word = |said| Word { round: 0, said };
+    assert_eq!(play.heard(0, word(Said::Attack(attack))), []);
     let garbage = play.tetris.versus.as_ref().expect("a versus well");
     assert_eq!((garbage.queued(), garbage.received), (3, 3));
     // they top out: this side won, and wants another
-    assert_eq!(play.heard(0, 1, Said::Out), []);
+    assert_eq!(play.heard(1, word(Said::Out)), []);
     assert_eq!(play.end, Some(End::Won));
     assert_eq!(play.tick(), [], "nothing steps after the round");
-    assert_eq!(play.rematch(), [Effect::Say(Said::Rematch)]);
+    assert_eq!(play.rematch(), [Effect::Say(word(Said::Rematch))]);
     assert_eq!(play.rematch(), [], "asked once");
     // theirs deals round 1, from its number
     assert_eq!(
-        play.heard(0, 2, Said::Rematch),
+        play.heard(2, word(Said::Rematch)),
         [Effect::NewRound, Effect::Show]
     );
     assert_eq!(
@@ -523,17 +570,66 @@ fn the_match_step_alone_counts_an_attack_heard_and_deals_the_next_round_once_bot
 }
 
 #[test]
+fn a_cut_of_the_last_rounds_group_says_its_words_again_then_this_rounds() {
+    let (mut play, _) = Match::new(2, 1, basis(2, "b", 1, "a"));
+    let word = |round, said| Effect::Say(Word { round, said });
+    play.heard(
+        0,
+        Word {
+            round: 0,
+            said: Said::Out,
+        },
+    );
+    assert_eq!(play.rematch(), [word(0, Said::Rematch)]);
+    // their rematch deals round 1, in group 1
+    let rematch = Word {
+        round: 0,
+        said: Said::Rematch,
+    };
+    assert_eq!(play.heard(1, rematch), [Effect::NewRound, Effect::Show]);
+    // group 0 cut: the rematch it held may not have reached them, and
+    // without it this round's words are not theirs yet: round 0 again in
+    // group 2, round 1 (no word yet) in group 3
+    let again = [Effect::NextGroup, word(0, Said::Rematch), Effect::NextGroup];
+    assert_eq!(play.cut(0), again);
+    // round 1 ends: its rematch goes out in group 3
+    play.heard(
+        0,
+        Word {
+            round: 1,
+            said: Said::Out,
+        },
+    );
+    assert_eq!(play.rematch(), [word(1, Said::Rematch)]);
+    // group 2, round 0's said again, cut too: both rounds again
+    let again = [
+        Effect::NextGroup,
+        word(0, Said::Rematch),
+        Effect::NextGroup,
+        word(1, Said::Rematch),
+    ];
+    assert_eq!(play.cut(2), again);
+    // groups 0, 1 and 3 are behind both sides now
+    for group in [0, 1, 3] {
+        assert_eq!(play.cut(group), [], "group {group}");
+    }
+    // this round's group (5) cut: this round again, in group 6
+    let again = [Effect::NextGroup, word(1, Said::Rematch)];
+    assert_eq!(play.cut(5), again);
+}
+
+#[test]
 fn a_reopened_ask_track_replays_what_was_heard_and_nothing_queues_twice() {
     let mut alone = alone();
     let attack = Said::Attack(Attack { lines: 2, hole: 3 });
     alone.opened(None);
-    alone.says(0, 0, attack);
+    alone.says(0, 0, 0, attack);
     assert_eq!(alone.queued(), 2);
     // the host opened the track anew: the node replays its latest group
     alone.opened(Some(0));
-    alone.says(0, 0, attack);
+    alone.says(0, 0, 0, attack);
     assert_eq!(alone.queued(), 2, "the replay queues nothing again");
-    alone.says(0, 1, attack);
+    alone.says(0, 1, 0, attack);
     assert_eq!(alone.queued(), 4, "what is new still counts");
 }
 
@@ -542,23 +638,23 @@ fn a_replay_of_the_last_round_ends_nothing_in_the_next() {
     let mut alone = alone();
     // round 0: account 2 tops out; both ask for another
     alone.opened(None);
-    alone.says(0, 0, Said::Out);
+    alone.says(0, 0, 0, Said::Out);
     assert_eq!(game(&mut alone.ada, |game| game.end), Some(End::Won));
     alone.ada.tick(tetris::ENDING as usize);
     alone.ada.cx.simulate_click("versus-again");
     alone.ada.cx.run_until_parked();
-    alone.says(0, 1, Said::Rematch);
+    alone.says(0, 1, 0, Said::Rematch);
     assert_eq!(game(&mut alone.ada, |game| game.round), 1);
     // a re-open early in round 1: the node's latest group is still round
     // 0's, which an empty group 1 passed over
     alone.opened(Some(0));
-    alone.says(0, 0, Said::Attack(Attack { lines: 2, hole: 3 }));
-    alone.says(0, 1, Said::Out);
-    alone.says(0, 2, Said::Rematch);
+    alone.says(0, 0, 0, Said::Attack(Attack { lines: 2, hole: 3 }));
+    alone.says(0, 1, 0, Said::Out);
+    alone.says(0, 2, 0, Said::Rematch);
     alone.still_running();
     assert_eq!(alone.queued(), 0);
     // round 1's own words count
-    alone.says(1, 0, Said::Out);
+    alone.says(1, 0, 1, Said::Out);
     assert_eq!(game(&mut alone.ada, |game| game.end), Some(End::Won));
 }
 
@@ -683,7 +779,7 @@ fn a_round_off_screen_runs_on_and_lets_go_of_the_keys_it_held() {
 fn a_hand_over_to_their_reconnected_app_ends_nothing() {
     let mut alone = alone();
     alone.opened(None);
-    alone.says(0, 0, Said::Attack(Attack { lines: 2, hole: 3 }));
+    alone.says(0, 0, 0, Said::Attack(Attack { lines: 2, hole: 3 }));
     // their app reconnected: the node hands this subscription to its new
     // session, the open group cut short, and the host may open it anew
     alone.said.send(LiveItem::GroupEnd {
@@ -693,6 +789,6 @@ fn a_hand_over_to_their_reconnected_app_ends_nothing() {
     alone.opened(Some(0));
     alone.still_running();
     assert_eq!(alone.queued(), 2);
-    alone.says(0, 1, Said::Out);
+    alone.says(0, 1, 0, Said::Out);
     assert_eq!(game(&mut alone.ada, |game| game.end), Some(End::Won));
 }

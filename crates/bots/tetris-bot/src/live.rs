@@ -384,7 +384,7 @@ impl Wire {
                 let first = self.heard.get(&key).copied().unwrap_or(0);
                 for (object, body) in (first..).zip(&objects) {
                     match borsh::from_slice(body) {
-                        Ok(said) => bot.heard(name, header.group, object, said),
+                        Ok(word) => bot.heard(name, object, word),
                         Err(error) => crate::log(format!("{name} said what no side says: {error}")),
                     }
                 }

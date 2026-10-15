@@ -2,7 +2,7 @@
 //! websocket: the node's half of the handshake checks the proof as the
 //! node does (`KeyScheme::verify`), then speaks the room and a match.
 use arcade_view::tetris::Attack;
-use arcade_view::versus::{Said, ask_track};
+use arcade_view::versus::{Said, Word, ask_track};
 use commonware_codec::DecodeExt as _;
 use live_wire::{Challenge, End, Ending, Mode};
 use tokio::io::DuplexStream;
@@ -176,7 +176,7 @@ fn a_group_heard_in_slices_numbers_its_objects_on() {
     // group 0 in two slices: an attack, then their top-out, object 1
     let slice = |said: Said, end| WsFrame::Group {
         header: GroupHeader { alias: 7, group: 0 },
-        objects: vec![borsh::to_vec(&said).unwrap()],
+        objects: vec![borsh::to_vec(&Word { round: 0, said }).unwrap()],
         end,
     };
     let attack = Said::Attack(Attack { lines: 2, hole: 1 });
@@ -332,7 +332,13 @@ async fn a_challenge_from_the_room_is_a_match_over_the_wire() {
     // they top out: it won, and asks for another round on its ask
     let out = WsFrame::Group {
         header: GroupHeader { alias: 7, group: 0 },
-        objects: vec![borsh::to_vec(&Said::Out).unwrap()],
+        objects: vec![
+            borsh::to_vec(&Word {
+                round: 0,
+                said: Said::Out,
+            })
+            .unwrap(),
+        ],
         end: Ending::More,
     };
     send(&mut node, &out).await.unwrap();
@@ -351,7 +357,11 @@ async fn a_challenge_from_the_room_is_a_match_over_the_wire() {
         (rematch.0.alias, rematch.0.group, rematch.2),
         (2, 0, Ending::More)
     );
-    assert_eq!(rematch.1, [borsh::to_vec(&Said::Rematch).unwrap()]);
+    let rematch_word = Word {
+        round: 0,
+        said: Said::Rematch,
+    };
+    assert_eq!(rematch.1, [borsh::to_vec(&rematch_word).unwrap()]);
 
     // they leave: it waits again
     let gone = Control::Ended {
