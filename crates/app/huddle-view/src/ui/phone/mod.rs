@@ -22,17 +22,17 @@ use view::design::{Ladder, Nav};
 use view::prelude::*;
 use view::{AnyElement, Div, Stateful};
 
-use crate::look::{HEADPHONES, SPEAKER, VIDEO_OFF};
+use crate::look::{CHECK, HEADPHONES, SPEAKER, VIDEO_OFF};
 use crate::words;
-use crate::{Huddle, Kind, Row, Screen, Which};
+use crate::{Huddle, Row, Screen, Which};
 
 mod check;
 mod parts;
 mod room;
 
-/// The sound sheet is the speakers' menu: on a phone the speaker picked is
+/// The sound sheet is the routes' menu: on a phone the speaker picked is
 /// the route, which the microphone follows.
-const SOUND: Which = Which::Kind(Kind::Speaker);
+const SOUND: Which = Which::Routes;
 
 /// The screen, and the sound sheet over it. Back closes that sheet, and is
 /// there exactly while one is drawn: on the check the way out is the
@@ -91,11 +91,17 @@ fn sound_sheet(
         .flex_col()
         .child(design::sheet_title(
             "huddle-sound-sheet-head",
-            words::PLAY_THROUGH,
+            words::menu(SOUND),
             ladder,
             theme,
         ))
-        .children(routes)
+        .child(
+            div()
+                .id("huddle-sound-routes")
+                .role(Role::Menu)
+                .aria_label(words::menu(SOUND))
+                .children(routes),
+        )
         .child(
             div()
                 .px(design::SHEET_INSET)
@@ -105,7 +111,7 @@ fn sound_sheet(
                 .child(words::MICROPHONE_FOLLOWS),
         );
     Some(
-        design::sheet("huddle-sound-sheet", words::PLAY_THROUGH, ladder, theme)
+        design::sheet("huddle-sound-sheet", words::menu(SOUND), ladder, theme)
             .on_dismiss(close)
             .child(sheet)
             .into_any_element(),
@@ -143,9 +149,11 @@ fn route(
     .icon(glyph)
     .when_some(row.twin, |row, twin| row.hint(twin))
     .into_element()
+    // one of the routes, as the desktop's menu rows are
+    .role(Role::MenuItemRadio)
     .aria_toggled(row.picked.into())
     .when(row.picked, |route| {
-        route.child(design::icon("check", ladder.icon_sheet).text_color(theme.foreground))
+        route.child(design::icon(CHECK, ladder.icon_sheet).text_color(theme.foreground))
     })
     .into_any_element()
 }

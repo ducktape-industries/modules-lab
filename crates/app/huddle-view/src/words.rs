@@ -99,6 +99,7 @@ pub(crate) fn menu(which: Which) -> &'static str {
     match which {
         Which::Kind(of) => kind(of),
         Which::Sound => "Microphone and speaker",
+        Which::Routes => PLAY_THROUGH,
     }
 }
 

@@ -18,8 +18,8 @@ use view::{
 };
 
 use crate::look::{
-    self, ALERT, HEADPHONES, LEAVE, MIC, MIC_OFF, PLAY, SPEAKER, SPEAKING, STOP, VIDEO, VIDEO_OFF,
-    black, glass, muted_mark, trouble_glyph, white,
+    self, ALERT, CHECK, HEADPHONES, LEAVE, MIC, MIC_OFF, PLAY, SPEAKER, SPEAKING, STOP, VIDEO,
+    VIDEO_OFF, black, glass, muted_mark, trouble_glyph, white,
 };
 use crate::words::{self, Device};
 use crate::{Huddle, Kind, Menu, RECORD_SECONDS, Row, Screen, Which, trouble};
@@ -123,7 +123,6 @@ fn closed(menu: Option<Menu>, window: &mut Window) {
 // ones the phone draws too are `look`'s)
 const CARET: &str = "chevron-down";
 const MIRROR: &str = "flip-horizontal-2";
-const CHECK: &str = "check";
 const PEOPLE: &str = "users";
 const PIN: &str = "pin";
 const PIN_OFF: &str = "pin-off";

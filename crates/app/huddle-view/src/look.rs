@@ -19,6 +19,7 @@ pub(crate) const ALERT: &str = "circle-alert";
 pub(crate) const PLAY: &str = "play";
 pub(crate) const STOP: &str = "square";
 pub(crate) const LEAVE: &str = "phone-off";
+pub(crate) const CHECK: &str = "check";
 const CAMERA_OFF: &str = "camera-off";
 const PERSON: &str = "user-round";
 

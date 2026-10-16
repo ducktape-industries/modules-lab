@@ -4,7 +4,6 @@
 //! capabilities (a piece the manifest leaves out fails the test). The
 //! desktop's tree is driven here, under a pointer; the phone's, under a
 //! finger, in `phone.rs`.
-use view::Entity;
 use view::methods::{
     AudioDevice, AudioDevices, AudioKind, CameraDevice, CameraDevices, ClockTicks, Facing, Float,
     HostFloat, HostPlacement, HostShow, HostTitle, HostUnfloat, MicrophoneChime, MicrophoneDevices,
@@ -13,6 +12,7 @@ use view::methods::{
 use view::testing::{StreamSender, TestAppContext};
 use view::wire::list::UniformListScrollStrategy;
 use view::wire::{ImageObjectFit, MediaState, MediaStatus, MicCommand, Node, Playback};
+use view::{Entity, Role};
 
 use crate::{FLOAT, Huddle, RECORD_SECONDS};
 

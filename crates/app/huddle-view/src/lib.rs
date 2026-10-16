@@ -72,12 +72,28 @@ pub(crate) enum Kind {
     Speaker,
 }
 
-/// Which device menu: one kind's, or the room's sound menu, which lists
-/// the microphones and then the speakers.
+/// Which device menu: one kind's, the room's sound menu, which lists the
+/// microphones and then the speakers, or a phone's routes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Which {
     Kind(Kind),
     Sound,
+    /// A phone's sound sheet: the speakers, which on a phone are the
+    /// routes the microphone follows.
+    Routes,
+}
+
+/// How a menu orders its devices.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Order {
+    /// The system's default first, the rest as the host listed them: a
+    /// desktop's picker, whose default stays where it is while one is
+    /// picked.
+    DefaultFirst,
+    /// As the host listed them: a phone's routes, whose default is the
+    /// route playing, which moves to the one picked; first, its row would
+    /// jump under the finger.
+    Listed,
 }
 
 impl Which {
@@ -86,6 +102,14 @@ impl Which {
         match self {
             Which::Kind(kind) => std::slice::from_ref(kind),
             Which::Sound => &[Kind::Microphone, Kind::Speaker],
+            Which::Routes => &[Kind::Speaker],
+        }
+    }
+
+    fn order(&self) -> Order {
+        match self {
+            Which::Kind(_) | Which::Sound => Order::DefaultFirst,
+            Which::Routes => Order::Listed,
         }
     }
 }
@@ -603,34 +627,34 @@ impl Huddle {
         self.recording_since = None;
     }
 
-    /// The rows of menu `which`: each kind's devices in turn.
+    /// The rows of menu `which`: each kind's devices in turn, in its order.
     pub(crate) fn rows(&self, which: Which) -> Vec<Row> {
         which
             .kinds()
             .iter()
-            .flat_map(|kind| self.rows_of(*kind))
+            .flat_map(|kind| self.rows_of(*kind, which.order()))
             .collect()
     }
 
-    /// The rows of one kind: its devices, the system's default first, the
-    /// rest in the host's order; one row saying why when there are none.
-    fn rows_of(&self, kind: Kind) -> Vec<Row> {
+    /// The rows of one kind in `order`; one row saying why when there are
+    /// none.
+    fn rows_of(&self, kind: Kind, order: Order) -> Vec<Row> {
         let audio = self.audio.ready();
         match kind {
             Kind::Camera => rows(
-                kind,
+                (kind, order),
                 self.cameras.ready().map_or(&[][..], Vec::as_slice),
                 self.camera.as_deref(),
                 nothing(&self.cameras),
             ),
             Kind::Microphone => rows(
-                kind,
+                (kind, order),
                 audio.map_or(&[][..], |audio| &audio.inputs),
                 self.microphone.as_deref(),
                 nothing(&self.audio),
             ),
             Kind::Speaker => rows(
-                kind,
+                (kind, order),
                 audio.map_or(&[][..], |audio| &audio.outputs),
                 self.speaker.as_deref(),
                 nothing(&self.audio),
@@ -640,7 +664,7 @@ impl Huddle {
 
     /// The name a picker shows: the picked device's, else the default's.
     pub(crate) fn shown_device(&self, kind: Kind) -> String {
-        self.rows_of(kind)
+        self.rows_of(kind, Order::DefaultFirst)
             .into_iter()
             .find(|row| row.picked && row.id.is_some())
             .map_or(words::SYSTEM_DEFAULT.into(), |row| row.name)
@@ -720,7 +744,14 @@ impl Listed for AudioDevice {
     }
 }
 
-fn rows<D: Listed>(kind: Kind, devices: &[D], picked: Option<&str>, nothing: &str) -> Vec<Row> {
+/// The rows of `kind`'s `devices` in `order`, the one in use (`picked`,
+/// else the default) checked; `nothing` alone where there are none.
+fn rows<D: Listed>(
+    (kind, order): (Kind, Order),
+    devices: &[D],
+    picked: Option<&str>,
+    nothing: &str,
+) -> Vec<Row> {
     if devices.is_empty() {
         return vec![Row {
             kind,
@@ -732,8 +763,9 @@ fn rows<D: Listed>(kind: Kind, devices: &[D], picked: Option<&str>, nothing: &st
     }
     let in_use = in_use(devices, picked).map(Listed::id);
     let mut ordered: Vec<&D> = devices.iter().collect();
-    // the system's default first, the rest as the host listed them
-    ordered.sort_by_key(|device| !device.default());
+    if order == Order::DefaultFirst {
+        ordered.sort_by_key(|device| !device.default());
+    }
     ordered
         .into_iter()
         .map(|device| Row {

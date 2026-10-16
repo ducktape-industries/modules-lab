@@ -46,7 +46,13 @@ fn phone_routes(outputs: Vec<AudioDevice>) -> (TestAppContext, StreamSender<Cloc
 
 /// The view open on [`phone_host`], under a finger, 390 by 844.
 fn phone() -> (TestAppContext, StreamSender<ClockTicks>) {
-    let (mut cx, ticks) = phone_host();
+    opened_on_phone(phone_host())
+}
+
+/// The view open on `host`, under a finger, 390 by 844.
+fn opened_on_phone(
+    (mut cx, ticks): (TestAppContext, StreamSender<ClockTicks>),
+) -> (TestAppContext, StreamSender<ClockTicks>) {
     cx.open::<Huddle>();
     cx.run_until_parked();
     on_phone(&mut cx);
@@ -329,6 +335,10 @@ fn the_sound_sheet_lists_the_routes_and_picks_one() {
     );
     assert_eq!(toggled(&cx, "huddle-sound-0"), Some(true));
     assert_eq!(toggled(&cx, "huddle-sound-1"), Some(false));
+    assert_eq!(
+        cx.interactivity("huddle-sound-0").role,
+        Some(Role::MenuItemRadio)
+    );
     cx.simulate_click("huddle-sound-1");
     assert!(cx.find("huddle-sound-sheet").is_none(), "closed");
     let (_, input, output, ..) = mic_piece(&cx).unwrap();
@@ -342,19 +352,12 @@ fn the_sound_sheet_lists_the_routes_and_picks_one() {
 /// The iPhone's host lists the loudspeaker, the route playing now and each
 /// Bluetooth headset, never the earpiece: the sheet reads with the
 /// loudspeaker alone (the simulator), and with AirPods playing it names
-/// them in use and lets the live loop run through them.
+/// them in use, where the host lists them, and lets the live loop run
+/// through them.
 #[test]
 fn the_sound_sheet_reads_with_the_iphones_routes() {
-    let open = |outputs| {
-        let (mut cx, ticks) = phone_routes(outputs);
-        cx.open::<Huddle>();
-        cx.run_until_parked();
-        on_phone(&mut cx);
-        live_pieces(&mut cx);
-        (cx, ticks)
-    };
-    let speaker = |playing| audio("speaker", "Speaker", playing, AudioKind::Speaker);
-    let (mut cx, _ticks) = open(vec![speaker(true)]);
+    let (mut cx, _ticks) = opened_on_phone(phone_routes(vec![speaker(true)]));
+    live_pieces(&mut cx);
     assert_eq!(
         cx.interactivity("huddle-sound").aria.label.as_deref(),
         Some("Sound: Speaker")
@@ -363,10 +366,8 @@ fn the_sound_sheet_reads_with_the_iphones_routes() {
     assert_eq!(toggled(&cx, "huddle-sound-0"), Some(true));
     assert!(cx.find("huddle-sound-1").is_none(), "one route");
 
-    let (mut cx, _ticks) = open(vec![
-        speaker(false),
-        audio("airpods", "AirPods Pro", true, AudioKind::Headphones),
-    ]);
+    let (mut cx, _ticks) = opened_on_phone(phone_routes(vec![speaker(false), airpods(true)]));
+    live_pieces(&mut cx);
     assert_eq!(
         cx.interactivity("huddle-sound").aria.label.as_deref(),
         Some("Sound: AirPods Pro")
@@ -374,8 +375,38 @@ fn the_sound_sheet_reads_with_the_iphones_routes() {
     assert!(!disabled(&cx, "huddle-monitor"), "through the AirPods");
     cx.simulate_click("huddle-sound");
     has_all(&cx, &["Speaker", "AirPods Pro"]);
-    assert_eq!(toggled(&cx, "huddle-sound-0"), Some(true), "in use, first");
-    assert_eq!(toggled(&cx, "huddle-sound-1"), Some(false));
+    assert_eq!(toggled(&cx, "huddle-sound-0"), Some(false));
+    assert_eq!(toggled(&cx, "huddle-sound-1"), Some(true), "in use");
+}
+
+/// The routes stay as the host lists them: on an iPhone the route playing
+/// is the default, and it moves to the one picked; listed first, the rows
+/// would jump under the finger.
+#[test]
+fn the_routes_keep_their_places_when_the_route_playing_moves() {
+    let (mut cx, _ticks) = opened_on_phone(phone_routes(vec![speaker(true), airpods(false)]));
+    route(&mut cx, "huddle-sound-1");
+    // the phone plays through the AirPods now, and lists them so
+    cx.host().handle::<MicrophoneDevices>(|()| {
+        Ok(AudioDevices {
+            inputs: vec![audio("mic", "Phone microphone", true, AudioKind::Other)],
+            outputs: vec![speaker(false), airpods(true)],
+        })
+    });
+    cx.simulate_click("huddle-sound");
+    cx.run_until_parked();
+    assert_eq!(toggled(&cx, "huddle-sound-0"), Some(false), "the speaker");
+    assert_eq!(toggled(&cx, "huddle-sound-1"), Some(true), "the AirPods");
+}
+
+/// The loudspeaker route, `playing` or not.
+fn speaker(playing: bool) -> AudioDevice {
+    audio("speaker", "Speaker", playing, AudioKind::Speaker)
+}
+
+/// AirPods as a route, `playing` or not.
+fn airpods(playing: bool) -> AudioDevice {
+    audio("airpods", "AirPods Pro", playing, AudioKind::Headphones)
 }
 
 /// Through the loudspeaker the live loop howls: the phone refuses it and
