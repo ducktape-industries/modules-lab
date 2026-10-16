@@ -1,22 +1,100 @@
-//! What Huddle draws: the device check (the picture with its toggles, the
-//! settings column), the room (the stage and its bar, or below 480 by 320
-//! one tile with its controls over it), the device menu, the state cards a
-//! refused or missing device shows, and the screen of a build without
-//! camera and microphone. Pieces sit first in their parent, cards and chips
-//! after them, so a piece keeps its path (the host keys its device by it)
-//! whatever is drawn over it; the root always goes through the one menu
-//! overlay for the same reason, and both room layouts hold the pieces
-//! under the same room, stage and tile, so a float moving between them
-//! opens no device again.
+//! The desktop's tree: what Huddle draws under a pointer. The device check
+//! (the picture with its toggles, the settings column), the room (the
+//! stage and its bar, or below 480 by 320 one tile with its controls over
+//! it), the device menu, the state cards a refused or missing device shows,
+//! and the screen of a build without camera and microphone. Pieces sit
+//! first in their parent, so the cards and chips after them draw over the
+//! picture. The host keys a piece's device by its path: the root always
+//! goes through the one menu overlay, and both room layouts hold the pieces
+//! under the same room, stage and tile, so a menu or a float moving between
+//! layouts opens no device again.
 use view::prelude::*;
 use view::{
     Anchor, AnchoredPositionMode, AnyElement, Bounds, Div, Edges, FontWeight, Point, Stateful,
+    accesskit,
 };
 
-use crate::{Huddle, MENU_POPUP, Menu, RECORD_SECONDS, Row, Screen, Which, trouble};
+use crate::words::{self, Device};
+use crate::{Huddle, Kind, Menu, RECORD_SECONDS, Row, Screen, Which, trouble};
 
 /// The check's settings column, and the menus' width.
 const COLUMN: f32 = 272.;
+
+/// Below this the room is one tile with its controls over it.
+const COMPACT: (f32, f32) = (480., 320.);
+
+/// The accesskit popup kind a picker and a caret announce.
+const MENU_POPUP: accesskit::HasPopup = accesskit::HasPopup::Menu;
+
+/// What takes the keys: the room on Join, Join on Leave, the open menu.
+const ROOM: &str = "huddle-room";
+const JOIN: &str = "huddle-join";
+const MENU: &str = "huddle-menu";
+
+/// What the desktop's tree keeps between frames.
+#[derive(Default)]
+pub(crate) struct Desk {
+    /// Where layout put each menu's opener, in window pixels: a menu hangs
+    /// under its picker, or over the room's caret.
+    anchors: Vec<(Which, Bounds<Pixels>)>,
+}
+
+impl Desk {
+    /// The menu's opener's bounds, as layout last put it.
+    fn anchor(&self, which: Which) -> Option<Bounds<Pixels>> {
+        self.anchors
+            .iter()
+            .find(|(at, _)| *at == which)
+            .map(|(_, bounds)| *bounds)
+    }
+
+    fn set_anchor(&mut self, which: Which, bounds: Bounds<Pixels>) {
+        self.anchors.retain(|(at, _)| *at != which);
+        self.anchors.push((which, bounds));
+    }
+}
+
+/// The control a menu hangs from, which takes the keys back.
+fn opener(which: Which) -> &'static str {
+    match which {
+        Which::Kind(Kind::Camera) => "huddle-pick-camera",
+        Which::Kind(Kind::Microphone) => "huddle-pick-microphone",
+        Which::Kind(Kind::Speaker) => "huddle-pick-speaker",
+        Which::Sound => "huddle-mic-menu",
+    }
+}
+
+/// The room is one tile with its controls over it: below 480 by 320.
+fn compact(view: &Huddle) -> bool {
+    let (width, height) = view.viewport;
+    width < COMPACT.0 || height < COMPACT.1
+}
+
+/// Into the room, the keys in it.
+fn join(view: &mut Huddle, window: &mut Window, cx: &mut Context<Huddle>) {
+    view.join(cx);
+    window.focus(ROOM);
+}
+
+/// Out of the room, the keys on Join.
+fn leave(view: &mut Huddle, window: &mut Window, cx: &mut Context<Huddle>) {
+    view.leave(cx);
+    window.focus(JOIN);
+}
+
+/// The menu of `which` opened, the keys in it.
+fn open(view: &mut Huddle, which: Which, window: &mut Window, cx: &mut Context<Huddle>) {
+    view.open_menu(which, cx);
+    window.focus(MENU);
+}
+
+/// A menu closed (a pick, Escape, a press outside): the keys back on the
+/// control it hung from.
+fn closed(menu: Option<Menu>, window: &mut Window) {
+    if let Some(menu) = menu {
+        window.focus(opener(menu.which));
+    }
+}
 
 // the glyphs, by the Lucide names `design::icon` draws
 const MIC: &str = "mic";
@@ -83,12 +161,14 @@ pub(crate) fn render(view: &mut Huddle, cx: &mut Context<Huddle>) -> AnyElement 
         .child(screen);
     let open = view.menu.filter(|_| !view.no_support());
     let (label, floating) = match open {
-        Some(open) => (open.which.label(), Some(menu(view, open, cx, &theme))),
+        Some(open) => (words::menu(open.which), Some(menu(view, open, cx, &theme))),
         None => ("", None),
     };
     let mut root = modal_overlay("huddle-menu-overlay", label, base, floating);
     if open.is_some() {
-        root = root.on_dismiss(cx.listener(|view, _: &(), window, cx| view.close_menu(window, cx)));
+        root = root.on_dismiss(
+            cx.listener(|view, _: &(), window, cx| closed(view.close_menu(cx), window)),
+        );
     }
     root.into_any_element()
 }
@@ -234,11 +314,7 @@ fn mic_toggle(muted: bool, danger: Hsla, cx: &mut Context<Huddle>) -> Stateful<D
     glass_toggle(
         "huddle-mic",
         if muted { MIC_OFF } else { MIC },
-        if muted {
-            "Unmute microphone"
-        } else {
-            "Mute microphone"
-        },
+        words::mute_microphone(muted),
         muted,
         danger,
         cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_mute(cx)),
@@ -249,11 +325,7 @@ fn camera_toggle(off: bool, danger: Hsla, cx: &mut Context<Huddle>) -> Stateful<
     glass_toggle(
         "huddle-camera",
         if off { VIDEO_OFF } else { VIDEO },
-        if off {
-            "Turn camera on"
-        } else {
-            "Turn camera off"
-        },
+        words::camera_toggle(off),
         off,
         danger,
         cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_camera(cx)),
@@ -370,8 +442,8 @@ fn settings(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<
         .flex_col()
         .gap(px(14.))
         .child(field(
-            "Camera",
-            picker(view, Which::Camera, VIDEO, cx, &theme),
+            words::kind(Kind::Camera),
+            picker(view, Kind::Camera, VIDEO, cx, &theme),
             &theme,
         ))
         .child(
@@ -380,20 +452,20 @@ fn settings(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<
                 .flex_col()
                 .gap(design::space::XS)
                 .child(field(
-                    "Microphone",
-                    picker(view, Which::Microphone, MIC, cx, &theme),
+                    words::kind(Kind::Microphone),
+                    picker(view, Kind::Microphone, MIC, cx, &theme),
                     &theme,
                 ))
                 .child(meter(view, cx, &theme)),
         )
         .child(
             field(
-                "Speaker",
+                words::kind(Kind::Speaker),
                 div()
                     .flex()
                     .items_center()
                     .gap(design::space::XS)
-                    .child(picker(view, Which::Speaker, SPEAKER, cx, &theme).flex_1())
+                    .child(picker(view, Kind::Speaker, SPEAKER, cx, &theme).flex_1())
                     .child(speaker_test(view, cx, &theme)),
                 &theme,
             )
@@ -409,7 +481,7 @@ fn settings(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<
         .child(record(view, cx, &theme))
         .child(monitor(view, cx, &theme))
         .child(div().flex_1())
-        .child(join(cx, &theme))
+        .child(join_button(cx, &theme))
 }
 
 fn field(label: &'static str, control: impl IntoElement, theme: &Theme) -> Div {
@@ -430,16 +502,17 @@ fn field(label: &'static str, control: impl IntoElement, theme: &Theme) -> Div {
 /// device's menu under itself (press, Enter, Space or ↓).
 fn picker(
     view: &Huddle,
-    which: Which,
+    kind: Kind,
     icon: &'static str,
     cx: &mut Context<Huddle>,
     theme: &Theme,
 ) -> view::Sensor {
     let theme = *theme;
-    let open = view.menu.is_some_and(|menu| menu.which == which);
-    let name = view.shown_device(which);
+    let which = Which::Kind(kind);
+    let expanded = view.menu.is_some_and(|menu| menu.which == which);
+    let name = view.shown_device(kind);
     let button = div()
-        .id(which.opener())
+        .id(opener(which))
         .h(design::size::CONTROL)
         .w_full()
         .px(design::space::SM)
@@ -454,18 +527,18 @@ fn picker(
         .hover(move |style| style.bg(theme.surface))
         .role(Role::Button)
         .aria_has_popup(MENU_POPUP)
-        .aria_expanded(open)
-        .aria_label(format!("{}: {name}", which.label()))
+        .aria_expanded(expanded)
+        .aria_label(format!("{}: {name}", words::kind(kind)))
         .focusable()
         .on_click(
             cx.listener(move |view: &mut Huddle, _: &ClickEvent, window, cx| {
-                view.open_menu(which, window, cx)
+                open(view, which, window, cx)
             }),
         )
         .on_key_down(
             cx.listener(move |view: &mut Huddle, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "down" && !event.keystroke.modifiers.modified() {
-                    view.open_menu(which, window, cx);
+                    open(view, which, window, cx);
                 }
             }),
         )
@@ -475,11 +548,12 @@ fn picker(
     anchor(which, button, cx).w_full()
 }
 
-/// `opener` in a sensor: where layout puts it is where its menu hangs.
-fn anchor(which: Which, opener: impl IntoElement, cx: &mut Context<Huddle>) -> view::Sensor {
-    sensor(format!("{}-at", which.opener()), opener).on_bounds(cx.listener(
+/// A menu's opener in a sensor: where layout puts it is where the menu
+/// hangs.
+fn anchor(which: Which, control: impl IntoElement, cx: &mut Context<Huddle>) -> view::Sensor {
+    sensor(format!("{}-at", opener(which)), control).on_bounds(cx.listener(
         move |view: &mut Huddle, bounds: &Bounds<Pixels>, _, cx| {
-            view.set_anchor(which, *bounds);
+            view.desk.set_anchor(which, *bounds);
             if view.menu.is_some_and(|menu| menu.which == which) {
                 cx.notify();
             }
@@ -515,7 +589,7 @@ fn meter(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> AnyElement {
 /// what fixes it, where the meter was.
 fn mic_trouble(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
     let state = &view.mic_state;
-    let (_, title, text) = words(Device::Microphone, state);
+    let (title, text) = words::trouble(Device::Microphone, state);
     let line = match state.status {
         MediaStatus::Denied | MediaStatus::Failed => format!("{title}. {text}"),
         _ => title.to_owned(),
@@ -671,10 +745,10 @@ fn monitor(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
         )
 }
 
-fn join(cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
+fn join_button(cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
     design::focus_shown_on_ink(
         div()
-            .id("huddle-join")
+            .id(JOIN)
             .h(px(32.))
             .w_full()
             .flex_none()
@@ -689,7 +763,7 @@ fn join(cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
             .role(Role::Button)
             .focusable()
             .on_click(
-                cx.listener(|view: &mut Huddle, _: &ClickEvent, window, cx| view.join(window, cx)),
+                cx.listener(|view: &mut Huddle, _: &ClickEvent, window, cx| join(view, window, cx)),
             )
             .child("Join huddle"),
         theme,
@@ -738,93 +812,12 @@ fn outline(
 
 // ---------- states ----------
 
-/// Which piece a card speaks of.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Device {
-    Camera,
-    Microphone,
-}
-
-/// The glyph, title and text for a device's trouble: the platform's fix
-/// line is the host's (`detail`); with none, the Linux one.
-pub(crate) fn words(device: Device, state: &MediaState) -> (&'static str, &'static str, String) {
-    let camera = device == Device::Camera;
-    let noun = if camera { "camera" } else { "microphone" };
-    let detail = |fallback: String| match state.detail.is_empty() {
-        true => fallback,
-        false => state.detail.clone(),
-    };
-    match state.status {
-        MediaStatus::Denied => {
-            let fix = detail(format!(
-                "Check the device's permissions (or your desktop's {}), then try again.",
-                if camera {
-                    "camera portal"
-                } else {
-                    "sound settings"
-                }
-            ));
-            let why = match state.opens_settings {
-                true => format!("Ducktape is not allowed to use the {noun}."),
-                false => format!("Your system refused this app the {noun}."),
-            };
-            (
-                ALERT,
-                if camera {
-                    "Camera access is off"
-                } else {
-                    "Microphone access is off"
-                },
-                format!("{why} {fix}"),
-            )
-        }
-        MediaStatus::NoDevice => (
-            CAMERA_OFF,
-            if camera {
-                "No camera found"
-            } else {
-                "No microphone found"
-            },
-            match camera {
-                true => "Plug one in, or join with your microphone only.".into(),
-                false => "Plug one in, or join with your camera only.".into(),
-            },
-        ),
-        MediaStatus::Gone => (
-            CAMERA_OFF,
-            if camera {
-                "The camera went away"
-            } else {
-                "The microphone went away"
-            },
-            match camera {
-                true => "It was unplugged or its driver stopped. The last picture is gone; \
-                         plug it back in and try again."
-                    .into(),
-                false => {
-                    "It was unplugged or its driver stopped; plug it back in and try again.".into()
-                }
-            },
-        ),
-        MediaStatus::Busy => (
-            VIDEO_OFF,
-            if camera {
-                "Another app is using the camera"
-            } else {
-                "Another app is using the microphone"
-            },
-            "Close it (a browser tab, Zoom, OBS), then try again.".into(),
-        ),
-        MediaStatus::Failed | MediaStatus::Unsupported => (
-            ALERT,
-            if camera {
-                "The camera did not start"
-            } else {
-                "The microphone did not start"
-            },
-            detail(String::new()),
-        ),
-        MediaStatus::Starting | MediaStatus::Live => (ALERT, "", String::new()),
+/// The glyph a device's trouble shows.
+fn trouble_glyph(status: &MediaStatus) -> &'static str {
+    match status {
+        MediaStatus::NoDevice | MediaStatus::Gone => CAMERA_OFF,
+        MediaStatus::Busy => VIDEO_OFF,
+        _ => ALERT,
     }
 }
 
@@ -836,7 +829,7 @@ fn state_card(
     cx: &mut Context<Huddle>,
     theme: &Theme,
 ) -> Stateful<Div> {
-    let (icon, title, text) = words(device, state);
+    let (title, text) = words::trouble(device, state);
     div()
         .id("huddle-camera-trouble")
         .absolute()
@@ -848,7 +841,7 @@ fn state_card(
         .gap(design::space::SM)
         .p(design::space::BLOCK)
         .text_center()
-        .child(design::icon(icon, px(20.)).text_color(theme.muted))
+        .child(design::icon(trouble_glyph(&state.status), px(20.)).text_color(theme.muted))
         .child(
             div()
                 .text_size(design::text::BODY)
@@ -939,7 +932,7 @@ fn actions(device: Device, state: &MediaState, cx: &mut Context<Huddle>, theme: 
                                 true => view.camera_off = true,
                                 false => view.muted = true,
                             }
-                            view.join(window, cx)
+                            join(view, window, cx)
                         }),
                     )
                     .child(match camera {
@@ -953,9 +946,9 @@ fn actions(device: Device, state: &MediaState, cx: &mut Context<Huddle>, theme: 
 // ---------- the room ----------
 
 fn room(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
-    let compact = view.compact();
+    let compact = compact(view);
     div()
-        .id("huddle-room")
+        .id(ROOM)
         .size_full()
         .flex()
         .flex_col()
@@ -1143,7 +1136,6 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
         0 => format!("{:02}:{:02}", elapsed / 60, elapsed % 60),
         hours => format!("{hours}:{:02}:{:02}", elapsed / 60 % 60, elapsed % 60),
     };
-    let theme_ = *theme;
     div()
         .id("huddle-bar")
         .h(px(48.))
@@ -1180,38 +1172,8 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                         .child(format!("{clock} \u{b7} only you")),
                 ),
         )
-        .child(
-            split(
-                ("huddle-mic", if view.muted { MIC_OFF } else { MIC }),
-                if view.muted { "Unmute" } else { "Mute" },
-                view.muted,
-                Which::Sound,
-                "Choose microphone and speaker",
-                view,
-                cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_mute(cx)),
-                cx,
-                &theme_,
-            )
-            .ml_auto(),
-        )
-        .child(split(
-            (
-                "huddle-camera",
-                if view.camera_off { VIDEO_OFF } else { VIDEO },
-            ),
-            if view.camera_off {
-                "Turn camera on"
-            } else {
-                "Turn camera off"
-            },
-            view.camera_off,
-            Which::Camera,
-            "Choose camera",
-            view,
-            cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_camera(cx)),
-            cx,
-            &theme_,
-        ))
+        .child(split(view, Device::Microphone, cx, theme).ml_auto())
+        .child(split(view, Device::Camera, cx, theme))
         .child(
             div()
                 .id("huddle-leave")
@@ -1229,7 +1191,7 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                 .focusable()
                 .on_click(
                     cx.listener(|view: &mut Huddle, _: &ClickEvent, window, cx| {
-                        view.leave(window, cx)
+                        leave(view, window, cx)
                     }),
                 )
                 .child(design::icon(LEAVE, px(14.)))
@@ -1374,7 +1336,7 @@ fn float_strip(
         .child(
             small(
                 ("huddle-mic", if view.muted { MIC_OFF } else { MIC }),
-                if view.muted { "Unmute" } else { "Mute" },
+                words::mute(view.muted),
                 true,
                 view.muted,
                 &theme_,
@@ -1388,11 +1350,7 @@ fn float_strip(
                     "huddle-camera",
                     if view.camera_off { VIDEO_OFF } else { VIDEO },
                 ),
-                if view.camera_off {
-                    "Turn camera on"
-                } else {
-                    "Turn camera off"
-                },
+                words::camera_toggle(view.camera_off),
                 true,
                 view.camera_off,
                 &theme_,
@@ -1406,7 +1364,7 @@ fn float_strip(
             true,
             true,
             &theme_,
-            cx.listener(|view: &mut Huddle, _: &ClickEvent, window, cx| view.leave(window, cx)),
+            cx.listener(|view: &mut Huddle, _: &ClickEvent, window, cx| leave(view, window, cx)),
         ));
     div()
         .id("huddle-float-strip")
@@ -1434,7 +1392,7 @@ fn float_strip(
 /// tile's middle, the title and Try again.
 fn trouble_row(state: &MediaState, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
     let theme_ = *theme;
-    let (icon, title, _) = words(Device::Camera, state);
+    let (title, _) = words::trouble(Device::Camera, state);
     div()
         .absolute()
         .inset_0()
@@ -1442,7 +1400,7 @@ fn trouble_row(state: &MediaState, cx: &mut Context<Huddle>, theme: &Theme) -> D
         .items_center()
         .justify_center()
         .gap(design::space::SM)
-        .child(design::icon(icon, px(16.)).text_color(theme.muted))
+        .child(design::icon(trouble_glyph(&state.status), px(16.)).text_color(theme.muted))
         .child(
             div()
                 .text_size(design::text::BODY)
@@ -1511,28 +1469,33 @@ fn no_keep_on_top_line(cx: &mut Context<Huddle>) -> Div {
         )
 }
 
-/// A device's split control: the toggle, and the caret that opens its
-/// menu upward.
-#[allow(clippy::too_many_arguments, reason = "one control, two halves")]
-fn split(
-    (id, icon): (&'static str, &'static str),
-    name: &'static str,
-    off: bool,
-    which: Which,
-    caret_name: &'static str,
-    view: &Huddle,
-    click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    cx: &mut Context<Huddle>,
-    theme: &Theme,
-) -> Div {
+/// A device's split control in the room's bar: its toggle, and the caret
+/// that opens its menu upward (the microphone's lists the speakers too).
+fn split(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
     let theme = *theme;
-    let open = view.menu.is_some_and(|menu| menu.which == which);
-    let opener = match which {
-        Which::Sound => "huddle-mic-menu",
-        _ => "huddle-camera-menu",
+    let (id, icon, name, off, which, caret_id, caret_name) = match device {
+        Device::Microphone => (
+            "huddle-mic",
+            if view.muted { MIC_OFF } else { MIC },
+            words::mute(view.muted),
+            view.muted,
+            Which::Sound,
+            "huddle-mic-menu",
+            "Choose microphone and speaker",
+        ),
+        Device::Camera => (
+            "huddle-camera",
+            if view.camera_off { VIDEO_OFF } else { VIDEO },
+            words::camera_toggle(view.camera_off),
+            view.camera_off,
+            Which::Kind(Kind::Camera),
+            "huddle-camera-menu",
+            "Choose camera",
+        ),
     };
+    let expanded = view.menu.is_some_and(|menu| menu.which == which);
     let caret = div()
-        .id(opener)
+        .id(caret_id)
         .w(px(18.))
         .h_full()
         .flex()
@@ -1546,11 +1509,11 @@ fn split(
         .role(Role::Button)
         .aria_label(caret_name)
         .aria_has_popup(MENU_POPUP)
-        .aria_expanded(open)
+        .aria_expanded(expanded)
         .focusable()
         .on_click(
             cx.listener(move |view: &mut Huddle, _: &ClickEvent, window, cx| {
-                view.open_menu(which, window, cx)
+                open(view, which, window, cx)
             }),
         )
         .child(design::icon(CARET, px(12.)));
@@ -1579,7 +1542,12 @@ fn split(
                 .aria_label(name)
                 .aria_toggled(off.into())
                 .focusable()
-                .on_click(click)
+                .on_click(cx.listener(
+                    move |view: &mut Huddle, _: &ClickEvent, _, cx| match device {
+                        Device::Microphone => view.toggle_mute(cx),
+                        Device::Camera => view.toggle_camera(cx),
+                    },
+                ))
                 .child(design::icon(icon, px(16.))),
         )
         .child(anchor(which, caret, cx).h_full())
@@ -1617,7 +1585,7 @@ fn menu(view: &Huddle, open: Menu, cx: &mut Context<Huddle>, theme: &Theme) -> A
                     .items_center()
                     .text_size(design::text::CAPTION)
                     .text_color(theme.muted)
-                    .child(row.kind.label())
+                    .child(words::kind(row.kind))
                     .into_any_element(),
             );
         }
@@ -1632,7 +1600,7 @@ fn menu(view: &Huddle, open: Menu, cx: &mut Context<Huddle>, theme: &Theme) -> A
     }
     let escape = cx.listener(|view: &mut Huddle, event: &KeyDownEvent, window, cx| {
         if event.keystroke.key == "escape" && !event.keystroke.modifiers.modified() {
-            view.close_menu(window, cx);
+            closed(view.close_menu(cx), window);
         }
     });
     let body = match count > 8 {
@@ -1650,32 +1618,31 @@ fn menu(view: &Huddle, open: Menu, cx: &mut Context<Huddle>, theme: &Theme) -> A
             .flex_col()
             .children(lines),
     };
-    let frame =
-        design::composite("huddle-menu", Role::Menu, open.which.label())
-            .active(active, count)
-            .on_move(cx.processor(|view: &mut Huddle, index: usize, _, cx| {
-                if let Some(menu) = &mut view.menu {
-                    menu.cursor = index;
-                }
-                cx.notify();
-            }))
-            .on_press(cx.processor(|view: &mut Huddle, index: usize, window, cx| {
-                view.pick(index, window, cx)
-            }))
-            .build()
-            // Escape is the menu's: the overlay around it does not close it again
-            .on_key_down(escape)
-            .consumes_keys(["escape"])
-            .w(px(COLUMN))
-            .py(design::space::XXS)
-            .flex()
-            .flex_col()
-            .border_1()
-            .border_color(theme.border_strong)
-            .bg(theme.background)
-            .shadow_lg()
-            .occlude()
-            .child(body);
+    let frame = design::composite(MENU, Role::Menu, words::menu(open.which))
+        .active(active, count)
+        .on_move(cx.processor(|view: &mut Huddle, index: usize, _, cx| {
+            if let Some(menu) = &mut view.menu {
+                menu.cursor = index;
+            }
+            cx.notify();
+        }))
+        .on_press(cx.processor(|view: &mut Huddle, index: usize, window, cx| {
+            closed(view.pick(index, cx), window)
+        }))
+        .build()
+        // Escape is the menu's: the overlay around it does not close it again
+        .on_key_down(escape)
+        .consumes_keys(["escape"])
+        .w(px(COLUMN))
+        .py(design::space::XXS)
+        .flex()
+        .flex_col()
+        .border_1()
+        .border_color(theme.border_strong)
+        .bg(theme.background)
+        .shadow_lg()
+        .occlude()
+        .child(body);
     // the ring would replace the shadow: the frame draws both
     let frame = design::focus_shown(frame, &theme, |style| style.shadow_lg());
     let (at, side) = place(view, open.which);
@@ -1693,7 +1660,7 @@ fn menu(view: &Huddle, open: Menu, cx: &mut Context<Huddle>, theme: &Theme) -> A
 /// opener's bounds, the column's own geometry.
 fn place(view: &Huddle, which: Which) -> (Point<Pixels>, Anchor) {
     let (width, height) = view.viewport;
-    match (view.screen, view.anchor(which)) {
+    match (view.screen, view.desk.anchor(which)) {
         (Screen::Check, Some(bounds)) => (bounds.bottom_left(), Anchor::TopLeft),
         (Screen::Room, Some(bounds)) => (
             Point {
@@ -1750,7 +1717,7 @@ fn menu_row(
                 .hover(move |style| style.bg(theme.surface_raised))
                 .on_click(
                     cx.listener(move |view: &mut Huddle, _: &ClickEvent, window, cx| {
-                        view.pick(index, window, cx)
+                        closed(view.pick(index, cx), window)
                     }),
                 ),
         })

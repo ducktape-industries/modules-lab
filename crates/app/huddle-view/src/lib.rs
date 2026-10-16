@@ -10,12 +10,11 @@
 //! Join floats the room in the same press (`host.float`): the pane leaves
 //! the desk into a small window of its own, kept above other apps' windows,
 //! so the call stays in sight while the person works elsewhere; Leave puts
-//! it back (`host.unfloat`). Below 480 by 320 the room is one tile with its
-//! controls over it (pin: keep on top or not; back: to the full window);
-//! the layout follows the window's size alone, and only the pin's state and
-//! back read where the pane is (`host.placement`). A host that cannot float
-//! a pane refuses that subscription `unknown_request`: the room then has no
-//! pin, and Join keeps the view where it is.
+//! it back (`host.unfloat`). The pin keeps the float on top or not, and back
+//! returns it to the full window; only they read where the pane is
+//! (`host.placement`). A host that cannot float a pane refuses that
+//! subscription `unknown_request`: the room then has no pin, and Join keeps
+//! the view where it is.
 //!
 //! The view never touches a device: it places the SDK's `camera` and
 //! `microphone` pieces, which the host captures, draws and plays, and hears
@@ -24,11 +23,15 @@
 //! microphone mark go off). The menus list what `camera.devices` and
 //! `microphone.devices` answer, read again whenever a menu opens (no host
 //! tells the view of a device plugged in).
+//!
+//! This file is the model: what the person picked and switched, what the
+//! host listed and the pieces told, and what each press changes. What is
+//! drawn is `ui` (the desktop's tree), in the words of `words`.
 use serde::{Deserialize, Serialize};
 use view::prelude::*;
-use view::{Bounds, accesskit};
 
 mod ui;
+mod words;
 
 /// How long "Record and play back" records, in seconds.
 pub const RECORD_SECONDS: u8 = 5;
@@ -43,9 +46,6 @@ pub const FLOAT: Float = Float {
     on_top: true,
 };
 
-/// Below this the room is one tile with its controls over it.
-pub(crate) const COMPACT: (f32, f32) = (480., 320.);
-
 /// Which screen is up: the device check, or the room.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Screen {
@@ -54,33 +54,28 @@ pub(crate) enum Screen {
     Room,
 }
 
-/// Which device menu: one device kind, or the room's microphone caret,
-/// which lists the microphones and then the speakers.
+/// What a pick picks: a camera, a microphone or a speaker.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Which {
+pub(crate) enum Kind {
     Camera,
     Microphone,
     Speaker,
+}
+
+/// Which device menu: one kind's, or the room's sound menu, which lists
+/// the microphones and then the speakers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Which {
+    Kind(Kind),
     Sound,
 }
 
 impl Which {
-    /// The control that opened it, which takes the keys back.
-    pub(crate) fn opener(self) -> &'static str {
+    /// The kinds it lists, in order.
+    pub(crate) fn kinds(&self) -> &[Kind] {
         match self {
-            Which::Camera => "huddle-pick-camera",
-            Which::Microphone => "huddle-pick-microphone",
-            Which::Speaker => "huddle-pick-speaker",
-            Which::Sound => "huddle-mic-menu",
-        }
-    }
-
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Which::Camera => "Camera",
-            Which::Microphone => "Microphone",
-            Which::Speaker => "Speaker",
-            Which::Sound => "Microphone and speaker",
+            Which::Kind(kind) => std::slice::from_ref(kind),
+            Which::Sound => &[Kind::Microphone, Kind::Speaker],
         }
     }
 }
@@ -132,10 +127,9 @@ pub struct Huddle {
     pub(crate) speaker_fault: Option<String>,
     #[serde(skip)]
     pub(crate) menu: Option<Menu>,
-    /// Where layout put each menu's opener, in window pixels: a menu hangs
-    /// under its picker, or over the room's caret.
+    /// What the desktop's tree keeps between frames.
     #[serde(skip)]
-    pub(crate) anchors: Vec<(Which, Bounds<Pixels>)>,
+    pub(crate) desk: ui::Desk,
     /// Seconds on the view's clock, and when the room was entered, a
     /// recording started and the camera was last placed, by it.
     #[serde(skip)]
@@ -302,7 +296,7 @@ impl Huddle {
     /// Into the room, floated in the same press where the host floats: the
     /// call stays in sight above other windows while the person works
     /// elsewhere.
-    pub(crate) fn join(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn join(&mut self, cx: &mut Context<Self>) {
         self.screen = Screen::Room;
         self.entered = self.ticks;
         self.monitor = false;
@@ -314,13 +308,12 @@ impl Huddle {
         if !self.no_float {
             self.float(true, cx);
         }
-        window.focus("huddle-room");
         cx.notify();
     }
 
     /// Out of the room, the pane back on the desk (asked whether or not
     /// the host has said it floats yet: nothing happens where it does not).
-    pub(crate) fn leave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn leave(&mut self, cx: &mut Context<Self>) {
         self.screen = Screen::Check;
         self.menu = None;
         self.camera_since = self.ticks;
@@ -329,7 +322,6 @@ impl Huddle {
         if !self.no_float {
             cx.host().notify::<HostUnfloat>(());
         }
-        window.focus("huddle-join");
         cx.notify();
     }
 
@@ -366,121 +358,89 @@ impl Huddle {
         self.float(on_top, cx);
     }
 
-    /// The room is one tile with its controls over it: below 480 by 320.
-    pub(crate) fn compact(&self) -> bool {
-        let (width, height) = self.viewport;
-        width < COMPACT.0 || height < COMPACT.1
-    }
-
     /// The menu of `which` opened, its picked row active, the lists read
-    /// again (a device plugged in since shows), the keys in it.
-    pub(crate) fn open_menu(&mut self, which: Which, window: &mut Window, cx: &mut Context<Self>) {
+    /// again (a device plugged in since shows).
+    pub(crate) fn open_menu(&mut self, which: Which, cx: &mut Context<Self>) {
         let rows = self.rows(which);
         let cursor = rows.iter().position(|row| row.picked).unwrap_or(0);
         self.menu = Some(Menu { which, cursor });
         self.list(cx);
-        window.focus("huddle-menu");
         cx.notify();
     }
 
-    pub(crate) fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(menu) = self.menu.take() {
-            window.focus(menu.which.opener());
-        }
+    /// The open menu closed, and handed back to the one who closed it.
+    pub(crate) fn close_menu(&mut self, cx: &mut Context<Self>) -> Option<Menu> {
         cx.notify();
+        self.menu.take()
     }
 
-    /// Row `index` of the open menu picked: its device on its piece.
-    pub(crate) fn pick(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(menu) = self.menu else { return };
+    /// Row `index` of the open menu picked, its device on its piece; the
+    /// menu closed, and handed back.
+    pub(crate) fn pick(&mut self, index: usize, cx: &mut Context<Self>) -> Option<Menu> {
+        let menu = self.menu?;
         if let Some(row) = self.rows(menu.which).into_iter().nth(index)
             && let Some(id) = row.id
         {
             match row.kind {
-                Which::Camera => {
+                Kind::Camera => {
                     self.camera = Some(id);
                     self.camera_state = MediaState::default();
                     self.camera_since = self.ticks;
                 }
-                Which::Microphone => {
+                Kind::Microphone => {
                     self.microphone = Some(id);
                     self.mic_state = MediaState::default();
                 }
-                Which::Speaker | Which::Sound => {
+                Kind::Speaker => {
                     self.speaker = Some(id);
                     self.mic_state = MediaState::default();
                 }
             }
         }
-        self.close_menu(window, cx);
+        self.close_menu(cx)
     }
 
-    /// The rows of menu `which`: its devices, the system's default first,
-    /// the rest in the host's order; one row saying why when there are
-    /// none.
+    /// The rows of menu `which`: each kind's devices in turn.
     pub(crate) fn rows(&self, which: Which) -> Vec<Row> {
-        let audio = self.audio.ready().cloned().unwrap_or_default();
-        let (cameras, failed_cameras) = (
-            self.cameras.ready().cloned().unwrap_or_default(),
-            failure(&self.cameras),
-        );
-        let failed_audio = failure(&self.audio);
-        match which {
-            Which::Camera => rows(
-                Which::Camera,
-                &cameras,
+        which
+            .kinds()
+            .iter()
+            .flat_map(|kind| self.rows_of(*kind))
+            .collect()
+    }
+
+    /// The rows of one kind: its devices, the system's default first, the
+    /// rest in the host's order; one row saying why when there are none.
+    fn rows_of(&self, kind: Kind) -> Vec<Row> {
+        let audio = self.audio.ready();
+        match kind {
+            Kind::Camera => rows(
+                kind,
+                self.cameras.ready().map_or(&[][..], Vec::as_slice),
                 self.camera.as_deref(),
-                failed_cameras,
+                failure(&self.cameras),
             ),
-            Which::Microphone => rows(
-                Which::Microphone,
-                &audio.inputs,
+            Kind::Microphone => rows(
+                kind,
+                audio.map_or(&[][..], |audio| &audio.inputs),
                 self.microphone.as_deref(),
-                failed_audio,
+                failure(&self.audio),
             ),
-            Which::Speaker => rows(
-                Which::Speaker,
-                &audio.outputs,
+            Kind::Speaker => rows(
+                kind,
+                audio.map_or(&[][..], |audio| &audio.outputs),
                 self.speaker.as_deref(),
-                failed_audio,
+                failure(&self.audio),
             ),
-            Which::Sound => {
-                let mut both = rows(
-                    Which::Microphone,
-                    &audio.inputs,
-                    self.microphone.as_deref(),
-                    failed_audio.clone(),
-                );
-                both.extend(rows(
-                    Which::Speaker,
-                    &audio.outputs,
-                    self.speaker.as_deref(),
-                    failed_audio,
-                ));
-                both
-            }
         }
     }
 
     /// The name a picker shows: the picked device's, else the default's.
-    pub(crate) fn shown_device(&self, which: Which) -> String {
-        self.rows(which)
+    pub(crate) fn shown_device(&self, kind: Kind) -> String {
+        self.rows_of(kind)
             .into_iter()
             .find(|row| row.picked && row.id.is_some())
-            .map_or("System default".into(), |row| row.name)
-    }
-
-    /// The menu's opener's bounds, as layout last put it.
-    pub(crate) fn anchor(&self, which: Which) -> Option<Bounds<Pixels>> {
-        self.anchors
-            .iter()
-            .find(|(at, _)| *at == which)
-            .map(|(_, bounds)| *bounds)
-    }
-
-    pub(crate) fn set_anchor(&mut self, which: Which, bounds: Bounds<Pixels>) {
-        self.anchors.retain(|(at, _)| *at != which);
-        self.anchors.push((which, bounds));
+            .map_or(words::SYSTEM_DEFAULT.into(), |row| row.name)
     }
 
     /// The speaker test: the host's chime on the picked speaker, apart
@@ -516,7 +476,7 @@ impl Huddle {
 /// One row of a device menu.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Row {
-    pub(crate) kind: Which,
+    pub(crate) kind: Kind,
     /// `None`: the row that says there is nothing to pick.
     pub(crate) id: Option<String>,
     pub(crate) name: String,
@@ -558,7 +518,7 @@ impl Listed for AudioDevice {
 }
 
 fn rows<D: Listed>(
-    kind: Which,
+    kind: Kind,
     devices: &[D],
     picked: Option<&str>,
     failed: Option<String>,
@@ -567,7 +527,7 @@ fn rows<D: Listed>(
         return vec![Row {
             kind,
             id: None,
-            name: failed.unwrap_or_else(|| "None found".into()),
+            name: failed.unwrap_or_else(|| words::NONE_FOUND.into()),
             twin: None,
             picked: false,
         }];
@@ -620,9 +580,6 @@ pub(crate) fn twin<D: Listed>(devices: &[D], device: &D) -> Option<String> {
         }
     })
 }
-
-/// The accesskit popup kind a picker and a caret announce.
-pub(crate) const MENU_POPUP: accesskit::HasPopup = accesskit::HasPopup::Menu;
 
 impl Render for Huddle {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
