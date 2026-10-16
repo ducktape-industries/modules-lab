@@ -347,6 +347,62 @@ fn a_menu_opens_picks_and_closes_by_keys() {
     assert_eq!(camera_piece(&cx).unwrap().1.as_deref(), Some("1"));
 }
 
+/// The id of the element that has the keys.
+fn focused(cx: &TestAppContext) -> Option<String> {
+    cx.focused()
+        .and_then(|node| node.identity())
+        .and_then(|id| id.name().map(str::to_owned))
+}
+
+/// In the room the camera's caret opens the camera menu over the bar, and
+/// the keys come back to that caret when the menu closes, by Escape or by
+/// a pick: the check's picker is not there to take them.
+#[test]
+fn the_room_camera_menu_gives_the_keys_back_to_its_caret() {
+    let (mut cx, ..) = opened();
+    cx.simulate_click("huddle-join");
+    cx.run_until_parked();
+    cx.simulate_click("huddle-camera-menu");
+    assert_eq!(focused(&cx).as_deref(), Some("huddle-menu"));
+    assert!(cx.has_text("Desk Camera"));
+    cx.simulate_key_down("huddle-menu", "escape");
+    assert_eq!(focused(&cx).as_deref(), Some("huddle-camera-menu"));
+    cx.simulate_click("huddle-camera-menu");
+    cx.simulate_key_down("huddle-menu", "down");
+    cx.simulate_key_down("huddle-menu", "enter");
+    assert_eq!(camera_piece(&cx).unwrap().1.as_deref(), Some("1"));
+    assert_eq!(focused(&cx).as_deref(), Some("huddle-camera-menu"));
+}
+
+/// The room's microphone caret opens one menu of two groups, the
+/// microphones and then the speakers, each headed; a speaker picked there
+/// reaches the microphone piece's output, and the keys return to the caret.
+#[test]
+fn the_room_sound_menu_lists_microphones_then_speakers() {
+    let (mut cx, ..) = opened();
+    cx.simulate_click("huddle-join");
+    cx.run_until_parked();
+    cx.simulate_click("huddle-mic-menu");
+    let texts = cx.texts();
+    let at = |text: &str| texts.iter().position(|shown| shown == text);
+    let order = [
+        "Microphone",
+        "Built-in Microphone",
+        "Speaker",
+        "Speakers",
+        "Headphones",
+    ]
+    .map(|text| at(text).unwrap_or_else(|| panic!("{text} in {texts:?}")));
+    assert!(order.is_sorted(), "{order:?}");
+    // the rows: the microphone, then the two speakers
+    cx.simulate_click("huddle-menu-2");
+    assert_eq!(
+        mic_piece(&cx).unwrap().2.as_deref(),
+        Some("alsa:headphones")
+    );
+    assert_eq!(focused(&cx).as_deref(), Some("huddle-mic-menu"));
+}
+
 /// Record asks the host once, for five seconds; the host's recording and
 /// playback show, with the countdown on the view's clock, and Stop ends
 /// it.

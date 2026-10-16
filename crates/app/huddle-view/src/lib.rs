@@ -80,11 +80,13 @@ impl Which {
     }
 }
 
-/// An open device menu: which, and the row the arrows are on.
+/// An open device menu: which, the row the arrows are on, and the id of
+/// the control that opened it, which takes the keys back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Menu {
     pub(crate) which: Which,
     pub(crate) cursor: usize,
+    pub(crate) opener: &'static str,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -410,12 +412,16 @@ impl Huddle {
         self.float(on_top, cx);
     }
 
-    /// The menu of `which` opened, its picked row active, the lists read
-    /// again (a device plugged in since shows).
-    pub(crate) fn open_menu(&mut self, which: Which, cx: &mut Context<Self>) {
+    /// The menu of `which` opened by the control `opener`, its picked row
+    /// active, the lists read again (a device plugged in since shows).
+    pub(crate) fn open_menu(&mut self, which: Which, opener: &'static str, cx: &mut Context<Self>) {
         let rows = self.rows(which);
         let cursor = rows.iter().position(|row| row.picked).unwrap_or(0);
-        self.menu = Some(Menu { which, cursor });
+        self.menu = Some(Menu {
+            which,
+            cursor,
+            opener,
+        });
         self.list(cx);
         cx.notify();
     }

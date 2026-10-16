@@ -54,16 +54,6 @@ impl Desk {
     }
 }
 
-/// The control a menu hangs from, which takes the keys back.
-fn opener(which: Which) -> &'static str {
-    match which {
-        Which::Kind(Kind::Camera) => "huddle-pick-camera",
-        Which::Kind(Kind::Microphone) => "huddle-pick-microphone",
-        Which::Kind(Kind::Speaker) => "huddle-pick-speaker",
-        Which::Sound => "huddle-mic-menu",
-    }
-}
-
 /// The room is one tile with its controls over it: below 480 by 320.
 fn compact(view: &Huddle) -> bool {
     let (width, height) = view.viewport;
@@ -82,17 +72,23 @@ fn leave(view: &mut Huddle, window: &mut Window, cx: &mut Context<Huddle>) {
     window.focus(JOIN);
 }
 
-/// The menu of `which` opened, the keys in it.
-fn open(view: &mut Huddle, which: Which, window: &mut Window, cx: &mut Context<Huddle>) {
-    view.open_menu(which, cx);
+/// The menu of `which` opened by the control `opener`, the keys in it.
+fn open(
+    view: &mut Huddle,
+    which: Which,
+    opener: &'static str,
+    window: &mut Window,
+    cx: &mut Context<Huddle>,
+) {
+    view.open_menu(which, opener, cx);
     window.focus(MENU);
 }
 
 /// A menu closed (a pick, Escape, a press outside): the keys back on the
-/// control it hung from.
+/// control that opened it.
 fn closed(menu: Option<Menu>, window: &mut Window) {
     if let Some(menu) = menu {
-        window.focus(opener(menu.which));
+        window.focus(menu.opener);
     }
 }
 
@@ -509,10 +505,15 @@ fn picker(
 ) -> view::Sensor {
     let theme = *theme;
     let which = Which::Kind(kind);
+    let id = match kind {
+        Kind::Camera => "huddle-pick-camera",
+        Kind::Microphone => "huddle-pick-microphone",
+        Kind::Speaker => "huddle-pick-speaker",
+    };
     let expanded = view.menu.is_some_and(|menu| menu.which == which);
     let name = view.shown_device(kind);
     let button = div()
-        .id(opener(which))
+        .id(id)
         .h(design::size::CONTROL)
         .w_full()
         .px(design::space::SM)
@@ -532,26 +533,31 @@ fn picker(
         .focusable()
         .on_click(
             cx.listener(move |view: &mut Huddle, _: &ClickEvent, window, cx| {
-                open(view, which, window, cx)
+                open(view, which, id, window, cx)
             }),
         )
         .on_key_down(
             cx.listener(move |view: &mut Huddle, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "down" && !event.keystroke.modifiers.modified() {
-                    open(view, which, window, cx);
+                    open(view, which, id, window, cx);
                 }
             }),
         )
         .child(design::icon(icon, px(14.)))
         .child(div().flex_1().min_w(px(0.)).truncate().child(name))
         .child(design::icon(CARET, px(12.)).text_color(theme.muted));
-    anchor(which, button, cx).w_full()
+    anchor(which, id, button, cx).w_full()
 }
 
-/// A menu's opener in a sensor: where layout puts it is where the menu
-/// hangs.
-fn anchor(which: Which, control: impl IntoElement, cx: &mut Context<Huddle>) -> view::Sensor {
-    sensor(format!("{}-at", opener(which)), control).on_bounds(cx.listener(
+/// A menu's opener `id` in a sensor: where layout puts it is where the
+/// menu of `which` hangs.
+fn anchor(
+    which: Which,
+    id: &str,
+    control: impl IntoElement,
+    cx: &mut Context<Huddle>,
+) -> view::Sensor {
+    sensor(format!("{id}-at"), control).on_bounds(cx.listener(
         move |view: &mut Huddle, bounds: &Bounds<Pixels>, _, cx| {
             view.desk.set_anchor(which, *bounds);
             if view.menu.is_some_and(|menu| menu.which == which) {
@@ -1513,7 +1519,7 @@ fn split(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme)
         .focusable()
         .on_click(
             cx.listener(move |view: &mut Huddle, _: &ClickEvent, window, cx| {
-                open(view, which, window, cx)
+                open(view, which, caret_id, window, cx)
             }),
         )
         .child(design::icon(CARET, px(12.)));
@@ -1550,7 +1556,7 @@ fn split(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme)
                 ))
                 .child(design::icon(icon, px(16.))),
         )
-        .child(anchor(which, caret, cx).h_full())
+        .child(anchor(which, caret_id, caret, cx).h_full())
 }
 
 // ---------- the device menu ----------
