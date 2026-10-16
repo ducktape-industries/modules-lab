@@ -9,8 +9,9 @@
 //!
 //! Reads the picks and switches, the device lists and what the pieces
 //! told. Writes the toggles, the flip, the mirror, the live loop, a
-//! recording, the speaker test, a retry, the sound sheet's opening and the
-//! room (`enter_room`: a phone keeps one window, so Join floats nothing).
+//! recording, the speaker test, a retry or the system's settings for a
+//! device in trouble, the sound sheet's opening and the room
+//! (`enter_room`: a phone keeps one window, so Join floats nothing).
 use view::design::{IconButton, Kind as ButtonKind, Ladder, Nav};
 use view::prelude::*;
 use view::{AnyElement, Div, Stateful};

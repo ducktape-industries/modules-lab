@@ -7,8 +7,9 @@
 //! view stays where it is (a phone keeps one window): no pin, no float.
 //!
 //! Reads the picks and switches, what the pieces told and the room's
-//! clock. Writes the toggles, the flip, a retry, the sound sheet's opening
-//! and the check (`leave_room`).
+//! clock. Writes the toggles, the flip, a retry or the system's settings
+//! for a device in trouble, the sound sheet's opening and the check
+//! (`leave_room`).
 use view::design::{IconButton, Ladder};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
