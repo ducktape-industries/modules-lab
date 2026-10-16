@@ -4,18 +4,19 @@
 //! can see: a price off the market's tick, an amount off the lot, an order
 //! the free funds do not cover. A reader with no account, or no link,
 //! reads the ticket and places nothing.
+//!
+//! This is the ticket's model: what it holds, the order it reads as
+//! ([`Draft`]), what stands in that order's way, said in words, and the
+//! presses that change it or send it. The trees draw it (`ui/ticket.rs`
+//! is the desktop's) and press these verbs.
 use serde::{Deserialize, Serialize};
 use trade::{ASSETS, LOT, Level, Op, Side, UNIT};
-use view::accesskit::Invalid;
-use view::design::{Ladder, Orientation};
 use view::prelude::*;
-use view::{Div, FontWeight, Stateful, wire};
 
-use crate::chart::sided;
-use crate::{Trade, format, tabs};
+use crate::{Column, Trade, format, words};
 
 /// The shares of what the free funds afford that one press fills in.
-const SHARES: [u64; 4] = [25, 50, 75, 100];
+pub(crate) const SHARES: [u64; 4] = [25, 50, 75, 100];
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Ticket {
@@ -39,10 +40,16 @@ impl Ticket {
         self.amount.reset("");
         self.refusal.clear();
     }
+
+    /// A field's text is the reader's: typing takes back what the program
+    /// said of the last order.
+    pub(crate) fn edited(&mut self) {
+        self.refusal.clear();
+    }
 }
 
 /// What stands between the ticket and an order.
-enum Problem {
+pub(crate) enum Problem {
     /// The price is not a number on the market's tick.
     Price,
     /// The amount is not a number of whole lots.
@@ -52,18 +59,27 @@ enum Problem {
 }
 
 /// The ticket as read: the order it would place and what that takes.
-struct Draft {
-    side: Side,
+pub(crate) struct Draft {
+    pub(crate) side: Side,
     /// The price typed; none for a market order, or while there is none.
-    limit: Option<u64>,
-    amount: Option<u64>,
+    pub(crate) limit: Option<u64>,
+    pub(crate) amount: Option<u64>,
     /// What the order comes to in the quote: exact at a limit, estimated
     /// from the book on screen at the market.
-    total: Option<u64>,
+    pub(crate) total: Option<u64>,
     /// The asset the order spends and what the account has free of it.
-    spends: u8,
-    free: u64,
-    problem: Option<Problem>,
+    pub(crate) spends: u8,
+    pub(crate) free: u64,
+    pub(crate) problem: Option<Problem>,
+}
+
+impl Draft {
+    /// `value` of the asset the order spends, written with its name:
+    /// `25,280.00 USD`.
+    pub(crate) fn funds(&self, value: u64) -> String {
+        let spent = ASSETS[self.spends as usize].name;
+        format!("{} {spent}", format::balance(self.spends, value))
+    }
 }
 
 impl Trade {
@@ -79,7 +95,7 @@ impl Trade {
         }
     }
 
-    fn draft(&self) -> Draft {
+    pub(crate) fn draft(&self) -> Draft {
         let (market, ticket) = (self.market(), &self.ticket);
         let side = if ticket.sell { Side::Sell } else { Side::Buy };
         let spends = match side {
@@ -151,7 +167,7 @@ impl Trade {
     /// `share` percent of what the free funds afford, down to whole lots:
     /// of the base to sell, of what the quote buys at the limit, or at the
     /// book's asks from the best one up.
-    fn affords(&self, draft: &Draft, share: u64) -> Option<u64> {
+    pub(crate) fn affords(&self, draft: &Draft, share: u64) -> Option<u64> {
         let funds = (u128::from(draft.free) * u128::from(share) / 100) as u64;
         let bought = |funds: u64, price: u64| {
             u64::try_from(u128::from(funds) * u128::from(UNIT) / u128::from(price.max(1)))
@@ -185,17 +201,22 @@ impl Trade {
         }
     }
 
-    /// The order the ticket holds, sent: once it is whole, covered, and
-    /// the reader may trade.
-    fn place(&mut self, cx: &mut Context<Self>) {
+    /// Whether the ticket's button places `draft`: it is whole, covered
+    /// and priced, and no order is on its way.
+    pub(crate) fn placeable(&self, draft: &Draft) -> bool {
+        draft.amount.is_some()
+            && draft.problem.is_none()
+            && self.priced(draft)
+            && !self.ticket.placing
+    }
+
+    /// The order the ticket holds, sent: once it is placeable, and the
+    /// reader may trade.
+    pub(crate) fn place(&mut self, cx: &mut Context<Self>) {
         let draft = self.draft();
-        let priced = self.priced(&draft);
-        let (Some(amount), None, true) = (draft.amount, &draft.problem, priced) else {
+        let (true, Some(amount)) = (self.placeable(&draft), draft.amount) else {
             return;
         };
-        if self.ticket.placing {
-            return;
-        }
         let op = Op::Place {
             market: self.market as u8,
             side: draft.side,
@@ -205,368 +226,80 @@ impl Trade {
         self.submit(op, cx);
     }
 
-    pub(crate) fn ticket(
-        &self,
-        cx: &mut Context<Self>,
-        ladder: &Ladder,
-        theme: &Theme,
-    ) -> impl IntoElement + use<> {
-        let theme = *theme;
-        let ticket = &self.ticket;
-        let (base, quote) = self.assets();
-        let draft = self.draft();
-        let trades = self.may_trade();
-        let color = sided(draft.side, &theme);
-        // Buy | Sell, the picked side filled in its colour
-        let side = |id: &'static str, name: &'static str, sell: bool| {
-            let picked = ticket.sell == sell;
-            let fill = sided(if sell { Side::Sell } else { Side::Buy }, &theme);
-            let segment = div()
-                .id(id)
-                .flex_1()
-                .h_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .font_weight(FontWeight::MEDIUM)
-                .map(|segment| match picked {
-                    true => segment.bg(fill).text_color(theme.primary_foreground),
-                    false => segment
-                        .text_color(theme.muted)
-                        .hover(move |style| style.text_color(theme.foreground)),
-                })
-                .aria_toggled(picked.into())
-                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.pick_side(sell, cx)))
-                .child(name);
-            design::item(segment, Role::RadioButton, picked)
-        };
-        let sides = design::composite("trade-side", Role::RadioGroup, "Side")
-            .orientation(Orientation::Horizontal)
-            .wrap()
-            .active(usize::from(ticket.sell), 2)
-            .on_move(
-                cx.processor(|view: &mut Trade, side: usize, _, cx| view.pick_side(side == 1, cx)),
-            )
-            .build()
-            .flex_none()
-            .h(px(30.))
-            .flex()
-            .border_1()
-            .border_color(theme.border_strong)
-            .child(side("trade-buy", "Buy", false))
-            .child(side("trade-sell", "Sell", true));
-        let kinds = tabs(
-            "trade-kind",
-            "Order type",
-            ladder,
-            &theme,
-            usize::from(ticket.market),
-            [
-                ("trade-limit".into(), "Limit".into(), None),
-                ("trade-at-market".into(), "Market".into(), None),
-            ],
-            cx.processor(|view: &mut Trade, kind: usize, _, cx| {
-                view.ticket.market = kind == 1;
-                view.ticket.refusal.clear();
-                cx.notify();
-            }),
-        )
-        .h_full();
-        let kinds = div()
-            .flex_none()
-            .h(design::size::CONTROL)
-            .border_b_1()
-            .border_color(theme.border)
-            .child(kinds);
-        // a field's text is the reader's: typing takes back what the
-        // program said of the last order
-        let typed = || {
-            cx.listener(|view: &mut Trade, _: &wire::TextChange, _, _| view.ticket.refusal.clear())
-        };
-        let entered = || cx.listener(|view: &mut Trade, _: &(), _, cx| view.place(cx));
-        // a field that holds no such number says so to who cannot see it
-        let input =
-            |id: &'static str, field: &TextField, name: &'static str, wrong: Option<String>| {
-                let look = match (trades, &wrong) {
-                    (false, _) => Look::Off,
-                    (true, Some(_)) => Look::Bad,
-                    (true, None) => Look::Plain,
-                };
-                let input = boxed(look, &theme, Input::new(id, field, name))
-                    .disabled(!trades)
-                    .on_change(typed())
-                    .on_submit(entered());
-                match wrong {
-                    Some(wrong) => input.invalid(Invalid::True).description(wrong),
-                    None => input,
-                }
-            };
-        let wrong_price = matches!(draft.problem, Some(Problem::Price)).then(|| {
-            let step = self.price(self.market().tick);
-            format!("A price here is a number in steps of {step} {quote}.")
-        });
-        let wrong_amount = matches!(draft.problem, Some(Problem::Amount)).then(|| {
-            let step = format::amount(LOT);
-            format!("An amount is a number in steps of {step} {base}.")
-        });
-        let price = match ticket.market {
-            true => shown("Best price in the book".into(), Look::Off, &theme).into_any_element(),
-            false => {
-                input("trade-price", &ticket.price, "Price", wrong_price.clone()).into_any_element()
-            }
-        };
-        let amount = input(
-            "trade-amount",
-            &ticket.amount,
-            "Amount",
-            wrong_amount.clone(),
-        );
-        let mut column = div()
-            .flex_none()
-            .p(design::space::LG)
-            .flex()
-            .flex_col()
-            .gap(design::space::MD)
-            .child(sides)
-            .child(kinds)
-            .child(labelled(
-                "Price",
-                price,
-                (!ticket.market).then_some(quote),
-                &theme,
-            ))
-            .child(labelled("Amount", amount, Some(base), &theme));
-        let named = match draft.side {
-            Side::Buy => "Buy",
-            Side::Sell => "Sell",
-        };
-        let label = match draft.amount {
-            Some(amount) => format!("{named} {} {base}", format::amount(amount)),
-            None => format!("{named} {base}"),
-        };
-        if !trades {
-            let needs = match self.session.account {
-                None => "Placing an order needs an account. You are looking around without one",
-                Some(_) => "Placing an order needs a link to the network. There is none now",
-            };
-            let note = format!("{needs}, so prices, the book and trades are all here to read.");
-            return column
-                .child(message(note, theme.surface, theme.muted))
-                .child(go("trade-submit", label, None, &theme));
-        }
-        let shares = SHARES.map(|share| {
-            let amount = self.affords(&draft, share);
-            let picked = amount.is_some() && amount == draft.amount;
-            div()
-                .id(format!("trade-share-{share}"))
-                .flex_1()
-                .h(px(24.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .border_1()
-                .text_size(design::text::CAPTION)
-                .map(|button| match picked {
-                    true => button
-                        .border_color(theme.foreground)
-                        .text_color(theme.foreground),
-                    false => button
-                        .border_color(theme.border)
-                        .text_color(theme.muted)
-                        .hover(move |style| style.text_color(theme.foreground)),
-                })
-                .role(Role::Button)
-                .aria_label(format!("{share}% of what is available"))
-                .aria_toggled(picked.into())
-                .focusable()
-                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                    let amount = view.affords(&view.draft(), share);
-                    view.ticket
-                        .amount
-                        .reset(amount.map(format::amount).unwrap_or_default());
-                    view.ticket.refusal.clear();
-                    cx.notify();
-                }))
-                .child(format!("{share}%"))
-        });
-        let short = matches!(draft.problem, Some(Problem::Funds(_)));
-        let total = draft.total.map(format::total).unwrap_or_default();
-        let total = match (ticket.market, short) {
-            (_, true) => shown(total, Look::Bad, &theme),
-            (true, _) => shown(total, Look::Off, &theme),
-            (false, _) => shown(total, Look::Plain, &theme),
-        };
-        let total_name = if ticket.market {
-            "Estimated total"
-        } else {
-            "Total"
-        };
-        column = column
-            .child(div().flex().gap(design::space::XXS).children(shares))
-            .child(labelled(total_name, total, Some(quote), &theme));
-        let spent = ASSETS[draft.spends as usize].name;
-        let funds = |value: u64| format!("{} {spent}", format::balance(draft.spends, value));
-        let wrong = match &draft.problem {
-            Some(Problem::Funds(needs)) => Some(format!(
-                "This order needs {}. {} is available.",
-                funds(*needs),
-                funds(draft.free)
-            )),
-            Some(_) => wrong_price.or(wrong_amount),
-            None => Some(ticket.refusal.clone()).filter(|refusal| !refusal.is_empty()),
-        };
-        // what is wrong takes the place of what is available
-        column = match &wrong {
-            Some(wrong) => column.child(message(wrong.clone(), theme.danger_soft, theme.danger)),
-            None => column.child(
-                div()
-                    .flex()
-                    .items_baseline()
-                    .justify_between()
-                    .text_size(design::text::SECONDARY)
-                    .text_color(theme.muted)
-                    .child("Available")
-                    .child(
-                        design::mono(funds(draft.free))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(theme.foreground),
-                    ),
-            ),
-        };
-        let priced = self.priced(&draft);
-        let ready = draft.amount.is_some() && draft.problem.is_none() && priced && !ticket.placing;
-        let place: Press =
-            Box::new(cx.listener(|view: &mut Trade, _: &ClickEvent, _, cx| view.place(cx)));
-        column.child(go(
-            "trade-submit",
-            label,
-            ready.then_some((color, place)),
-            &theme,
-        ))
-    }
-
-    fn pick_side(&mut self, sell: bool, cx: &mut Context<Self>) {
+    pub(crate) fn pick_side(&mut self, sell: bool, cx: &mut Context<Self>) {
         self.ticket.sell = sell;
         self.ticket.refusal.clear();
         cx.notify();
     }
-}
 
-/// How a field's box is drawn.
-#[derive(Clone, Copy)]
-enum Look {
-    Plain,
-    /// Not the reader's to fill: a market order's price, a ticket that
-    /// places nothing.
-    Off,
-    /// The figure in it is what is wrong.
-    Bad,
-}
+    /// A limit order, or with `market` one at the book's best prices.
+    pub(crate) fn pick_kind(&mut self, market: bool, cx: &mut Context<Self>) {
+        self.ticket.market = market;
+        self.ticket.refusal.clear();
+        cx.notify();
+    }
 
-/// A field's box around `element`: the control's height, figures in mono
-/// that end at the unit beside them.
-fn boxed<E: Styled>(look: Look, theme: &Theme, element: E) -> E {
-    let (edge, ground, ink) = match look {
-        Look::Plain => (theme.border_strong, theme.background, theme.foreground),
-        Look::Off => (theme.border, theme.surface, theme.muted),
-        Look::Bad => (theme.danger, theme.background, theme.foreground),
-    };
-    element
-        .h(design::size::CONTROL)
-        .w_full()
-        .pl(design::space::SM)
-        // the unit sits over the box's right end
-        .pr(px(46.))
-        .border_1()
-        .border_color(edge)
-        .bg(ground)
-        .text_color(ink)
-        .font_family(design::fonts::FAMILY_MONO)
-        .text_size(design::text::MONO)
-        .text_right()
-}
+    /// The amount `share` percent of the free funds affords, in the
+    /// amount's field; nothing when they afford no lot.
+    pub(crate) fn take_share(&mut self, share: u64, cx: &mut Context<Self>) {
+        let amount = self.affords(&self.draft(), share);
+        self.ticket
+            .amount
+            .reset(amount.map(format::amount).unwrap_or_default());
+        self.ticket.refusal.clear();
+        cx.notify();
+    }
 
-/// A figure the ticket works out, in a field's box: not the reader's to
-/// type.
-fn shown(text: String, look: Look, theme: &Theme) -> Div {
-    boxed(look, theme, div())
-        .flex()
-        .items_center()
-        .justify_end()
-        .whitespace_nowrap()
-        .child(text)
-}
+    /// A book row's price, pressed: the ticket takes it as a limit, and
+    /// the pane's column turns to the ticket.
+    pub(crate) fn take_price(&mut self, price: u64, cx: &mut Context<Self>) {
+        let price = self.price(price);
+        self.ticket.price.reset(price);
+        self.ticket.market = false;
+        self.ticket.refusal.clear();
+        self.column = Column::Order;
+        cx.notify();
+    }
 
-/// A field under its name, the unit of its figure at its right end.
-fn labelled(
-    name: &'static str,
-    field: impl IntoElement,
-    unit: Option<&'static str>,
-    theme: &Theme,
-) -> Div {
-    let unit = unit.map(|unit| {
-        div()
-            .absolute()
-            .right(design::space::SM)
-            .top_0()
-            .h_full()
-            .w(px(30.))
-            .flex()
-            .items_center()
-            .child(unit)
-    });
-    div()
-        .flex()
-        .flex_col()
-        .gap(design::space::XXS)
-        .text_size(design::text::CAPTION)
-        .text_color(theme.muted)
-        .child(name)
-        .child(div().relative().child(field).children(unit))
-}
+    /// What is wrong with the price typed, said: it is off the tick.
+    pub(crate) fn price_problem(&self, draft: &Draft) -> Option<String> {
+        let (_, quote) = self.assets();
+        let step = || self.price(self.market().tick);
+        matches!(draft.problem, Some(Problem::Price)).then(|| words::price_step(&step(), quote))
+    }
 
-/// A few words in the ticket, on their own ground: a note, or what is
-/// wrong with the order.
-fn message(text: String, ground: Hsla, ink: Hsla) -> Div {
-    div()
-        .px(design::space::SM)
-        .py(px(7.))
-        .bg(ground)
-        .text_color(ink)
-        .text_size(design::text::SECONDARY)
-        .child(text)
-}
+    /// What is wrong with the amount typed, said: it is off the lot.
+    pub(crate) fn amount_problem(&self, draft: &Draft) -> Option<String> {
+        let (base, _) = self.assets();
+        let step = || format::amount(LOT);
+        matches!(draft.problem, Some(Problem::Amount)).then(|| words::amount_step(&step(), base))
+    }
 
-/// What a press on the ticket's button does.
-type Press = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
-
-/// The ticket's button: filled in its side's colour with a press to hear,
-/// greyed out and saying so with none.
-fn go(
-    id: &'static str,
-    label: String,
-    press: Option<(Hsla, Press)>,
-    theme: &Theme,
-) -> Stateful<Div> {
-    let button = div()
-        .id(id)
-        .flex_none()
-        .h(px(32.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .font_weight(FontWeight::MEDIUM)
-        .role(Role::Button)
-        .child(label);
-    match press {
-        Some((color, press)) => {
-            design::focus_shown_on_ink(button.bg(color).text_color(theme.primary_foreground), theme)
-                .focusable()
-                .on_click(press)
+    /// What stands between the ticket and its order, said: the free funds
+    /// short of it, a field's problem, or else why the program refused the
+    /// last order. `None` while nothing does.
+    pub(crate) fn ticket_problem(&self, draft: &Draft) -> Option<String> {
+        match &draft.problem {
+            Some(Problem::Funds(needs)) => Some(words::short_of(
+                &draft.funds(*needs),
+                &draft.funds(draft.free),
+            )),
+            Some(_) => self.price_problem(draft).or(self.amount_problem(draft)),
+            None => Some(self.ticket.refusal.clone()).filter(|refusal| !refusal.is_empty()),
         }
-        None => button
-            .bg(theme.surface_raised)
-            .text_color(theme.muted)
-            .aria_disabled(true),
+    }
+
+    /// What the ticket's button says: the side, and the amount once one
+    /// is typed.
+    pub(crate) fn place_label(&self, draft: &Draft) -> String {
+        let (base, _) = self.assets();
+        words::place(draft.side, draft.amount.map(format::amount), base)
+    }
+
+    /// Why the reader places nothing, while they may not trade: no
+    /// account, or no link.
+    pub(crate) fn why_not_trading(&self) -> Option<String> {
+        let signed_in = self.session.account.is_some();
+        (!self.may_trade()).then(|| words::cannot_place(signed_in))
     }
 }

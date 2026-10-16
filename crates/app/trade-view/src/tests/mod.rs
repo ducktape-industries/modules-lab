@@ -12,6 +12,7 @@ use sample::{READER, Shared, World};
 
 mod chart;
 mod panel;
+mod phone;
 pub(crate) mod sample;
 mod ticket;
 

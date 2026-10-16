@@ -1,20 +1,19 @@
-//! The order book and the tape of the market on screen. The book's rows
-//! are one list the arrows walk: the asks down to the best one, the last
-//! price between the sides, the bids from the best one down. A press on a
-//! row puts its price in the ticket.
+//! The desktop's order book and tape of the market on screen. The book's
+//! rows are one list the arrows walk: the asks down to the best one, the
+//! last price between the sides, the bids from the best one down. A press
+//! on a row puts its price in the ticket.
 use gpui::relative;
 use trade::{Book, Level, Side};
 use view::prelude::*;
 use view::{Div, FontWeight};
 
-use crate::chart::sided;
-use crate::data::DEPTH;
-use crate::{Column, Menu, Trade, chevron, chip, format, nothing};
+use super::{chevron, chip, nothing};
+use crate::data::{DEPTH, STEPS};
+use crate::look::sided;
+use crate::{Menu, Trade, format, words};
 
-/// The price steps the book is asked in, in ticks of the market.
-pub(crate) const STEPS: [u64; 3] = [1, 10, 100];
-/// The height of the control that picks one.
-pub(crate) const STEP_H: Pixels = px(22.);
+/// The height of the control that picks the book's price step.
+pub(super) const STEP_H: Pixels = px(22.);
 /// A row of the book or the tape.
 const ROW_H: f32 = 20.;
 /// The book's heading, its column names, the row between the sides and
@@ -27,7 +26,7 @@ const FOOT_H: f32 = 28.;
 impl Trade {
     /// The book in a column `height` tall: as many prices a side as fit,
     /// the best ones.
-    pub(crate) fn book(
+    pub(super) fn book(
         &self,
         height: f32,
         cx: &mut Context<Self>,
@@ -43,12 +42,12 @@ impl Trade {
             .justify_between()
             .text_size(design::text::SECONDARY)
             .font_weight(FontWeight::MEDIUM)
-            .child("Order book")
+            .child(words::ORDER_BOOK)
             .child(self.step_picker(cx, theme));
         let names = [
-            format!("Price ({quote})"),
-            format!("Amount ({base})"),
-            "Total".into(),
+            words::price_in(quote),
+            words::amount_in(base),
+            words::TOTAL.into(),
         ];
         let rows = height - HEAD_H - NAMES_H - MIDDLE_H - FOOT_H;
         let fit = ((rows / (2. * ROW_H)) as usize).clamp(1, DEPTH as usize);
@@ -57,7 +56,7 @@ impl Trade {
                 nothing(refusal.message.clone(), theme).into_any_element()
             }
             (_, Some(book)) if book.asks.is_empty() && book.bids.is_empty() => {
-                nothing("No orders in the book", theme).into_any_element()
+                nothing(words::EMPTY_BOOK, theme).into_any_element()
             }
             (_, Some(book)) => self.levels(book, fit, cx, theme).into_any_element(),
             _ => div().into_any_element(),
@@ -208,7 +207,7 @@ impl Trade {
             .gap(design::space::SM)
             .border_t_1()
             .border_color(theme.border)
-            .child(split(format!("Bids {share}%"), theme.success))
+            .child(split(words::bids_share(share), theme.success))
             .child(
                 div()
                     .flex_1()
@@ -217,7 +216,7 @@ impl Trade {
                     .child(div().w(relative(share as f32 / 100.)).bg(theme.success))
                     .child(div().flex_1().bg(theme.danger)),
             )
-            .child(split(format!("{}% Asks", 100 - share), theme.danger));
+            .child(split(words::asks_share(100 - share), theme.danger));
         div()
             .flex_1()
             .min_h_0()
@@ -270,26 +269,15 @@ impl Trade {
                     .flex()
                     .items_center()
                     .gap(design::space::XXS)
-                    .child("Spread")
+                    .child(words::SPREAD)
                     .child(design::mono(spread).text_size(design::text::CAPTION)),
             )
-    }
-
-    /// A book row's price, pressed: the ticket takes it as a limit, and
-    /// the pane's column turns to the ticket.
-    fn take_price(&mut self, price: u64, cx: &mut Context<Self>) {
-        let price = self.price(price);
-        self.ticket.price.reset(price);
-        self.ticket.market = false;
-        self.ticket.refusal.clear();
-        self.column = Column::Order;
-        cx.notify();
     }
 
     /// The market's last trades, newest first, each price in the colour of
     /// the side that took it. The wide layout heads it; the pane's tab
     /// already does.
-    pub(crate) fn tape(&self, headed: bool, theme: &Theme) -> impl IntoElement + use<> {
+    pub(super) fn tape(&self, headed: bool, theme: &Theme) -> impl IntoElement + use<> {
         let theme = *theme;
         let (base, quote) = self.assets();
         let head = headed.then(|| {
@@ -303,18 +291,18 @@ impl Trade {
                 .border_color(theme.border)
                 .text_size(design::text::SECONDARY)
                 .font_weight(FontWeight::MEDIUM)
-                .child("Trades")
+                .child(words::TRADES)
         });
         let names = [
-            format!("Price ({quote})"),
-            format!("Amount ({base})"),
-            "Time".into(),
+            words::price_in(quote),
+            words::amount_in(base),
+            words::TIME.into(),
         ];
         let trades = self.trades.ready();
         let sized = format::places(trades.into_iter().flatten().map(|trade| trade.amount));
         let rows = match (&self.trades, trades) {
             (Loadable::Failed(refusal), _) => vec![nothing(refusal.message.clone(), &theme)],
-            (_, Some(trades)) if trades.is_empty() => vec![nothing("No trades yet", &theme)],
+            (_, Some(trades)) if trades.is_empty() => vec![nothing(words::NO_TRADES, &theme)],
             (_, Some(trades)) => (trades.iter())
                 .map(|trade| {
                     level_row(&theme)

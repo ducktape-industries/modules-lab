@@ -1,17 +1,18 @@
-//! The panel under the chart: the reader's open orders, every order they
-//! placed, their fills and their balances, a tab each. Each is a table of
+//! The desktop's panel under the chart: the reader's open orders, every
+//! order they placed, their fills and their balances, a tab each. Each is a table of
 //! rows the host scrolls; the two that go on (orders, fills) are read a
 //! page at a time as their list is scrolled to its end.
 use std::ops::Range;
 use std::rc::Rc;
 
-use trade::{ASSETS, Balance, Fill, MARKETS, Op, Order, OrderState, Side, UNIT};
+use trade::{ASSETS, Balance, Fill, MARKETS, Op, Order, Side, UNIT};
 use view::design::Ladder;
 use view::prelude::*;
 use view::{Div, Paged, Stateful};
 
-use crate::chart::sided;
-use crate::{Panel, TABS_H, Trade, format, nothing, tabs};
+use super::{TABS_H, nothing, tabs};
+use crate::look::sided;
+use crate::{Panel, Trade, format, words};
 
 /// The panel's height, wide and in the pane: its tabs, a table's head and
 /// a few rows. The chart takes what a taller window adds.
@@ -77,7 +78,7 @@ const BALANCES: Columns = &[
 type Press = Rc<dyn Fn(u64, &mut Window, &mut App)>;
 
 impl Trade {
-    pub(crate) fn panel(
+    pub(super) fn panel(
         &self,
         wide: bool,
         cx: &mut Context<Self>,
@@ -86,7 +87,11 @@ impl Trade {
     ) -> impl IntoElement + use<> {
         const TABS: [Panel; 4] = [Panel::Open, Panel::History, Panel::Fills, Panel::Balances];
         let open = self.open.ready().map(|orders| orders.len());
-        let history = if wide { "Order history" } else { "History" };
+        let history = if wide {
+            "Order history"
+        } else {
+            words::HISTORY
+        };
         let picked = TABS.iter().position(|tab| *tab == self.panel);
         let bar = tabs(
             "trade-panel-tabs",
@@ -95,10 +100,10 @@ impl Trade {
             theme,
             picked.unwrap_or_default(),
             [
-                ("trade-open".into(), "Open orders".into(), open),
+                ("trade-open".into(), words::OPEN_ORDERS.into(), open),
                 ("trade-history".into(), history.into(), None),
-                ("trade-fills".into(), "Fills".into(), None),
-                ("trade-balances".into(), "Balances".into(), None),
+                ("trade-fills".into(), words::FILLS.into(), None),
+                ("trade-balances".into(), words::BALANCES.into(), None),
             ],
             cx.processor(|view: &mut Trade, tab: usize, _, cx| {
                 view.panel = TABS[tab];
@@ -111,14 +116,14 @@ impl Trade {
         let action = match self.panel {
             Panel::Open if open.is_some_and(|open| open > 0) => Some(link(
                 "trade-cancel-all",
-                "Cancel all",
+                words::CANCEL_ALL,
                 trades,
                 theme,
                 cx.listener(|view, _: &ClickEvent, _, cx| view.submit(Op::CancelAll, cx)),
             )),
             Panel::Balances => Some(link(
                 "trade-fund",
-                "Get practice funds",
+                words::GET_FUNDS,
                 trades,
                 theme,
                 cx.listener(|view, _: &ClickEvent, _, cx| view.submit(Op::Fund, cx)),
@@ -142,9 +147,7 @@ impl Trade {
                 .text_color(theme.danger)
         });
         let body = match self.session.account {
-            None => {
-                nothing("Orders, fills and balances are an account's.", theme).into_any_element()
-            }
+            None => nothing(words::SIGNED_OUT, theme).into_any_element(),
             Some(_) => match self.panel {
                 Panel::Open => self.open_orders(wide, cx, theme),
                 Panel::History => self.history(wide, theme),
@@ -167,7 +170,7 @@ impl Trade {
     fn open_orders(&self, wide: bool, cx: &mut Context<Self>, theme: &Theme) -> AnyElement {
         let orders = match (&self.open, self.open.ready()) {
             (Loadable::Failed(refusal), _) => return said(refusal.message.clone(), theme),
-            (_, Some(orders)) if orders.is_empty() => return said("No open orders", theme),
+            (_, Some(orders)) if orders.is_empty() => return said(words::NO_OPEN_ORDERS, theme),
             (_, Some(orders)) => orders.clone(),
             _ => return div().into_any_element(),
         };
@@ -190,7 +193,7 @@ impl Trade {
                     let press = move |_: &ClickEvent, window: &mut Window, app: &mut App| {
                         cancel(id, window, app)
                     };
-                    let cancel = link(format!("cancel-{id}"), "Cancel", trades, &theme, press);
+                    let cancel = link(format!("cancel-{id}"), words::CANCEL, trades, &theme, press);
                     let mut cells = order_cells(order, format::time(order.placed), &theme);
                     cells.push(cancel.into_any_element());
                     cells
@@ -207,7 +210,7 @@ impl Trade {
             HISTORY,
             wide,
             self.history.as_ref(),
-            "No orders yet",
+            words::NO_ORDERS,
             &theme,
             move |order: &Order| {
                 let market = &MARKETS[order.market as usize % MARKETS.len()];
@@ -216,14 +219,9 @@ impl Trade {
                 let average = u128::from(order.quote) * u128::from(UNIT);
                 let average = average.checked_div(u128::from(order.filled));
                 let average = average.map(|average| format::fixed(average as u64, places));
-                let state = match order.state {
-                    OrderState::Open => "Open",
-                    OrderState::Filled => "Filled",
-                    OrderState::Cancelled => "Cancelled",
-                };
                 let mut cells = order_cells(order, format::day_time(order.placed), &theme);
                 cells.push(figure(average.unwrap_or("—".into())));
-                cells.push(words(state, theme.muted));
+                cells.push(cell(words::state(order.state), theme.muted));
                 cells
             },
         )
@@ -236,19 +234,19 @@ impl Trade {
             FILLS,
             wide,
             self.fills.as_ref(),
-            "No fills yet",
+            words::NO_FILLS,
             &theme,
             move |fill: &Fill| {
                 let market = &MARKETS[fill.market as usize % MARKETS.len()];
                 let places = format::decimals(market.tick);
                 vec![
                     stamp(format::day_time(fill.time), &theme),
-                    words(market.name, theme.foreground),
+                    cell(market.name, theme.foreground),
                     side(fill.side, &theme),
                     figure(format::fixed(fill.price, places)),
                     figure(format::amount(fill.amount)),
                     figure(format::total(format::cost(fill.price, fill.amount))),
-                    words(if fill.maker { "Maker" } else { "Taker" }, theme.muted),
+                    cell(words::fill_role(fill.maker), theme.muted),
                 ]
             },
         )
@@ -266,7 +264,7 @@ impl Trade {
             .iter()
             .all(|balance| balance.free == 0 && balance.held == 0)
         {
-            return said("No funds yet. Get practice funds to place an order.", theme);
+            return said(words::NO_FUNDS, theme);
         }
         let theme = *theme;
         let balances: Rc<[Balance]> = balances.as_slice().into();
@@ -283,7 +281,7 @@ impl Trade {
                     let asset = ASSETS.get(balance.asset as usize);
                     let amount = |value: u64| format::balance(balance.asset, value);
                     vec![
-                        words(asset.map_or("?", |asset| asset.name), theme.foreground),
+                        cell(asset.map_or("?", |asset| asset.name), theme.foreground),
                         figure(amount(balance.free)),
                         design::mono(amount(balance.held))
                             .text_color(theme.muted)
@@ -305,27 +303,21 @@ fn order_cells(order: &Order, placed: String, theme: &Theme) -> Vec<AnyElement> 
     let filled = u128::from(order.filled) * 100 / u128::from(order.amount.max(1));
     vec![
         stamp(placed, theme),
-        words(market.name, theme.foreground),
+        cell(market.name, theme.foreground),
         side(order.side, theme),
-        words(
-            if order.limit.is_some() {
-                "Limit"
-            } else {
-                "Market"
-            },
-            theme.foreground,
-        ),
+        cell(words::kind(order.limit.is_some()), theme.foreground),
         figure(
             order
                 .limit
-                .map_or("Market".into(), |limit| format::fixed(limit, places)),
+                .map_or(words::MARKET.into(), |limit| format::fixed(limit, places)),
         ),
         figure(format::amount(order.amount)),
         figure(format!("{filled}%")),
     ]
 }
 
-fn words(text: &'static str, color: Hsla) -> AnyElement {
+/// A cell of words in `color`.
+fn cell(text: &'static str, color: Hsla) -> AnyElement {
     div().text_color(color).child(text).into_any_element()
 }
 
@@ -340,11 +332,7 @@ fn stamp(text: String, theme: &Theme) -> AnyElement {
 }
 
 fn side(side: Side, theme: &Theme) -> AnyElement {
-    let name = match side {
-        Side::Buy => "Buy",
-        Side::Sell => "Sell",
-    };
-    words(name, sided(side, theme))
+    cell(words::side(side), sided(side, theme))
 }
 
 /// One calm line in a table's place.
@@ -478,7 +466,7 @@ fn paged<T: PartialEq + 'static>(
         list.read(|list| {
             let rows = rows.map(|row| match list.rows().get(row) {
                 Some(row) => cells(row),
-                None => vec![words("Reading…", quiet)],
+                None => vec![cell(words::READING, quiet)],
             });
             rows.collect()
         })

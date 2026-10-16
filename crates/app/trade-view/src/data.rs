@@ -11,9 +11,11 @@ use view::host::Page;
 use view::methods::Submitted;
 use view::prelude::*;
 
-use crate::Trade;
 use crate::chart::Candles;
+use crate::{Trade, words};
 
+/// The price steps the book is asked in, in ticks of the market.
+pub(crate) const STEPS: [u64; 3] = [1, 10, 100];
 /// The prices a side the book is asked for.
 pub(crate) const DEPTH: u32 = 15;
 /// The trades the tape is asked for.
@@ -154,7 +156,7 @@ impl Trade {
     fn book_ask(&self) -> ask::Book {
         ask::Book {
             market: self.market as u8,
-            step: crate::book::STEPS[self.step],
+            step: STEPS[self.step],
             depth: DEPTH,
         }
     }
@@ -287,9 +289,7 @@ impl Trade {
                 | Err(refused) => *refusal(view) = refused.message,
                 // a doubt reads as a refusal the person may retry: the
                 // changes the op wrote, if it landed, refresh the panel
-                Ok(Submitted::InDoubt { .. }) => {
-                    *refusal(view) = "No answer came back: it may have gone through.".into()
-                }
+                Ok(Submitted::InDoubt { .. }) => *refusal(view) = words::IN_DOUBT.into(),
             }
         })
         .detach();
