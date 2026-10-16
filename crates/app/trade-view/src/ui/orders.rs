@@ -1,18 +1,19 @@
 //! The desktop's panel under the chart: the reader's open orders, every
-//! order they placed, their fills and their balances, a tab each. Each is a table of
-//! rows the host scrolls; the two that go on (orders, fills) are read a
+//! order they placed, their fills and their balances, a tab each, written
+//! as the model writes them (`orders.rs`). Each is a table of rows the
+//! host scrolls; the two that go on (orders, fills) are read a
 //! page at a time as their list is scrolled to its end.
 use std::ops::Range;
 use std::rc::Rc;
 
-use trade::{ASSETS, Balance, Fill, MARKETS, Op, Order, Side, UNIT};
+use trade::{ASSETS, Balance, Fill, Op, Order, Side};
 use view::design::Ladder;
 use view::prelude::*;
 use view::{Div, Paged, Stateful};
 
 use super::{TABS_H, nothing, tabs};
 use crate::look::sided;
-use crate::{Panel, Trade, format, words};
+use crate::{Panel, Trade, format, orders, words};
 
 /// The panel's height, wide and in the pane: its tabs, a table's head and
 /// a few rows. The chart takes what a taller window adds.
@@ -88,7 +89,7 @@ impl Trade {
         const TABS: [Panel; 4] = [Panel::Open, Panel::History, Panel::Fills, Panel::Balances];
         let open = self.open.ready().map(|orders| orders.len());
         let history = if wide {
-            "Order history"
+            words::ORDER_HISTORY
         } else {
             words::HISTORY
         };
@@ -213,12 +214,7 @@ impl Trade {
             words::NO_ORDERS,
             &theme,
             move |order: &Order| {
-                let market = &MARKETS[order.market as usize % MARKETS.len()];
-                let places = format::decimals(market.tick);
-                // what its fills came to, a unit: the price it traded at
-                let average = u128::from(order.quote) * u128::from(UNIT);
-                let average = average.checked_div(u128::from(order.filled));
-                let average = average.map(|average| format::fixed(average as u64, places));
+                let average = orders::average(order);
                 let mut cells = order_cells(order, format::day_time(order.placed), &theme);
                 cells.push(figure(average.unwrap_or("—".into())));
                 cells.push(cell(words::state(order.state), theme.muted));
@@ -237,13 +233,12 @@ impl Trade {
             words::NO_FILLS,
             &theme,
             move |fill: &Fill| {
-                let market = &MARKETS[fill.market as usize % MARKETS.len()];
-                let places = format::decimals(market.tick);
+                let market = orders::market_of(fill.market);
                 vec![
                     stamp(format::day_time(fill.time), &theme),
                     cell(market.name, theme.foreground),
                     side(fill.side, &theme),
-                    figure(format::fixed(fill.price, places)),
+                    figure(orders::priced(market, fill.price)),
                     figure(format::amount(fill.amount)),
                     figure(format::total(format::cost(fill.price, fill.amount))),
                     cell(words::fill_role(fill.maker), theme.muted),
@@ -264,7 +259,7 @@ impl Trade {
             .iter()
             .all(|balance| balance.free == 0 && balance.held == 0)
         {
-            return said(words::NO_FUNDS, theme);
+            return said(words::no_funds(), theme);
         }
         let theme = *theme;
         let balances: Rc<[Balance]> = balances.as_slice().into();
@@ -298,21 +293,15 @@ impl Trade {
 /// The cells every order's row starts with: when it was placed, its
 /// market, side and type, its price, its amount and how much of it filled.
 fn order_cells(order: &Order, placed: String, theme: &Theme) -> Vec<AnyElement> {
-    let market = &MARKETS[order.market as usize % MARKETS.len()];
-    let places = format::decimals(market.tick);
-    let filled = u128::from(order.filled) * 100 / u128::from(order.amount.max(1));
+    let market = orders::market_of(order.market);
     vec![
         stamp(placed, theme),
         cell(market.name, theme.foreground),
         side(order.side, theme),
         cell(words::kind(order.limit.is_some()), theme.foreground),
-        figure(
-            order
-                .limit
-                .map_or(words::MARKET.into(), |limit| format::fixed(limit, places)),
-        ),
+        figure(orders::limit(order).unwrap_or(words::MARKET.into())),
         figure(format::amount(order.amount)),
-        figure(format!("{filled}%")),
+        figure(format!("{}%", orders::filled(order))),
     ]
 }
 

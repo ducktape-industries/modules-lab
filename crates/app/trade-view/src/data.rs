@@ -149,7 +149,7 @@ impl Trade {
         self.read_trades(cx);
     }
 
-    fn read_stats(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn read_stats(&mut self, cx: &mut Context<Self>) {
         cx.load(self, cx.host().query(ask::Stats), |view| &mut view.stats);
     }
 
@@ -167,7 +167,7 @@ impl Trade {
         });
     }
 
-    fn read_trades(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn read_trades(&mut self, cx: &mut Context<Self>) {
         let (market, limit) = (self.market as u8, TAPE);
         let trades = cx.host().query(ask::Trades { market, limit });
         cx.load(self, trades, |view| &mut view.trades);
@@ -263,7 +263,8 @@ impl Trade {
 
     /// One op to the program, from an account with a link: what it
     /// changed is read again. A refused order says why in the ticket, any
-    /// other op over the panel.
+    /// other op over the panel. While it is on its way the ticket is
+    /// placing, or the op is the one `sending`.
     pub(crate) fn submit(&mut self, op: Op, cx: &mut Context<Self>) {
         if !self.may_trade() {
             return;
@@ -275,14 +276,27 @@ impl Trade {
         };
         refusal(self).clear();
         self.ticket.placing |= placing;
-        let submit = cx.host().ask::<Submit<::trade::Trade>>(op);
+        if !placing {
+            self.sending = Some(op.clone());
+        }
+        // the control that sent it is drawn waiting
+        cx.notify();
+        let submit = cx.host().ask::<Submit<::trade::Trade>>(op.clone());
         cx.land(submit, move |view, result, cx| {
             cx.notify();
             if placing {
                 view.ticket.placing = false;
             }
+            if view.is_sending(&op) {
+                view.sending = None;
+            }
             match result {
-                Ok(Submitted::Applied { .. }) => view.refresh(cx),
+                Ok(Submitted::Applied { .. }) => {
+                    if placing {
+                        view.placed();
+                    }
+                    view.refresh(cx)
+                }
                 Ok(Submitted::Refused {
                     refusal: refused, ..
                 })

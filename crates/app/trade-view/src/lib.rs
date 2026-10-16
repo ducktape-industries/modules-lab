@@ -12,13 +12,18 @@
 //!
 //! What is drawn is `ui`, the desktop's tree (three columns from 1100 px of
 //! the view's own width, and under that the desk's pane: the chart over the
-//! panel and one tabbed column beside them), or `ui::phone`, the phone's,
-//! picked once at the root by whether the window's pointer is a finger.
-//! What both draw alike is `look.rs`.
+//! panel and one tabbed column beside them), or `ui::phone`, the phone's
+//! (the markets, a market's page with a sheet over it, the reader's orders
+//! and balances), picked once at the root by whether the window's pointer
+//! is a finger. The book's rows (`book.rs`) and an order's facts
+//! (`orders.rs`) are laid out once for both; what both draw alike is
+//! `look.rs`.
+mod book;
 mod chart;
 mod data;
 mod format;
 mod look;
+mod orders;
 mod ticket;
 mod ui;
 mod words;
@@ -26,8 +31,9 @@ mod words;
 use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
-use trade::{ASSETS, Balance, Book, Fill, MARKETS, Order, SPANS, Stats, Traded};
+use trade::{ASSETS, Balance, Book, Fill, MARKETS, Op, Order, SPANS, Side, Stats, Traded};
 use view::Paged;
+use view::design::Pages;
 use view::prelude::*;
 
 use chart::Chart;
@@ -82,6 +88,20 @@ pub struct Trade {
     /// its own.
     #[serde(skip)]
     pub(crate) refusal: String,
+    /// The cancel, cancel all or grant on its way: its control waits for
+    /// the answer. The ticket's order is `ticket.placing`.
+    #[serde(skip)]
+    pub(crate) sending: Option<Op>,
+    // What the phone's tree shows; the desktop's reads none of it.
+    /// The phone's pages: the markets at the root.
+    pub(crate) pages: Pages<Route>,
+    /// What the phone's market page shows under its chart.
+    pub(crate) segment: Segment,
+    /// The list the phone's orders page shows.
+    pub(crate) order_list: OrderList,
+    /// The sheet over the phone's market page.
+    #[serde(skip)]
+    pub(crate) sheet: Option<Sheet>,
 }
 
 /// A tab of the panel under the chart.
@@ -108,6 +128,48 @@ pub enum Column {
 pub enum Menu {
     Markets,
     Indicators,
+    Step,
+}
+
+/// A page of the phone's stack.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Route {
+    /// The root: the markets, and the reader's account under them.
+    #[default]
+    Markets,
+    /// The market on screen.
+    Market,
+    /// The reader's orders in every market.
+    Orders,
+    Balances,
+}
+
+/// What the phone's market page shows under its chart.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Segment {
+    #[default]
+    Book,
+    Trades,
+    Orders,
+}
+
+/// A list of the phone's orders page.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OrderList {
+    #[default]
+    Open,
+    History,
+    Fills,
+}
+
+/// A sheet over the phone's market page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sheet {
+    /// The order ticket.
+    Ticket,
+    /// What the chart draws.
+    ChartSettings,
+    /// The book's price step.
     Step,
 }
 
@@ -185,6 +247,78 @@ impl Trade {
             self.read_book(cx);
             cx.notify();
         }
+    }
+
+    /// A market opened on the phone: its page over the markets.
+    pub(crate) fn open_market(&mut self, market: usize, cx: &mut Context<Self>) {
+        self.pages.push(Route::Market);
+        self.pick_market(market, cx);
+        cx.notify();
+    }
+
+    /// The reader's orders or balances, opened over the markets.
+    pub(crate) fn open_page(&mut self, route: Route, cx: &mut Context<Self>) {
+        self.pages.push(route);
+        cx.notify();
+    }
+
+    /// The phone's Back: it closes the sheet drawn, else the page on top.
+    pub(crate) fn back(&mut self, cx: &mut Context<Self>) {
+        if self.sheet.take().is_none() {
+            self.pages.pop();
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn open_sheet(&mut self, sheet: Sheet, cx: &mut Context<Self>) {
+        self.sheet = Some(sheet);
+        cx.notify();
+    }
+
+    pub(crate) fn close_sheet(&mut self, cx: &mut Context<Self>) {
+        self.sheet = None;
+        cx.notify();
+    }
+
+    /// The ticket's sheet, on the side pressed.
+    pub(crate) fn open_ticket(&mut self, sell: bool, cx: &mut Context<Self>) {
+        self.open_sheet(Sheet::Ticket, cx);
+        self.pick_side(sell, cx);
+    }
+
+    /// A level of the book pressed on the phone: the ticket opens at its
+    /// price, on the side that trades against it (an ask is bought, a bid
+    /// sold).
+    pub(crate) fn take_level(&mut self, price: u64, rests: Side, cx: &mut Context<Self>) {
+        self.take_price(price, cx);
+        self.open_ticket(rests == Side::Buy, cx);
+    }
+
+    /// An order the program took: the phone's ticket closes and its market
+    /// page shows the reader's orders, where it rests.
+    pub(crate) fn placed(&mut self) {
+        self.sheet = None;
+        self.segment = Segment::Orders;
+    }
+
+    pub(crate) fn pick_segment(&mut self, segment: Segment, cx: &mut Context<Self>) {
+        self.segment = segment;
+        cx.notify();
+    }
+
+    pub(crate) fn pick_order_list(&mut self, list: OrderList, cx: &mut Context<Self>) {
+        self.order_list = list;
+        cx.notify();
+    }
+
+    /// The reader's open order `order`, cancelled.
+    pub(crate) fn cancel(&mut self, order: u64, cx: &mut Context<Self>) {
+        self.submit(Op::Cancel { order }, cx);
+    }
+
+    /// Whether `op` is on its way.
+    pub(crate) fn is_sending(&self, op: &Op) -> bool {
+        self.sending.as_ref() == Some(op)
     }
 }
 

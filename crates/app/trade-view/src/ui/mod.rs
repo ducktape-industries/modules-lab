@@ -15,7 +15,8 @@ use view::design::{Ladder, Orientation};
 use view::prelude::*;
 use view::{Anchor, AnchoredPositionMode, AnyElement, Div, Edges, FontWeight, Point, Stateful};
 
-use crate::{Column, Menu, Trade, format};
+use crate::chart::SWITCHES;
+use crate::{Column, Menu, Trade, format, look, words};
 
 mod book;
 mod chart;
@@ -166,16 +167,7 @@ impl Trade {
             }
             // a set of switches: the menu stays open over them
             Menu::Indicators => {
-                let chart = &mut self.chart;
-                let switch = [
-                    &mut chart.ma7,
-                    &mut chart.ma25,
-                    &mut chart.volume,
-                    &mut chart.line,
-                ];
-                if let Some(on) = switch.into_iter().nth(index) {
-                    *on = !*on;
-                }
+                self.chart.switch(index);
                 cx.notify();
             }
             Menu::Step => {
@@ -194,11 +186,7 @@ impl Trade {
         let (base, _) = self.assets();
         let stats = self.market_stats().filter(|stats| stats.last > 0);
         let moved = stats.and_then(|stats| format::change(stats.last, stats.before));
-        let tone = match moved {
-            Some(moved) if moved < 0 => theme.danger,
-            Some(_) => theme.success,
-            None => theme.foreground,
-        };
+        let tone = look::moved(moved, theme.foreground, theme);
         let last = design::mono(stats.map_or("—".into(), |stats| self.price(stats.last)))
             .text_size(if wide { px(18.) } else { design::text::TITLE })
             .font_weight(FontWeight::MEDIUM)
@@ -254,11 +242,17 @@ impl Trade {
         // a day nobody traded in has no high and no low to tell
         let traded = stats.filter(|stats| stats.high > 0);
         bar.when(!wide, |bar| bar.child(div().flex_1()))
-            .child(fact("24h high", traded.map(|stats| self.price(stats.high))))
-            .child(fact("24h low", traded.map(|stats| self.price(stats.low))))
+            .child(fact(
+                words::HIGH_24H,
+                traded.map(|stats| self.price(stats.high)),
+            ))
+            .child(fact(
+                words::LOW_24H,
+                traded.map(|stats| self.price(stats.low)),
+            ))
             .when(wide, |bar| {
                 let volume = stats.map(|stats| format!("{} {base}", format::quote(stats.volume)));
-                bar.child(fact("24h volume", volume))
+                bar.child(fact(words::VOLUME_24H, volume))
             })
     }
 
@@ -280,7 +274,7 @@ impl Trade {
             .child(self.market().name)
             .child(chevron(open, theme));
         let list = open.then(|| self.markets(cx, theme));
-        self.popover(Menu::Markets, "Markets", opener, list, false, cx)
+        self.popover(Menu::Markets, words::MARKETS, opener, list, false, cx)
     }
 
     /// The open list of markets.
@@ -312,15 +306,12 @@ impl Trade {
                 .child(cell(px(88.)).child(design::mono(
                     stats.map_or("—".into(), |stats| format::fixed(stats.last, decimals)),
                 )))
-                .child(cell(px(64.)).child(
-                    design::mono(moved.map_or("—".into(), format::percent)).text_color(
-                        match moved {
-                            Some(moved) if moved < 0 => theme.danger,
-                            Some(_) => theme.success,
-                            None => theme.muted,
-                        },
+                .child(
+                    cell(px(64.)).child(
+                        design::mono(moved.map_or("—".into(), format::percent))
+                            .text_color(look::moved(moved, theme.muted, &theme)),
                     ),
-                ));
+                );
             design::item(row, Role::ListBoxOption, index == active)
         });
         let head = div()
@@ -347,7 +338,7 @@ impl Trade {
             .on_submit(
                 cx.listener(|view, _: &(), window, cx| view.pick(Menu::Markets, 0, window, cx)),
             );
-        let list = design::composite("trade-markets-list", Role::ListBox, "Markets")
+        let list = design::composite("trade-markets-list", Role::ListBox, words::MARKETS)
             .active(active, found.len())
             .on_move(cx.processor(|view: &mut Trade, index: usize, _, cx| {
                 view.menu_cursor = index;
@@ -392,7 +383,7 @@ impl Trade {
     ) -> impl IntoElement + use<> {
         let spans = design::segmented(
             "trade-spans",
-            "Candle span",
+            words::CANDLE_SPAN,
             ladder,
             theme,
             Some(self.chart.span),
@@ -425,7 +416,7 @@ impl Trade {
                     view.pick(Menu::Indicators, index, window, cx)
                 }))
                 .children(mark.map(|mark| div().w(px(10.)).h(px(2.)).bg(mark)))
-                .child(INDICATORS[index])
+                .child(SWITCHES[index])
         };
         let chart = &self.chart;
         let style = design::segmented(
@@ -436,7 +427,7 @@ impl Trade {
             Some(usize::from(chart.line)),
             [
                 ("Candles".into(), "Candles".into()),
-                ("Line".into(), "Line".into()),
+                (words::LINE.into(), words::LINE.into()),
             ],
             cx.processor(|view: &mut Trade, line: usize, _, cx| {
                 view.chart.line = line == 1;
@@ -462,10 +453,8 @@ impl Trade {
             }))
             .child("Indicators")
             .child(chevron(open, theme));
-        let chart = &self.chart;
-        let on = [chart.ma7, chart.ma25, chart.volume, chart.line];
         let menu = open.then(|| {
-            let items = INDICATORS.iter().zip(on);
+            let items = SWITCHES.iter().zip(self.chart.switches());
             let items = items.map(|(name, on)| ((*name).into(), on)).collect();
             self.menu_list(
                 Menu::Indicators,
@@ -488,8 +477,8 @@ impl Trade {
     ) -> impl IntoElement + use<> {
         const TABS: [(Column, &str, &str); 3] = [
             (Column::Order, "trade-tab-order", "Order"),
-            (Column::Book, "trade-tab-book", "Book"),
-            (Column::Trades, "trade-tab-trades", "Trades"),
+            (Column::Book, "trade-tab-book", words::BOOK),
+            (Column::Trades, "trade-tab-trades", words::TRADES),
         ];
         let picked = TABS.iter().position(|(tab, ..)| *tab == self.column);
         let bar = tabs(
@@ -611,9 +600,6 @@ impl Trade {
         hung(frame, true, menu.drop())
     }
 }
-
-/// What the chart's switches are called, in the order a menu lists them.
-const INDICATORS: [&str; 4] = ["MA 7", "MA 25", "Volume", "Line"];
 
 /// A small bordered control of a toolbar: a switch, or what opens a menu.
 fn chip(id: &'static str, theme: &Theme) -> Stateful<Div> {

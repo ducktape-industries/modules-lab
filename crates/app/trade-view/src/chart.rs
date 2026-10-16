@@ -4,11 +4,13 @@
 //! in has no row and is drawn flat at the close before it. [`Plot`] lays
 //! the buckets on screen out: each slot, the price scale and its rules,
 //! the volume pane under it, the two moving averages. The model also
-//! finds the candle and the row under a pointer, and the reader's resting
-//! orders on their lines, and moves the pan and the zoom.
+//! finds the candle and the row under a pointer, the candle a finger
+//! holds, and the reader's resting orders on their lines, and moves the
+//! pan and the zoom for a wheel, a drag, a swipe or a pinch.
 //!
-//! The trees draw from it: the desktop's `ui/chart.rs`, over the canvas
-//! of quads and lines that `look.rs` draws for every tree alike.
+//! The trees draw from it: the desktop's `ui/chart.rs` and the phone's
+//! `ui/phone/chart.rs`, each over the canvas and the labels that
+//! `look.rs` lays for both alike.
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -16,8 +18,15 @@ use trade::{Candle, MAX_ROWS, Side};
 use view::prelude::*;
 use view::{Point, Task};
 
-use crate::Trade;
+use crate::{Trade, words};
 
+/// A resting order on its line: the row it is drawn on, its side, what is
+/// left of it and its limit.
+pub(crate) type OrderLine = (f32, Side, u64, u64);
+
+/// The least one pinch event shrinks what is drawn to: a delta under -1
+/// is no size at all.
+const PINCH_FLOOR: f32 = 0.1;
 /// The narrowest and the widest a candle's slot is zoomed to, in pixels:
 /// a candle is at least the one column its wick is drawn in.
 const NARROWEST: f32 = 1.;
@@ -45,6 +54,9 @@ const SMALLEST: (f32, f32) = (48., 96.);
 /// The closes each moving average is of.
 const FAST: usize = 7;
 const SLOW: usize = 25;
+/// What the chart draws besides its candles, as a list of switches names
+/// them: the two averages, the volume, and the closes joined by a line.
+pub(crate) const SWITCHES: [&str; 4] = [words::MA7, words::MA25, words::VOLUME, words::LINE];
 /// The open orders drawn on their lines, the newest first.
 // ponytail: a cap, not a choice of the nearest; an account with more
 // resting orders than this in one market wants them merged by price.
@@ -79,6 +91,14 @@ pub struct Chart {
     /// Where a drag was last accounted for, in the window's pixels.
     #[serde(skip)]
     pub(crate) grabbed: Option<f32>,
+    /// The bucket a finger's tap holds told, in place of a pointer's
+    /// candle: it stays on its candle as the chart pans.
+    #[serde(skip)]
+    pub(crate) held: Option<u64>,
+    /// What a finger's pan moved short of a whole candle, carried to the
+    /// next, so a slow pan adds up as a slow drag does.
+    #[serde(skip)]
+    pub(crate) pan_rest: f32,
     #[serde(skip)]
     pub(crate) candles: Loadable<Candles>,
     /// The newest page read again while the candles on screen stay.
@@ -103,6 +123,8 @@ impl Default for Chart {
             size: (0., 0.),
             pointer: None,
             grabbed: None,
+            held: None,
+            pan_rest: 0.,
             candles: Loadable::Idle,
             rereading: None,
             older: None,
@@ -148,6 +170,11 @@ impl Candles {
         self.rows.keys().next().copied()
     }
 
+    /// Whether the program holds no candle of the market and span.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+
     /// The bucket of the newest candle held.
     pub(crate) fn tip(&self) -> Option<u64> {
         self.rows.keys().next_back().copied()
@@ -155,11 +182,6 @@ impl Candles {
 
     pub(crate) fn last(&self) -> Option<&Candle> {
         self.rows.values().next_back()
-    }
-
-    /// Whether the program holds no candle of the market and span.
-    pub(crate) fn is_empty(&self) -> bool {
-        self.rows.is_empty()
     }
 }
 
@@ -268,15 +290,69 @@ impl Chart {
     /// The slot under the pointer, counted from the left, when the pointer
     /// is over the plot and a candle is drawn there.
     pub(crate) fn hovered(&self) -> Option<usize> {
-        let at = self.pointer? - self.origin;
+        self.slot_of(self.candle_at(self.pointer?)?)
+    }
+
+    /// The bucket of the candle drawn at `at`, in the window's pixels:
+    /// `None` off the plot, or where nothing is drawn.
+    fn candle_at(&self, at: Point<Pixels>) -> Option<u64> {
+        let at = at - self.origin;
         if !(0. ..self.size.1 - TIMES).contains(&f32::from(at.y)) {
             return None;
         }
-        let (first, last) = self.buckets()?;
+        let (_, last) = self.buckets()?;
         let bucket = (last + 1).checked_sub(self.slots_to_edge(at.x.into())?)?;
-        // nothing is drawn before the oldest candle held
-        let drawn = bucket >= first.max(self.candles.ready()?.oldest()?);
+        self.slot_of(bucket).map(|_| bucket)
+    }
+
+    /// The slot `bucket` is drawn in, counted from the left: `None` off
+    /// screen, and before the oldest candle held, where nothing is drawn.
+    fn slot_of(&self, bucket: u64) -> Option<usize> {
+        let (first, last) = self.buckets()?;
+        let drawn = bucket >= first.max(self.candles.ready()?.oldest()?) && bucket <= last;
         drawn.then(|| (bucket - first) as usize)
+    }
+
+    /// The slot of the candle a finger holds, while it is on screen.
+    pub(crate) fn held_slot(&self) -> Option<usize> {
+        self.slot_of(self.held?)
+    }
+
+    /// A finger's tap at `at`, in the window's pixels: the candle under it
+    /// is held, until a second tap on it or a tap off the candles.
+    pub(crate) fn hold(&mut self, at: Point<Pixels>) {
+        self.held = match self.candle_at(at) {
+            Some(bucket) if self.held != Some(bucket) => Some(bucket),
+            _ => None,
+        };
+    }
+
+    /// The host laid the chart out at `bounds`: whether that draws
+    /// anything else, a new size or the pointer on another candle or row.
+    pub(crate) fn lay(&mut self, bounds: &Bounds<Pixels>) -> bool {
+        let size = (bounds.size.width.into(), bounds.size.height.into());
+        let pointed = self.pointed();
+        self.origin = bounds.origin;
+        std::mem::replace(&mut self.size, size) != size || pointed != self.pointed()
+    }
+
+    /// Whether the chart draws each of what it draws besides its candles,
+    /// in the order a list of them names them ([`SWITCHES`]).
+    pub(crate) fn switches(&self) -> [bool; 4] {
+        [self.ma7, self.ma25, self.volume, self.line]
+    }
+
+    /// Switches the `index`th of [`SWITCHES`] on or off.
+    pub(crate) fn switch(&mut self, index: usize) {
+        let switch = [
+            &mut self.ma7,
+            &mut self.ma25,
+            &mut self.volume,
+            &mut self.line,
+        ];
+        if let Some(on) = switch.into_iter().nth(index) {
+            *on = !*on;
+        }
     }
 
     /// The price pane's height: the plot's, less the volume pane under it.
@@ -413,6 +489,28 @@ impl Trade {
         }
     }
 
+    /// A finger's pan, `dx` pixels across: the chart follows the finger,
+    /// whole candles at a time, the rest carried to the next.
+    pub(crate) fn swipe(&mut self, dx: f32, cx: &mut Context<Self>) {
+        let chart = &mut self.chart;
+        let moved = chart.pan_rest + dx;
+        let candles = (moved / chart.candle).trunc();
+        chart.pan_rest = moved - candles * chart.candle;
+        if candles != 0. {
+            self.pan(candles as i64, cx);
+            cx.notify();
+        }
+    }
+
+    /// A pinch about `at`, in the window's pixels, growing what is drawn
+    /// by `delta` (0.1 a tenth bigger): the candle under it stays there.
+    pub(crate) fn pinch(&mut self, delta: f32, at: Point<Pixels>, cx: &mut Context<Self>) {
+        let grown = (1. + delta).max(PINCH_FLOOR);
+        let about = f32::from(at.x - self.chart.origin.x);
+        self.zoom(1. / grown, Some(about), cx);
+        cx.notify();
+    }
+
     /// Shows `factor` times the candles. About `about`, a place on the
     /// plot in the chart's pixels, the candle there stays there, as far as
     /// the candles held and the live edge let the chart pan; about none,
@@ -433,7 +531,7 @@ impl Trade {
 
     /// The reader's resting orders in this market whose price is on
     /// screen: where each line is, its side and what is left of it.
-    pub(crate) fn order_lines(&self, plot: &Plot) -> Vec<(f32, Side, u64, u64)> {
+    pub(crate) fn order_lines(&self, plot: &Plot) -> Vec<OrderLine> {
         let orders = self
             .open
             .ready()
