@@ -88,7 +88,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use view::prelude::*;
 use view::{Canvas, Div, FontWeight, Stateful};
 
-use crate::games::{Fact, Rng, Still, square};
+use crate::games::{Area, Fact, Rng, Still, square};
 
 pub const COLS: i32 = 10;
 pub const ROWS: i32 = 20;
@@ -1635,22 +1635,35 @@ fn piece(mut drawn: Canvas, shown: Piece, cell: f32, slot: Bounds<Pixels>, color
 }
 
 /// The hub's picture of the game: a well's last rows and a piece falling,
-/// a letter a piece, in the middle of its [`STILL`](crate::games::STILL),
-/// drawn `size` large.
-pub(crate) fn preview(size: (f32, f32), theme: &Theme) -> Canvas {
-    let still = Still::fit(size);
-    const PICTURE: [&str; 9] = [
-        "...TTT....",
-        "....T.....",
-        "..........",
-        "........OO",
-        "I.......OO",
-        "I.L..SS.ZZ",
-        "I.L.SSJZZ.",
-        "ILL.JJJ.SS",
-        "IZZ..LJSS.",
-    ];
-    let (cell, left, top) = (11., 49., 11.);
+/// a letter a piece.
+const PICTURE: [&str; 9] = [
+    "...TTT....",
+    "....T.....",
+    "..........",
+    "........OO",
+    "I.......OO",
+    "I.L..SS.ZZ",
+    "I.L.SSJZZ.",
+    "ILL.JJJ.SS",
+    "IZZ..LJSS.",
+];
+
+/// A cell of [`PICTURE`], and its top left, in the middle of its
+/// [`STILL`](crate::games::STILL).
+const PICTURE_CELL: f32 = 11.;
+const PICTURE_AT: (f32, f32) = (49., 11.);
+
+/// The part of [`STILL`](crate::games::STILL) the picture draws on.
+pub(crate) const DRAWN: Area = (
+    PICTURE_AT.0,
+    PICTURE_AT.1,
+    PICTURE[0].len() as f32 * PICTURE_CELL,
+    PICTURE.len() as f32 * PICTURE_CELL,
+);
+
+/// [`PICTURE`], where `still` puts it.
+pub(crate) fn preview(still: Still, theme: &Theme) -> Canvas {
+    let (cell, (left, top)) = (PICTURE_CELL, PICTURE_AT);
     let mut drawn = canvas().size_full();
     for (y, row) in PICTURE.iter().enumerate() {
         for (x, letter) in row.chars().enumerate() {

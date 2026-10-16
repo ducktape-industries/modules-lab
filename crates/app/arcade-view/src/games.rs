@@ -203,22 +203,39 @@ pub(crate) fn square(x: f32, y: f32, width: f32, height: f32) -> Bounds<Pixels> 
 /// picture, 208 by 120 px (`hub.rs`).
 pub(crate) const STILL: (f32, f32) = (208., 120.);
 
-/// Game `which`'s still picture, drawn `size` large: the desktop's card
-/// draws it at [`STILL`], the phone's row smaller.
-pub(crate) fn picture(which: usize, size: (f32, f32), theme: &Theme) -> Canvas {
-    match which {
-        0 => tetris::preview(size, theme),
-        1 => snake::preview(size, theme),
-        2 => merge::preview(size, theme),
-        3 => mines::preview(size, theme),
-        4 => breakout::preview(size, theme),
-        _ => invaders::preview(size, theme),
-    }
+/// A part of [`STILL`]: its left, top, width and height.
+pub(crate) type Area = (f32, f32, f32, f32);
+
+/// What draws a still picture, where a [`Still`] puts it.
+type Draw = fn(Still, &Theme) -> Canvas;
+
+/// Each game's still picture, in [`arcade::GAMES`]' order: what draws it,
+/// and the part of [`STILL`] it draws on.
+const PICTURES: [(Draw, Area); 6] = [
+    (tetris::preview, tetris::DRAWN),
+    (snake::preview, snake::DRAWN),
+    (merge::preview, merge::DRAWN),
+    (mines::preview, mines::DRAWN),
+    (breakout::preview, breakout::DRAWN),
+    (invaders::preview, invaders::DRAWN),
+];
+
+/// Game `which`'s still picture as the desktop's card draws it: whole, in
+/// [`STILL`].
+pub(crate) fn picture(which: usize, theme: &Theme) -> Canvas {
+    (PICTURES[which].0)(Still::WHOLE, theme)
 }
 
-/// Where a still picture laid out in [`STILL`] lands in a box of another
-/// size: every place and length scaled by one factor, the picture whole
-/// and centred. In [`STILL`] itself each is the one the picture names.
+/// Game `which`'s still picture in a box `size` large (the phone's row):
+/// the part it draws on, as large as the box holds it.
+pub(crate) fn thumbnail(which: usize, size: (f32, f32), theme: &Theme) -> Canvas {
+    let (draw, drawn) = PICTURES[which];
+    draw(Still::around(drawn, size), theme)
+}
+
+/// Where a still picture laid out in [`STILL`] lands in the box it is drawn
+/// in: every place and length scaled by one factor and moved by one
+/// offset.
 #[derive(Clone, Copy)]
 pub(crate) struct Still {
     scale: f32,
@@ -227,12 +244,22 @@ pub(crate) struct Still {
 }
 
 impl Still {
-    pub(crate) fn fit((width, height): (f32, f32)) -> Still {
-        let scale = (width / STILL.0).min(height / STILL.1);
+    /// The whole picture in [`STILL`]: each place and length the one the
+    /// picture names.
+    pub(crate) const WHOLE: Still = Still {
+        scale: 1.,
+        left: 0.,
+        top: 0.,
+    };
+
+    /// The part `drawn` filling a box `size` large as far as it can,
+    /// centred: what lies outside it may fall outside the box.
+    pub(crate) fn around((x, y, width, height): Area, size: (f32, f32)) -> Still {
+        let scale = (size.0 / width).min(size.1 / height);
         Still {
             scale,
-            left: (width - STILL.0 * scale) / 2.,
-            top: (height - STILL.1 * scale) / 2.,
+            left: (size.0 - width * scale) / 2. - x * scale,
+            top: (size.1 - height * scale) / 2. - y * scale,
         }
     }
 
@@ -265,7 +292,7 @@ impl Still {
 
     /// Where a drawing that scales its places from the box's corner, by
     /// [`scale`](Self::scale), puts the picture's `(x, y)`: in the
-    /// picture's units, shifted by the margin the fit leaves.
+    /// picture's units, moved by the offset the box draws it at.
     pub(crate) fn place_unscaled(self, x: f32, y: f32) -> (f32, f32) {
         (x + self.left / self.scale, y + self.top / self.scale)
     }

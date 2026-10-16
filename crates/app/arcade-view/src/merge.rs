@@ -11,7 +11,7 @@
 use view::prelude::*;
 use view::{Canvas, Div, FontWeight};
 
-use crate::games::{Fact, Rng, Still};
+use crate::games::{Area, Fact, Rng, Still};
 
 pub(crate) const SIDE: usize = 4;
 pub(crate) const KEYS: &str = "Arrows slide the tiles";
@@ -367,13 +367,22 @@ fn shade(value: u32, theme: &Theme) -> (Hsla, Hsla) {
     }
 }
 
-/// The hub's picture of the game: a board under way, in the middle of its
-/// [`STILL`](crate::games::STILL), drawn `size` large.
-pub(crate) fn preview(size: (f32, f32), theme: &Theme) -> Canvas {
-    let still = Still::fit(size);
+/// A tile of the hub's picture, the gap between tiles, the board's top
+/// left in [`STILL`](crate::games::STILL), and its side.
+const PICTURE_TILE: f32 = 22.;
+const PICTURE_GAP: f32 = 4.;
+const PICTURE_AT: (f32, f32) = (50., 6.);
+const PICTURE_SIDE: f32 = 4. * PICTURE_TILE + 5. * PICTURE_GAP;
+
+/// The part of [`STILL`](crate::games::STILL) the picture draws on: the
+/// board.
+pub(crate) const DRAWN: Area = (PICTURE_AT.0, PICTURE_AT.1, PICTURE_SIDE, PICTURE_SIDE);
+
+/// The hub's picture of the game: a board under way, where `still` puts
+/// it.
+pub(crate) fn preview(still: Still, theme: &Theme) -> Canvas {
     let values = [[0, 2, 0, 0], [2, 4, 8, 0], [4, 16, 32, 2], [8, 64, 128, 4]];
-    let (tile, gap, left, top) = (22., 4., 50., 6.);
-    let side = 4. * tile + 5. * gap;
+    let (tile, gap, (left, top), side) = (PICTURE_TILE, PICTURE_GAP, PICTURE_AT, PICTURE_SIDE);
     let mut drawn = canvas()
         .size_full()
         .rect(still.square(left, top, side, side), theme.border);

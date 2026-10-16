@@ -25,7 +25,7 @@ use gpui::point;
 use view::Canvas;
 use view::prelude::*;
 
-use crate::games::{Fact, Rng, Still, square};
+use crate::games::{Area, Fact, Rng, Still, square};
 
 mod stages;
 
@@ -751,29 +751,51 @@ fn capsule(drawn: Canvas, item: Item, (x, y): (f32, f32), scale: f32, theme: &Th
     }
 }
 
+/// The hub's picture's wall in [`STILL`](crate::games::STILL): its
+/// columns, its top left, from one brick to the next across and down, and
+/// a brick; and the paddle's left, top, width and height.
+const PICTURE_COLS: usize = 9;
+const PICTURE_AT: (f32, f32) = (14., 14.);
+const PICTURE_PITCH: (f32, f32) = (20., 9.);
+const PICTURE_BRICK: (f32, f32) = (18., 7.);
+const PICTURE_PADDLE: Area = (80., 104., 44., 5.);
+
+/// The part of [`STILL`](crate::games::STILL) the picture draws on: from
+/// the wall to the paddle.
+pub(crate) const DRAWN: Area = (
+    PICTURE_AT.0,
+    PICTURE_AT.1,
+    (PICTURE_COLS - 1) as f32 * PICTURE_PITCH.0 + PICTURE_BRICK.0,
+    PICTURE_PADDLE.1 + PICTURE_PADDLE.3 - PICTURE_AT.1,
+);
+
 /// The hub's picture of the game: a wall with a gap, a capsule falling and
-/// the ball on its way, drawn `size` large (laid out in
-/// [`STILL`](crate::games::STILL)).
-pub(crate) fn preview(size: (f32, f32), theme: &Theme) -> Canvas {
-    let still = Still::fit(size);
+/// the ball on its way, where `still` puts it.
+pub(crate) fn preview(still: Still, theme: &Theme) -> Canvas {
     let mut drawn = canvas().size_full();
     for row in 0..4 {
         let color = match row / 2 {
             0 => theme.danger,
             _ => theme.warning,
         };
-        for col in 0..9 {
+        for col in 0..PICTURE_COLS {
             if row == 3 && (3..5).contains(&col) {
                 continue;
             }
-            let at = still.square(14. + col as f32 * 20., 14. + row as f32 * 9., 18., 7.);
+            let at = still.square(
+                PICTURE_AT.0 + col as f32 * PICTURE_PITCH.0,
+                PICTURE_AT.1 + row as f32 * PICTURE_PITCH.1,
+                PICTURE_BRICK.0,
+                PICTURE_BRICK.1,
+            );
             drawn = drawn.rect(at, color);
         }
     }
     let falling = still.place_unscaled(154., 80.);
     let drawn = capsule(drawn, Item::Wide, falling, still.scale(), theme);
+    let (x, y, w, h) = PICTURE_PADDLE;
     drawn
-        .rect(still.square(80., 104., 44., 5.), theme.foreground)
+        .rect(still.square(x, y, w, h), theme.foreground)
         .circle(still.point(112., 72.), still.length(4.), theme.foreground)
 }
 

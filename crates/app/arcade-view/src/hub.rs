@@ -4,13 +4,14 @@
 use view::prelude::*;
 use view::{App, Canvas, Div, FontWeight, Stateful};
 
-use crate::games::{STILL, picture};
+use crate::games::{STILL, Still, picture};
 use crate::words::{self, BLURBS};
 use crate::{Arcade, tetris};
 
-/// A card's width and its picture's height.
-const CARD_W: Pixels = px(208.);
-const PICTURE_H: Pixels = px(120.);
+/// A card's width and its picture's height: the box the pictures are laid
+/// out in.
+const CARD_W: Pixels = px(STILL.0);
+const PICTURE_H: Pixels = px(STILL.1);
 
 /// Tetris versus's line.
 const VERSUS_BLURB: &str = "Two wells, the same pieces; rows you clear rise in theirs.";
@@ -66,7 +67,7 @@ impl Arcade {
             format!("arcade-card-{which}"),
             (name, BLURBS[which]),
             best,
-            picture(which, STILL, theme),
+            picture(which, theme),
             open,
             theme,
         )
@@ -79,7 +80,7 @@ impl Arcade {
             "arcade-card-versus".into(),
             ("Tetris versus", VERSUS_BLURB),
             None,
-            tetris::preview(STILL, theme),
+            tetris::preview(Still::WHOLE, theme),
             open,
             theme,
         )

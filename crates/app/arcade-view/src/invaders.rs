@@ -26,7 +26,7 @@
 use view::prelude::*;
 use view::{Canvas, Div};
 
-use crate::games::{Fact, Rng, Still, square};
+use crate::games::{self, Fact, Rng, Still, square};
 
 /// The field, in px at a scale of one.
 pub(crate) const WIDTH: i32 = 224;
@@ -894,22 +894,40 @@ fn sprite(
     drawn
 }
 
+/// The hub's picture in [`STILL`](crate::games::STILL): how large one of
+/// the game's units draws, where the rack's top left is, how many columns
+/// of it show, and where the cannon sits, in the game's units.
+const PICTURE_UNIT: f32 = 2.;
+const PICTURE_AT: (f32, f32) = (24., 8.);
+const PICTURE_COLS: i32 = 5;
+const PICTURE_CANNON: (i32, i32) = (34, 46);
+
+/// The part of [`STILL`](crate::games::STILL) the picture draws on: from
+/// the rack's top left to the cannon's foot.
+pub(crate) const DRAWN: games::Area = (
+    PICTURE_AT.0,
+    PICTURE_AT.1,
+    (PICTURE_COLS * SLOT) as f32 * PICTURE_UNIT,
+    (PICTURE_CANNON.1 + CANNON.len() as i32) as f32 * PICTURE_UNIT,
+);
+
 /// The hub's picture of the game: three rows of the rack over the cannon
-/// and its shot, drawn `size` large (laid out in
-/// [`STILL`](crate::games::STILL)).
-pub(crate) fn preview(size: (f32, f32), theme: &Theme) -> Canvas {
-    let still = Still::fit(size);
-    let at = grid(2. * still.scale(), still.place(24., 8.));
+/// and its shot, where `still` puts it.
+pub(crate) fn preview(still: Still, theme: &Theme) -> Canvas {
+    let at = grid(
+        PICTURE_UNIT * still.scale(),
+        still.place(PICTURE_AT.0, PICTURE_AT.1),
+    );
     let mut drawn = canvas().size_full();
     for (row, kind) in [&SQUID, &CRAB, &OCTOPUS].iter().enumerate() {
         let w = width(kind.frames[0]);
-        for col in 0..5 {
+        for col in 0..PICTURE_COLS {
             let spot = (col * SLOT + (SLOT - w) / 2, row as i32 * 12);
             drawn = sprite(drawn, kind.frames[0], spot, theme.foreground, &at);
         }
     }
     drawn = drawn.rect(at(40, 37, 1, SHOT_H), theme.foreground);
-    sprite(drawn, CANNON, (34, 46), theme.success, &at)
+    sprite(drawn, CANNON, PICTURE_CANNON, theme.success, &at)
 }
 
 #[cfg(test)]

@@ -11,13 +11,15 @@ use view::prelude::*;
 use view::{Div, Stateful};
 
 use crate::Arcade;
-use crate::games::picture;
+use crate::games::thumbnail;
 use crate::words::{self, BLURBS};
 
 /// A game's still picture leading its row, its hairline (`border_1`)
-/// included (SPEC §1.2: 72 by 44, where the kit's lead column is 24).
+/// included (SPEC §1.2: 72 by 44, where the kit's lead column is 24), and
+/// the room the picture keeps clear inside the hairline.
 const THUMB: (f32, f32) = (72., 44.);
 const THUMB_EDGE: f32 = 1.;
+const THUMB_PAD: f32 = 2.;
 
 /// The note's glyph (SPEC §1.2).
 const NOTE_GLYPH: Pixels = px(18.);
@@ -132,32 +134,43 @@ fn game(
     )
     .child(thumb(which, theme))
     .child(
-        design::row_words(design::row_title(name, ladder, theme)).child(design::row_caption(
-            BLURBS[which],
-            ladder,
-            theme,
-        )),
+        // the name is never cut: the words take at least its width (not
+        // the kit's zero), and the line, laid out from no width of its own
+        // up to theirs, adds none, so it is the line that is cut
+        design::row_words(design::row_title(name, ladder, theme))
+            .min_w_auto()
+            .child(
+                design::row_caption(BLURBS[which], ladder, theme)
+                    .w_0()
+                    .min_w_full(),
+            ),
     )
     .children(best.map(|best| {
+        // short of room the best breaks onto a second line before the
+        // name is cut (the host lays a text out unbroken for its least
+        // width, so the least is said: none)
         div()
-            .flex_none()
+            .min_w_0()
             .font_family(design::fonts::FAMILY_MONO)
             .text_type(ladder.secondary)
             .text_color(theme.muted)
+            .text_right()
             .child(best)
     }))
     .child(design::chevron(ladder, theme))
 }
 
-/// Game `which`'s still picture, on the surface in a hairline.
+/// Game `which`'s still picture, on the surface in a hairline: what the
+/// game draws on, as large as the box holds it.
 fn thumb(which: usize, theme: &Theme) -> Div {
-    let inside = (THUMB.0 - 2. * THUMB_EDGE, THUMB.1 - 2. * THUMB_EDGE);
+    let clear = 2. * (THUMB_EDGE + THUMB_PAD);
     div()
         .flex_none()
         .w(px(THUMB.0))
         .h(px(THUMB.1))
+        .p(px(THUMB_PAD))
         .bg(theme.surface)
         .border_1()
         .border_color(theme.border)
-        .child(picture(which, inside, theme))
+        .child(thumbnail(which, (THUMB.0 - clear, THUMB.1 - clear), theme))
 }
