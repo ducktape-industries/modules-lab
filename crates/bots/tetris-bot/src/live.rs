@@ -18,7 +18,7 @@ use ducklink::ChainId;
 use futures_util::{SinkExt as _, StreamExt as _};
 use live_wire::{
     Alias, Code, Control, DEFAULT_PRIORITY, DatagramHeader, Ending, GroupHeader, HANDSHAKE_WAIT,
-    Hello, IDLE, KEEP_ALIVE, KeyScheme, Proof, RequestId, Start, Track, Welcome, WsFrame,
+    Hello, IDLE, KEEP_ALIVE, Proof, RequestId, Scheme, Start, Track, Welcome, WsFrame,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::{Instant, MissedTickBehavior};
@@ -172,7 +172,7 @@ where
     let public = key.public_key().as_ref().to_vec();
     let hello = Hello {
         chain,
-        scheme: KeyScheme::Ed25519,
+        scheme: Scheme::Ed25519,
         key: public.clone(),
     };
     send(socket, &WsFrame::Control(Control::Hello(hello))).await?;
