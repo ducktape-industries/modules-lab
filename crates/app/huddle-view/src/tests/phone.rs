@@ -68,9 +68,9 @@ fn on_phone(cx: &mut TestAppContext) {
 /// moving.
 fn live_pieces(cx: &mut TestAppContext) {
     let (camera, ..) = camera_piece(cx).expect("a camera piece");
-    cx.simulate_media_state(&camera, live("Front Camera"));
+    cx.simulate_media_state(camera.clone(), live("Front Camera"));
     let mic = mic_key(cx);
-    cx.simulate_media_state(&mic, live("Phone microphone"));
+    cx.simulate_media_state(mic.clone(), live("Phone microphone"));
 }
 
 /// The route row `name` picked in the sound sheet.
@@ -98,14 +98,14 @@ fn sweep() {
         cx.simulate_click("huddle-sound");
         cx.simulate_click("huddle-sound-1");
         let mic = mic_key(cx);
-        cx.simulate_media_state(&mic, live("AirPods Pro"));
+        cx.simulate_media_state(mic.clone(), live("AirPods Pro"));
         cx.simulate_click("huddle-monitor");
         route(cx, "huddle-sound-0");
         // recording, playing it back
         let mic = mic_key(cx);
         for playback in [Playback::Recording, Playback::Playing, Playback::Idle] {
             cx.simulate_media_state(
-                &mic,
+                mic.clone(),
                 MediaState {
                     playback,
                     ..live("Phone microphone")
@@ -132,7 +132,7 @@ fn sweep() {
         ] {
             let (camera, ..) = camera_piece(cx).expect("a camera piece");
             cx.simulate_media_state(
-                &camera,
+                camera.clone(),
                 MediaState {
                     status,
                     opens_settings: true,
@@ -147,7 +147,7 @@ fn sweep() {
         for status in [MediaStatus::Denied, MediaStatus::NoDevice] {
             let mic = mic_key(cx);
             cx.simulate_media_state(
-                &mic,
+                mic.clone(),
                 MediaState {
                     status,
                     opens_settings: true,
@@ -163,7 +163,7 @@ fn sweep() {
         cx.simulate_click("huddle-join");
         let mic = mic_key(cx);
         cx.simulate_media_state(
-            &mic,
+            mic.clone(),
             MediaState {
                 speaking: true,
                 ..live("Phone microphone")
@@ -177,7 +177,7 @@ fn sweep() {
         for status in [MediaStatus::Denied, MediaStatus::NoDevice] {
             let (camera, ..) = camera_piece(cx).expect("a camera piece");
             cx.simulate_media_state(
-                &camera,
+                camera.clone(),
                 MediaState {
                     status,
                     opens_settings: true,
@@ -189,7 +189,7 @@ fn sweep() {
         }
         let mic = mic_key(cx);
         cx.simulate_media_state(
-            &mic,
+            mic.clone(),
             MediaState {
                 status: MediaStatus::Denied,
                 opens_settings: true,
@@ -324,7 +324,7 @@ fn the_flip_shows_only_with_a_front_and_a_back_camera() {
     assert!(disabled(&cx, "huddle-flip"), "the camera is off");
     cx.simulate_click("huddle-camera");
     let (camera, ..) = camera_piece(&cx).unwrap();
-    cx.simulate_media_state(&camera, status(MediaStatus::Busy));
+    cx.simulate_media_state(camera.clone(), status(MediaStatus::Busy));
     assert!(
         cx.find("huddle-flip").is_none(),
         "a card says what is wrong"
@@ -449,10 +449,10 @@ fn a_live_loop_the_host_stopped_turns_its_switch_off() {
         monitor_stopped: true,
         ..live("Phone microphone")
     };
-    cx.simulate_media_state(&mic, stopped);
+    cx.simulate_media_state(mic.clone(), stopped);
     assert!(!mic_piece(&cx).unwrap().3, "the loop ends");
     assert_eq!(toggled(&cx, "huddle-monitor"), Some(false));
-    cx.simulate_media_state(&mic, live("Phone microphone"));
+    cx.simulate_media_state(mic.clone(), live("Phone microphone"));
     assert!(!mic_piece(&cx).unwrap().3, "and stays off");
 }
 
@@ -479,7 +479,7 @@ fn hear_myself_is_refused_through_the_speaker() {
     ));
     route(&mut cx, "huddle-sound-1");
     let mic = mic_key(&cx);
-    cx.simulate_media_state(&mic, live("AirPods Pro"));
+    cx.simulate_media_state(mic.clone(), live("AirPods Pro"));
     assert!(!disabled(&cx, "huddle-monitor"));
     assert!(cx.has_text("Headphones connected: hear your own microphone as you speak."));
     cx.simulate_click("huddle-monitor");
@@ -493,12 +493,12 @@ fn picking_a_route_ends_the_live_loop() {
     let (mut cx, _ticks) = phone();
     route(&mut cx, "huddle-sound-1");
     let mic = mic_key(&cx);
-    cx.simulate_media_state(&mic, live("AirPods Pro"));
+    cx.simulate_media_state(mic.clone(), live("AirPods Pro"));
     cx.simulate_click("huddle-monitor");
     assert!(mic_piece(&cx).unwrap().3);
     route(&mut cx, "huddle-sound-2");
     let mic = mic_key(&cx);
-    cx.simulate_media_state(&mic, live("Phone microphone"));
+    cx.simulate_media_state(mic.clone(), live("Phone microphone"));
     assert!(!mic_piece(&cx).unwrap().3, "the loop ends");
     assert_eq!(toggled(&cx, "huddle-monitor"), Some(false));
 }
@@ -572,7 +572,7 @@ fn the_room_shows_who_speaks_and_mute_lets_the_microphone_go() {
     cx.simulate_click("huddle-join");
     let mic = mic_key(&cx);
     cx.simulate_media_state(
-        &mic,
+        mic.clone(),
         MediaState {
             speaking: true,
             ..live("Phone microphone")
@@ -605,7 +605,7 @@ fn record_then_play_back() {
     );
     let mic = mic_key(&cx);
     cx.simulate_media_state(
-        &mic,
+        mic.clone(),
         MediaState {
             playback: Playback::Recording,
             ..live("Phone microphone")
@@ -615,7 +615,7 @@ fn record_then_play_back() {
     cx.run_until_parked();
     has_all(&cx, &["Stop", "0:04"]);
     cx.simulate_media_state(
-        &mic,
+        mic.clone(),
         MediaState {
             playback: Playback::Playing,
             ..live("Phone microphone")
@@ -652,7 +652,7 @@ fn a_camera_slow_to_open_says_the_phone_is_asking() {
 fn a_refused_camera_offers_settings_where_the_host_can() {
     let (mut cx, _ticks) = phone();
     let (key, ..) = camera_piece(&cx).unwrap();
-    cx.simulate_media_state(&key, status(MediaStatus::Denied));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::Denied));
     has_all(
         &cx,
         &[
@@ -666,7 +666,7 @@ fn a_refused_camera_offers_settings_where_the_host_can() {
     cx.run_until_parked();
     let (key, ..) = camera_piece(&cx).unwrap();
     cx.simulate_media_state(
-        &key,
+        key.clone(),
         MediaState {
             status: MediaStatus::Denied,
             opens_settings: true,
@@ -683,7 +683,7 @@ fn a_refused_camera_offers_settings_where_the_host_can() {
 fn a_camera_taken_or_missing_says_so() {
     let (mut cx, _ticks) = phone();
     let (key, ..) = camera_piece(&cx).unwrap();
-    cx.simulate_media_state(&key, status(MediaStatus::Gone));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::Gone));
     has_all(
         &cx,
         &[
@@ -695,7 +695,7 @@ fn a_camera_taken_or_missing_says_so() {
     cx.run_until_parked();
     let (key, ..) = camera_piece(&cx).unwrap();
     cx.simulate_media_state(
-        &key,
+        key.clone(),
         MediaState {
             status: MediaStatus::Gone,
             detail: "A FaceTime call took the camera.".into(),
@@ -706,7 +706,7 @@ fn a_camera_taken_or_missing_says_so() {
     cx.simulate_click("huddle-camera-retry");
     cx.run_until_parked();
     let (key, ..) = camera_piece(&cx).unwrap();
-    cx.simulate_media_state(&key, status(MediaStatus::NoDevice));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::NoDevice));
     has_all(
         &cx,
         &[
@@ -726,7 +726,7 @@ fn a_missing_camera_in_the_room_offers_no_join() {
     let (mut cx, _ticks) = phone();
     cx.simulate_click("huddle-join");
     let (key, ..) = camera_piece(&cx).unwrap();
-    cx.simulate_media_state(&key, status(MediaStatus::NoDevice));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::NoDevice));
     assert!(cx.has_text("No camera on this device"));
     assert!(cx.find("huddle-camera-retry").is_some());
     assert!(cx.find("huddle-camera-without").is_none());
@@ -741,7 +741,7 @@ fn a_missing_camera_in_the_room_offers_no_join() {
 fn a_microphone_in_trouble_is_one_line_with_try_again() {
     let (mut cx, _ticks) = phone();
     let key = mic_key(&cx);
-    cx.simulate_media_state(&key, status(MediaStatus::Denied));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::Denied));
     assert!(cx.has_text("Microphone access is off. Allow it in Settings, then try again."));
     assert_eq!(
         cx.interactivity("huddle-sound").aria.description.as_deref(),
@@ -757,7 +757,7 @@ fn a_microphone_in_trouble_is_one_line_with_try_again() {
     let retried = mic_key(&cx);
     assert_ne!(retried, key, "a new piece");
     cx.simulate_media_state(
-        &retried,
+        retried.clone(),
         MediaState {
             status: MediaStatus::Gone,
             detail: "A phone call took the microphone.".into(),
@@ -775,13 +775,13 @@ fn a_microphone_in_trouble_is_one_line_with_try_again() {
 fn a_refused_microphone_offers_settings_where_the_host_can() {
     let (mut cx, _ticks) = phone();
     let key = mic_key(&cx);
-    cx.simulate_media_state(&key, status(MediaStatus::Denied));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::Denied));
     assert!(cx.find("huddle-microphone-settings").is_none());
     cx.simulate_click("huddle-microphone-retry");
     cx.run_until_parked();
     let key = mic_key(&cx);
     cx.simulate_media_state(
-        &key,
+        key.clone(),
         MediaState {
             status: MediaStatus::Denied,
             opens_settings: true,
@@ -813,7 +813,7 @@ fn a_microphone_in_trouble_in_the_room_says_so() {
     let (mut cx, _ticks) = phone();
     cx.simulate_click("huddle-join");
     let key = mic_key(&cx);
-    cx.simulate_media_state(&key, status(MediaStatus::Busy));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::Busy));
     has_all(&cx, &["Another app is using the microphone.", "Try again"]);
     let band = cx.interactivity("huddle-mic-trouble");
     assert_eq!(band.role, Some(Role::Alert), "said at once");

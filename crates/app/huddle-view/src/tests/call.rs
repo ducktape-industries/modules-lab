@@ -212,7 +212,7 @@ impl Line {
 
     /// `media` from the piece `name`.
     fn tell(&mut self, name: &str, media: MediaState) {
-        self.cx.simulate_media_state(name, media);
+        self.cx.simulate_media_state(name.to_owned(), media);
         self.cx.run_until_parked();
     }
 
