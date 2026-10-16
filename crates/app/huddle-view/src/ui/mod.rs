@@ -478,7 +478,8 @@ fn settings(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<
                 words::kind(Kind::Speaker),
                 div()
                     .flex()
-                    .items_center()
+                    // Test as tall as the picker beside it
+                    .items_stretch()
                     .gap(design::space::XS)
                     .child(picker(view, Kind::Speaker, SPEAKER, cx, &theme).flex_1())
                     .child(speaker_test(view, cx, &theme)),
@@ -1644,19 +1645,17 @@ fn step(view: &mut Huddle, index: usize, cx: &mut Context<Huddle>) {
     cx.notify();
 }
 
-/// A group's heading in the sound menu; the second is ruled off the first.
-fn heading(kind: Kind, first: bool, theme: &Theme) -> AnyElement {
+/// A group's heading in the sound menu.
+fn heading(kind: Kind, theme: &Theme) -> Div {
     div()
         .h(design::size::ROW)
         .flex_none()
         .px(design::space::SM)
         .flex()
         .items_center()
-        .when(!first, |head| head.border_t_1().border_color(theme.border))
         .text_size(design::text::CAPTION)
         .text_color(theme.muted)
         .child(words::kind(kind))
-        .into_any_element()
 }
 
 /// The open device menu: one Tab stop whose ↑ ↓ walk the rows, Enter or
@@ -1676,7 +1675,10 @@ fn menu(view: &Huddle, open: Menu, cx: &mut Context<Huddle>, theme: &Theme) -> A
     let paint = move |range: Range<usize>, _: &mut Window, _: &mut App| {
         range
             .map(|at| match lines[at] {
-                Line::Head(kind) => heading(kind, at == 0, &theme),
+                // the second group ruled off the first
+                Line::Head(kind) => heading(kind, &theme)
+                    .when(at > 0, |head| head.border_t_1().border_color(theme.border))
+                    .into_any_element(),
                 Line::Row(index) => {
                     let pick = pick.clone();
                     let click = move |_: &ClickEvent, window: &mut Window, app: &mut App| {
