@@ -98,21 +98,61 @@ fn an_address_opened_again_is_listed_once_newest_first() {
     assert!(cx.find("browser-opened-2").is_none());
 }
 
+/// The host hands on `https://` alone; the phone's browser upgrades an
+/// `http://` address anyway, so the view sends it as `https://`.
 #[test]
-fn an_address_the_host_will_not_open_says_why_and_is_not_listed() {
+fn an_http_address_goes_to_the_phones_browser_as_https() {
     let Opened { mut cx, view, .. } = phone();
-    open_typed(&mut cx, "http://example.com");
-    assert_eq!(handed(&cx), ["http://example.com"]);
-    assert!(cx.find("browser-open-refused").is_some());
-    shows_all(&cx, &[NOT_OPENED]);
-    assert!(view.read(|browser| browser.handed.is_empty()));
-    assert!(!cx.has_text(words::OPENED_THIS_SESSION));
-    // Retry asks again; an address that opens ends the refusal
-    cx.simulate_click("browser-open-retry");
-    assert_eq!(handed(&cx).len(), 2);
-    cx.simulate_click("browser-home");
+    open_typed(&mut cx, "http://example.com/a?q=1");
+    assert_eq!(handed(&cx), ["https://example.com/a?q=1"]);
     assert!(cx.find("browser-open-refused").is_none());
-    assert_eq!(view.read(|browser| browser.handed.clone()), [HOME]);
+    assert_eq!(
+        view.read(|browser| browser.handed.clone()),
+        ["https://example.com/a?q=1"]
+    );
+}
+
+/// No host sentence on screen: the refusal is the view's own, it offers
+/// no Retry that cannot pass, and editing the address ends it.
+#[test]
+fn an_address_that_is_no_web_address_says_so_offers_no_retry_and_goes_on_an_edit() {
+    let Opened { mut cx, view, .. } = phone();
+    open_typed(&mut cx, "ftp://example.com");
+    assert_eq!(handed(&cx), ["ftp://example.com"]);
+    assert!(cx.find("browser-open-refused").is_some());
+    shows_all(&cx, &[words::NOT_A_WEB_ADDRESS]);
+    assert!(!cx.has_text(NOT_OPENED), "the host's words stay off screen");
+    assert!(
+        cx.find("browser-open-retry").is_none(),
+        "another try cannot pass"
+    );
+    assert!(view.read(|browser| browser.handed.is_empty()));
+    cx.simulate_input("browser-address", "example.com");
+    assert!(cx.find("browser-open-refused").is_none());
+}
+
+/// A refusal another ask can pass offers Retry, which asks again; an
+/// address that opens ends it.
+#[test]
+fn a_refusal_another_try_can_pass_offers_retry() {
+    let Opened { mut cx, view, .. } = phone();
+    cx.host().handle::<LinkOpen>(|_| {
+        Err(Error::new(
+            "needs_gesture",
+            "`link.open` needs a press or key",
+        ))
+    });
+    open_typed(&mut cx, "example.com");
+    shows_all(&cx, &[words::NEEDS_A_PRESS]);
+    cx.simulate_click("browser-open-retry");
+    assert_eq!(handed(&cx), ["https://example.com", "https://example.com"]);
+    cx.host().handle::<LinkOpen>(|_| Ok(()));
+    cx.simulate_click("browser-open-retry");
+    assert!(cx.find("browser-open-refused").is_none());
+    assert_eq!(
+        view.read(|browser| browser.handed.clone()),
+        ["https://example.com"]
+    );
 }
 
 /// The phone's browser opens a link only from a press, so a link the app
@@ -174,7 +214,7 @@ fn sweep() {
         cx.simulate_input("browser-address", "wikipedia.org/wiki/Duck");
         cx.simulate_click("browser-open");
         cx.simulate_click("browser-home");
-        cx.simulate_input("browser-address", "http://example.com");
+        cx.simulate_input("browser-address", "ftp://example.com");
         cx.simulate_click("browser-open");
         routes.send("https://example.org/".into());
         cx.run_until_parked();

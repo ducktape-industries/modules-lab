@@ -14,8 +14,10 @@
 //! (`open_outside`, `open_typed`). It never reaches into the desktop's
 //! tree.
 use view::design::{Ladder, Nav};
+use view::methods::refusal;
 use view::prelude::*;
-use view::{AnyElement, Div, FontWeight, Stateful};
+use view::wire::TextChange;
+use view::{AnyElement, Div, FontWeight, Stateful, accesskit};
 
 use crate::words;
 use crate::{ADDRESS, Browser, HOME, address, host_shown};
@@ -96,11 +98,12 @@ fn note(ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
 
 /// The address field and Open, which hands what is typed to the phone's
 /// browser; Enter in the field does too. Under them, the last address the
-/// host would not open: its refusal, and Retry.
+/// host would not open, until the address is edited.
 fn typed(view: &Browser, cx: &mut Context<Browser>, ladder: &Ladder, theme: &Theme) -> Div {
     let input = Input::new(ADDRESS, &view.address, words::ADDRESS_LABEL)
         .placeholder(words::TYPE_AN_ADDRESS)
         .font_family(design::fonts::FAMILY_MONO)
+        .on_change(cx.listener(|view: &mut Browser, _: &TextChange, _, cx| view.edited(cx)))
         .on_submit(cx.listener(|view: &mut Browser, _: &(), _, cx| view.open_typed(cx)));
     let opens = address(&view.address.text()).is_some();
     div()
@@ -110,18 +113,55 @@ fn typed(view: &Browser, cx: &mut Context<Browser>, ladder: &Ladder, theme: &The
         .gap(design::space::SM)
         .child(design::field(input, ladder, theme).lead("globe"))
         .child(open(opens, cx, ladder, theme))
-        .children(view.refused.as_ref().map(|(url, refusal)| {
-            let again = url.clone();
-            design::refused(
-                "browser-open",
-                design::sentence(refusal),
-                ladder,
-                theme,
-                cx.listener(move |view: &mut Browser, _: &ClickEvent, _, cx| {
-                    view.open_outside(again.clone(), cx)
-                }),
-            )
-        }))
+        .children(refused(view, cx, ladder, theme))
+}
+
+/// The address the host would not open, in the view's own words (the
+/// host's are written for a developer), with Retry only where another ask
+/// can pass: never for an address that is no web address, or a host that
+/// opens none.
+fn refused(
+    view: &Browser,
+    cx: &mut Context<Browser>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> Option<Stateful<Div>> {
+    let (url, why) = view.refused.as_ref()?;
+    let (sentence, retries) = match why.code.as_str() {
+        refusal::MALFORMED_REQUEST => (words::NOT_A_WEB_ADDRESS, false),
+        refusal::UNKNOWN_REQUEST | refusal::UNDECLARED_CAPABILITY => (words::NO_LINKS_HERE, false),
+        refusal::NEEDS_GESTURE => (words::NEEDS_A_PRESS, true),
+        _ => (words::NOT_OPENED, true),
+    };
+    if !retries {
+        return Some(lasting(sentence, ladder, theme));
+    }
+    let again = url.clone();
+    Some(design::refused(
+        "browser-open",
+        sentence,
+        ladder,
+        theme,
+        cx.listener(move |view: &mut Browser, _: &ClickEvent, _, cx| {
+            view.open_outside(again.clone(), cx)
+        }),
+    ))
+}
+
+/// A refusal another try cannot pass: the kit's refused notice with no
+/// Retry.
+// SDK gap: refused notice without an action, swap when feat/phone-kit lands
+fn lasting(sentence: &'static str, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
+    div()
+        .id("browser-open-refused")
+        .py(design::space::MD)
+        .px(design::space::BLOCK)
+        .bg(theme.danger_soft)
+        .text_type(ladder.secondary)
+        .text_color(theme.danger)
+        .role(Role::Alert)
+        .aria_live(accesskit::Live::Assertive)
+        .child(sentence)
 }
 
 /// Open: the primary button, with the glyph of a page that opens outside.

@@ -286,25 +286,41 @@ impl Browser {
     }
 
     /// Hands `url` to the phone's own browser (the phone's build has no
-    /// web view, so the host opens an `https` link outside the app). Once
-    /// the host has opened it, it is first among the addresses handed this
-    /// session and no longer a link waiting; refused, the refusal is said
-    /// in its place. The host takes it only from a press or a key, which
-    /// the ask carries as it is sent.
+    /// web view, so the host opens an `https` link outside the app). An
+    /// `http://` address goes as `https://`: the host hands on no other,
+    /// and the phone's browser upgrades one anyway. Once the host has
+    /// opened it, it is first among the addresses handed this session and
+    /// no longer a link waiting; refused, the refusal is said in its
+    /// place. The host takes it only from a press or a key, which the ask
+    /// carries as it is sent.
     pub(crate) fn open_outside(&mut self, url: String, cx: &mut Context<Self>) {
-        let opening = cx.host().ask::<LinkOpen>(url.clone());
+        let sent = match url.get(..7) {
+            Some(scheme) if scheme.eq_ignore_ascii_case("http://") => {
+                format!("https://{}", &url[7..])
+            }
+            _ => url.clone(),
+        };
+        let opening = cx.host().ask::<LinkOpen>(sent.clone());
         cx.land(opening, move |view, opened, cx| {
             match opened {
                 Ok(()) => {
                     view.refused = None;
                     view.routed.retain(|routed| *routed != url);
-                    listed(&mut view.handed, url);
+                    listed(&mut view.handed, sent);
                 }
-                Err(refusal) => view.refused = Some((url, refusal)),
+                Err(refusal) => view.refused = Some((sent, refusal)),
             }
             cx.notify();
         })
         .detach();
+    }
+
+    /// The address was edited: a refusal of the one before no longer
+    /// stands.
+    pub(crate) fn edited(&mut self, cx: &mut Context<Self>) {
+        if self.refused.take().is_some() {
+            cx.notify();
+        }
     }
 
     /// The phone's Open, or Enter in its field: what is typed, as the

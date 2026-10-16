@@ -22,6 +22,22 @@ pub(crate) const NO_WEB_VIEW: &str = "This build has no web view. An address you
 /// What hands the typed address to the phone's browser.
 pub(crate) const OPEN_IN_BROWSER: &str = "Open in browser";
 
+/// An address the host would not open because it is no web address:
+/// another try cannot open it.
+pub(crate) const NOT_A_WEB_ADDRESS: &str =
+    "Only a web address (https://\u{2026}) opens in the phone\u{2019}s browser.";
+
+/// The host hands no address to the phone's browser at all.
+pub(crate) const NO_LINKS_HERE: &str = "This app hands no address to the phone\u{2019}s browser.";
+
+/// The host took the address without a press, as it opens one only from
+/// one; Retry is that press.
+pub(crate) const NEEDS_A_PRESS: &str =
+    "The phone\u{2019}s browser opens an address only from a press: press Retry.";
+
+/// Any other refusal of an address, which another try may pass.
+pub(crate) const NOT_OPENED: &str = "The phone\u{2019}s browser did not open it.";
+
 /// The head over the home page's row.
 pub(crate) const HOME_HEAD: &str = "Home";
 
