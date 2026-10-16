@@ -316,6 +316,42 @@ fn try_again_does_not_ask_again_for_a_camera_that_went_away() {
     assert!(!cx.has_text("The camera went away"));
 }
 
+/// A device that went away says why when the host knows (a call took
+/// it), and the view's own line only when it does not.
+#[test]
+fn a_device_gone_says_why_when_the_host_knows() {
+    let fallback = "It was unplugged or its driver stopped. The last picture is gone; plug it \
+                    back in and try again.";
+    let (mut cx, ..) = opened();
+    let (key, ..) = camera_piece(&cx).unwrap();
+    cx.simulate_media_state(
+        &key,
+        MediaState {
+            status: MediaStatus::Gone,
+            detail: "A call or another app took the camera.".into(),
+            ..Default::default()
+        },
+    );
+    assert!(cx.has_text("The camera went away"));
+    assert!(cx.has_text("A call or another app took the camera."));
+    assert!(!cx.has_text(fallback));
+    cx.simulate_click("huddle-camera-retry");
+    cx.run_until_parked();
+    let (key, ..) = camera_piece(&cx).unwrap();
+    cx.simulate_media_state(&key, status(MediaStatus::Gone));
+    assert!(cx.has_text(fallback));
+    let key = mic_key(&cx);
+    cx.simulate_media_state(
+        &key,
+        MediaState {
+            status: MediaStatus::Gone,
+            detail: "A phone call took the microphone.".into(),
+            ..Default::default()
+        },
+    );
+    assert!(cx.has_text("The microphone went away. A phone call took the microphone."));
+}
+
 /// Picking a microphone or a speaker ends the live loop, as muting does:
 /// a speaker picked mid-loop could be the one the microphone hears.
 #[test]

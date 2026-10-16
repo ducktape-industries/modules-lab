@@ -615,12 +615,14 @@ fn meter(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> AnyElement {
 }
 
 /// A microphone that is refused, missing, busy or gone: one line and
-/// what fixes it, where the meter was.
+/// what fixes it, where the meter was. The line carries the fix a refusal
+/// needs, and why the microphone went away when the host says.
 fn mic_trouble(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
     let state = &view.mic_state;
     let (title, text) = words::trouble(Device::Microphone, state);
     let line = match state.status {
         MediaStatus::Denied | MediaStatus::Failed => format!("{title}. {text}"),
+        MediaStatus::Gone if !state.detail.is_empty() => format!("{title}. {text}"),
         _ => title.to_owned(),
     };
     div()

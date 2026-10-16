@@ -234,8 +234,8 @@ fn detail_or(state: &MediaState, fallback: &str) -> String {
 }
 
 /// The title and the line under it for a device's trouble on the desktop:
-/// the platform's fix line is the host's (`detail`); with none, the Linux
-/// one.
+/// the platform's fix line, or why the device went away, is the host's
+/// (`detail`); with none, the Linux one.
 pub(crate) fn trouble(device: Device, state: &MediaState) -> (&'static str, String) {
     let camera = device == Device::Camera;
     let noun = if camera { "camera" } else { "microphone" };
@@ -275,14 +275,18 @@ pub(crate) fn trouble(device: Device, state: &MediaState) -> (&'static str, Stri
             } else {
                 "The microphone went away"
             },
-            match camera {
-                true => "It was unplugged or its driver stopped. The last picture is gone; \
+            detail_or(
+                state,
+                match camera {
+                    true => {
+                        "It was unplugged or its driver stopped. The last picture is gone; \
                          plug it back in and try again."
-                    .into(),
-                false => {
-                    "It was unplugged or its driver stopped; plug it back in and try again.".into()
-                }
-            },
+                    }
+                    false => {
+                        "It was unplugged or its driver stopped; plug it back in and try again."
+                    }
+                },
+            ),
         ),
         MediaStatus::Busy => (
             called(device, &state.status),

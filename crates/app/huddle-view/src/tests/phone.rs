@@ -7,6 +7,20 @@ use super::*;
 /// routes (the loudspeaker, a huddle's default; AirPods; the earpiece).
 /// It would float a pane if asked: the phone's tree never asks.
 fn phone_host() -> (TestAppContext, StreamSender<ClockTicks>) {
+    phone_routes(vec![
+        audio("speaker", "Speaker", true, AudioKind::Speaker),
+        audio("airpods", "AirPods Pro", false, AudioKind::Headphones),
+        audio(
+            "earpiece",
+            "Phone (hold to your ear)",
+            false,
+            AudioKind::Earpiece,
+        ),
+    ])
+}
+
+/// A phone whose host lists `outputs` as its routes.
+fn phone_routes(outputs: Vec<AudioDevice>) -> (TestAppContext, StreamSender<ClockTicks>) {
     let cx = TestAppContext::new();
     cx.host().handle::<CameraDevices>(|()| {
         Ok(vec![
@@ -14,19 +28,10 @@ fn phone_host() -> (TestAppContext, StreamSender<ClockTicks>) {
             camera("back", "Back Camera", false, Facing::Back),
         ])
     });
-    cx.host().handle::<MicrophoneDevices>(|()| {
+    cx.host().handle::<MicrophoneDevices>(move |()| {
         Ok(AudioDevices {
             inputs: vec![audio("mic", "Phone microphone", true, AudioKind::Other)],
-            outputs: vec![
-                audio("speaker", "Speaker", true, AudioKind::Speaker),
-                audio("airpods", "AirPods Pro", false, AudioKind::Headphones),
-                audio(
-                    "earpiece",
-                    "Phone (hold to your ear)",
-                    false,
-                    AudioKind::Earpiece,
-                ),
-            ],
+            outputs: outputs.clone(),
         })
     });
     cx.host().handle::<HostFloat>(|float| {
@@ -317,6 +322,45 @@ fn the_sound_sheet_lists_the_routes_and_picks_one() {
     );
 }
 
+/// The iPhone's host lists the loudspeaker, the route playing now and each
+/// Bluetooth headset, never the earpiece: the sheet reads with the
+/// loudspeaker alone (the simulator), and with AirPods playing it names
+/// them in use and lets the live loop run through them.
+#[test]
+fn the_sound_sheet_reads_with_the_iphones_routes() {
+    let open = |outputs| {
+        let (mut cx, ticks) = phone_routes(outputs);
+        cx.open::<Huddle>();
+        cx.run_until_parked();
+        on_phone(&mut cx);
+        live_pieces(&mut cx);
+        (cx, ticks)
+    };
+    let speaker = |playing| audio("speaker", "Speaker", playing, AudioKind::Speaker);
+    let (mut cx, _ticks) = open(vec![speaker(true)]);
+    assert_eq!(
+        cx.interactivity("huddle-sound").aria.label.as_deref(),
+        Some("Sound: Speaker")
+    );
+    cx.simulate_click("huddle-sound");
+    assert_eq!(toggled(&cx, "huddle-sound-0"), Some(true));
+    assert!(cx.find("huddle-sound-1").is_none(), "one route");
+
+    let (mut cx, _ticks) = open(vec![
+        speaker(false),
+        audio("airpods", "AirPods Pro", true, AudioKind::Headphones),
+    ]);
+    assert_eq!(
+        cx.interactivity("huddle-sound").aria.label.as_deref(),
+        Some("Sound: AirPods Pro")
+    );
+    assert!(!disabled(&cx, "huddle-monitor"), "through the AirPods");
+    cx.simulate_click("huddle-sound");
+    has_all(&cx, &["Speaker", "AirPods Pro"]);
+    assert_eq!(toggled(&cx, "huddle-sound-0"), Some(true), "in use, first");
+    assert_eq!(toggled(&cx, "huddle-sound-1"), Some(false));
+}
+
 /// Through the loudspeaker the live loop howls: the phone refuses it and
 /// says why. Through AirPods it may run, and says what it does.
 #[test]
@@ -597,7 +641,17 @@ fn a_microphone_in_trouble_is_one_line_with_try_again() {
     }
     cx.simulate_click("huddle-microphone-retry");
     cx.run_until_parked();
-    assert_ne!(mic_key(&cx), key, "a new piece");
+    let retried = mic_key(&cx);
+    assert_ne!(retried, key, "a new piece");
+    cx.simulate_media_state(
+        &retried,
+        MediaState {
+            status: MediaStatus::Gone,
+            detail: "A phone call took the microphone.".into(),
+            ..Default::default()
+        },
+    );
+    assert!(cx.has_text("The microphone stopped. A phone call took the microphone."));
 }
 
 /// A microphone in trouble in the room is said over the stage, with a
