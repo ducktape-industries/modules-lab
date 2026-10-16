@@ -26,7 +26,7 @@
 use view::prelude::*;
 use view::{Canvas, Div};
 
-use crate::games::{Fact, Rng, square};
+use crate::games::{Fact, Rng, Still, square};
 
 /// The field, in px at a scale of one.
 pub(crate) const WIDTH: i32 = 224;
@@ -895,9 +895,11 @@ fn sprite(
 }
 
 /// The hub's picture of the game: three rows of the rack over the cannon
-/// and its shot.
-pub(crate) fn preview(theme: &Theme) -> Canvas {
-    let at = grid(2., (24., 8.));
+/// and its shot, drawn `size` large (laid out in
+/// [`STILL`](crate::games::STILL)).
+pub(crate) fn preview(size: (f32, f32), theme: &Theme) -> Canvas {
+    let still = Still::fit(size);
+    let at = grid(2. * still.scale(), still.place(24., 8.));
     let mut drawn = canvas().size_full();
     for (row, kind) in [&SQUID, &CRAB, &OCTOPUS].iter().enumerate() {
         let w = width(kind.frames[0]);

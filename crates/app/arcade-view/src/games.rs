@@ -1,8 +1,10 @@
-//! The six games behind one enum, in [`arcade::GAMES`]' order, and the
-//! seeded randomness they share. A game is its own rules: it hears keys,
-//! steps on a tick, and says its score and whether it is over. Nothing
-//! here knows the view; the view knows each game's board (`play.rs`).
-use gpui::{point, size};
+//! The six games behind one enum, in [`arcade::GAMES`]' order, the
+//! seeded randomness they share, and their still pictures. A game is its
+//! own rules: it hears keys, steps on a tick, and says its score and
+//! whether it is over. Nothing here knows the view; the view knows each
+//! game's board (`play.rs`).
+use gpui::{Point, point, size};
+use view::Canvas;
 use view::prelude::*;
 
 use crate::breakout::{self, Breakout};
@@ -195,4 +197,76 @@ pub(crate) fn seed(id: &str) -> u64 {
 /// A rectangle of a canvas, in its pixels.
 pub(crate) fn square(x: f32, y: f32, width: f32, height: f32) -> Bounds<Pixels> {
     Bounds::new(point(px(x), px(y)), size(px(width), px(height)))
+}
+
+/// The box each game lays its still picture out in: the desktop card's
+/// picture, 208 by 120 px (`hub.rs`).
+pub(crate) const STILL: (f32, f32) = (208., 120.);
+
+/// Game `which`'s still picture, drawn `size` large: the desktop's card
+/// draws it at [`STILL`], the phone's row smaller.
+pub(crate) fn picture(which: usize, size: (f32, f32), theme: &Theme) -> Canvas {
+    match which {
+        0 => tetris::preview(size, theme),
+        1 => snake::preview(size, theme),
+        2 => merge::preview(size, theme),
+        3 => mines::preview(size, theme),
+        4 => breakout::preview(size, theme),
+        _ => invaders::preview(size, theme),
+    }
+}
+
+/// Where a still picture laid out in [`STILL`] lands in a box of another
+/// size: every place and length scaled by one factor, the picture whole
+/// and centred. In [`STILL`] itself each is the one the picture names.
+#[derive(Clone, Copy)]
+pub(crate) struct Still {
+    scale: f32,
+    left: f32,
+    top: f32,
+}
+
+impl Still {
+    pub(crate) fn fit((width, height): (f32, f32)) -> Still {
+        let scale = (width / STILL.0).min(height / STILL.1);
+        Still {
+            scale,
+            left: (width - STILL.0 * scale) / 2.,
+            top: (height - STILL.1 * scale) / 2.,
+        }
+    }
+
+    /// How much larger the box draws the picture than [`STILL`].
+    pub(crate) fn scale(self) -> f32 {
+        self.scale
+    }
+
+    /// The picture's `(x, y)` in the box.
+    pub(crate) fn place(self, x: f32, y: f32) -> (f32, f32) {
+        (self.left + x * self.scale, self.top + y * self.scale)
+    }
+
+    /// The picture's `(x, y)` in the box, as a point.
+    pub(crate) fn point(self, x: f32, y: f32) -> Point<Pixels> {
+        let (x, y) = self.place(x, y);
+        point(px(x), px(y))
+    }
+
+    /// A length of the picture in the box.
+    pub(crate) fn length(self, length: f32) -> Pixels {
+        px(length * self.scale)
+    }
+
+    /// A rectangle of the picture in the box.
+    pub(crate) fn square(self, x: f32, y: f32, width: f32, height: f32) -> Bounds<Pixels> {
+        let (x, y) = self.place(x, y);
+        square(x, y, width * self.scale, height * self.scale)
+    }
+
+    /// Where a drawing that scales its places from the box's corner, by
+    /// [`scale`](Self::scale), puts the picture's `(x, y)`: in the
+    /// picture's units, shifted by the margin the fit leaves.
+    pub(crate) fn place_unscaled(self, x: f32, y: f32) -> (f32, f32) {
+        (x + self.left / self.scale, y + self.top / self.scale)
+    }
 }

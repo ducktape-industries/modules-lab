@@ -11,7 +11,7 @@
 use view::prelude::*;
 use view::{Canvas, Div, FontWeight};
 
-use crate::games::{Fact, Rng, square};
+use crate::games::{Fact, Rng, Still};
 
 pub(crate) const SIDE: usize = 4;
 pub(crate) const KEYS: &str = "Arrows slide the tiles";
@@ -368,17 +368,18 @@ fn shade(value: u32, theme: &Theme) -> (Hsla, Hsla) {
 }
 
 /// The hub's picture of the game: a board under way, in the middle of its
-/// 208 x 120 px.
-pub(crate) fn preview(theme: &Theme) -> Canvas {
+/// [`STILL`](crate::games::STILL), drawn `size` large.
+pub(crate) fn preview(size: (f32, f32), theme: &Theme) -> Canvas {
+    let still = Still::fit(size);
     let values = [[0, 2, 0, 0], [2, 4, 8, 0], [4, 16, 32, 2], [8, 64, 128, 4]];
     let (tile, gap, left, top) = (22., 4., 50., 6.);
     let side = 4. * tile + 5. * gap;
     let mut drawn = canvas()
         .size_full()
-        .rect(square(left, top, side, side), theme.border);
+        .rect(still.square(left, top, side, side), theme.border);
     for (y, row) in values.iter().enumerate() {
         for (x, value) in row.iter().enumerate() {
-            let at = square(
+            let at = still.square(
                 left + gap + x as f32 * (tile + gap),
                 top + gap + y as f32 * (tile + gap),
                 tile,

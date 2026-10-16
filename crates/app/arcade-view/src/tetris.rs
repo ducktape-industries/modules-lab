@@ -88,7 +88,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use view::prelude::*;
 use view::{Canvas, Div, FontWeight, Stateful};
 
-use crate::games::{Fact, Rng, square};
+use crate::games::{Fact, Rng, Still, square};
 
 pub const COLS: i32 = 10;
 pub const ROWS: i32 = 20;
@@ -1635,8 +1635,10 @@ fn piece(mut drawn: Canvas, shown: Piece, cell: f32, slot: Bounds<Pixels>, color
 }
 
 /// The hub's picture of the game: a well's last rows and a piece falling,
-/// a letter a piece, in the middle of its 208 x 120 px.
-pub(crate) fn preview(theme: &Theme) -> Canvas {
+/// a letter a piece, in the middle of its [`STILL`](crate::games::STILL),
+/// drawn `size` large.
+pub(crate) fn preview(size: (f32, f32), theme: &Theme) -> Canvas {
+    let still = Still::fit(size);
     const PICTURE: [&str; 9] = [
         "...TTT....",
         "....T.....",
@@ -1662,7 +1664,7 @@ pub(crate) fn preview(theme: &Theme) -> Canvas {
                 'L' => Piece::L,
                 _ => continue,
             };
-            let at = square(
+            let at = still.square(
                 left + x as f32 * cell + 1.,
                 top + y as f32 * cell + 1.,
                 cell - 2.,

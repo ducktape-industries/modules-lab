@@ -25,7 +25,7 @@ use gpui::point;
 use view::Canvas;
 use view::prelude::*;
 
-use crate::games::{Fact, Rng, square};
+use crate::games::{Fact, Rng, Still, square};
 
 mod stages;
 
@@ -752,8 +752,10 @@ fn capsule(drawn: Canvas, item: Item, (x, y): (f32, f32), scale: f32, theme: &Th
 }
 
 /// The hub's picture of the game: a wall with a gap, a capsule falling and
-/// the ball on its way.
-pub(crate) fn preview(theme: &Theme) -> Canvas {
+/// the ball on its way, drawn `size` large (laid out in
+/// [`STILL`](crate::games::STILL)).
+pub(crate) fn preview(size: (f32, f32), theme: &Theme) -> Canvas {
+    let still = Still::fit(size);
     let mut drawn = canvas().size_full();
     for row in 0..4 {
         let color = match row / 2 {
@@ -764,14 +766,15 @@ pub(crate) fn preview(theme: &Theme) -> Canvas {
             if row == 3 && (3..5).contains(&col) {
                 continue;
             }
-            let at = square(14. + col as f32 * 20., 14. + row as f32 * 9., 18., 7.);
+            let at = still.square(14. + col as f32 * 20., 14. + row as f32 * 9., 18., 7.);
             drawn = drawn.rect(at, color);
         }
     }
-    let drawn = capsule(drawn, Item::Wide, (154., 80.), 1., theme);
+    let falling = still.place_unscaled(154., 80.);
+    let drawn = capsule(drawn, Item::Wide, falling, still.scale(), theme);
     drawn
-        .rect(square(80., 104., 44., 5.), theme.foreground)
-        .circle(point(px(112.), px(72.)), px(4.), theme.foreground)
+        .rect(still.square(80., 104., 44., 5.), theme.foreground)
+        .circle(still.point(112., 72.), still.length(4.), theme.foreground)
 }
 
 /// `pace` along `way`: the step across and down a tick, `pace` long

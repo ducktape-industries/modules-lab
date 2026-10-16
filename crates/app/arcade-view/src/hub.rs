@@ -4,21 +4,14 @@
 use view::prelude::*;
 use view::{App, Canvas, Div, FontWeight, Stateful};
 
-use crate::{Arcade, breakout, invaders, merge, mines, snake, tetris};
+use crate::games::{STILL, picture};
+use crate::words::{self, BLURBS};
+use crate::{Arcade, tetris};
 
 /// A card's width and its picture's height.
 const CARD_W: Pixels = px(208.);
 const PICTURE_H: Pixels = px(120.);
 
-/// What each game is, in a line, in [`arcade::GAMES`]' order.
-const BLURBS: [&str; 6] = [
-    "Fill rows to clear them.",
-    "Eat, grow, and keep off your tail.",
-    "Slide equal tiles together.",
-    "Clear the field without a mine.",
-    "Eight walls, steel and falling items.",
-    "Shoot the march down before it lands.",
-];
 /// Tetris versus's line.
 const VERSUS_BLURB: &str = "Two wells, the same pieces; rows you clear rise in theirs.";
 
@@ -28,12 +21,11 @@ impl Arcade {
             .map(|which| self.card(which, cx, theme))
             .collect();
         cards.push(self.versus_card(cx, theme));
-        let unsigned = self.session.account.is_none().then(|| {
-            design::quiet(
-                "Scores go on the board from an account. Without one the games play and nothing is posted.",
-                theme,
-            )
-        });
+        let unsigned = self
+            .session
+            .account
+            .is_none()
+            .then(|| design::quiet(words::UNSIGNED, theme));
         div()
             .id("arcade-hub")
             .size_full()
@@ -47,7 +39,7 @@ impl Arcade {
                     .flex()
                     .flex_col()
                     .gap(design::space::XXS)
-                    .child(design::heading("arcade-title", "Arcade", 1, theme))
+                    .child(design::heading("arcade-title", words::ARCADE, 1, theme))
                     .child(design::quiet(
                         "Your best of each game goes on a board everyone sees. Nothing checks a score: it is play.",
                         theme,
@@ -66,19 +58,15 @@ impl Arcade {
     /// Game `which`'s card: pressed, the game starts.
     fn card(&self, which: usize, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
         let name = arcade::GAMES[which];
-        let best = match (self.session.account, self.best(which)) {
-            (None, _) => None,
-            (Some(_), Some(0)) => Some("No score yet".to_owned()),
-            (Some(_), Some(best)) => Some(format!("Your best {}", design::grouped(best))),
-            (Some(_), None) => Some("Your best —".to_owned()),
-        };
+        // a best is an account's: none is said without one
+        let best = self.session.account.map(|_| words::best(self.best(which)));
         let open =
             cx.listener(move |view, _: &ClickEvent, window, cx| view.open(which, window, cx));
         tile(
             format!("arcade-card-{which}"),
             (name, BLURBS[which]),
             best,
-            picture(which, theme),
+            picture(which, STILL, theme),
             open,
             theme,
         )
@@ -91,7 +79,7 @@ impl Arcade {
             "arcade-card-versus".into(),
             ("Tetris versus", VERSUS_BLURB),
             None,
-            tetris::preview(theme),
+            tetris::preview(STILL, theme),
             open,
             theme,
         )
@@ -154,16 +142,4 @@ fn tile(
                         .text_color(theme.muted)
                 })),
         )
-}
-
-/// Game `which`'s still picture, drawn in its card's 208 x 120 px.
-fn picture(which: usize, theme: &Theme) -> Canvas {
-    match which {
-        0 => tetris::preview(theme),
-        1 => snake::preview(theme),
-        2 => merge::preview(theme),
-        3 => mines::preview(theme),
-        4 => breakout::preview(theme),
-        _ => invaders::preview(theme),
-    }
 }

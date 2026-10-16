@@ -1,6 +1,10 @@
 //! What the view follows and asks: the session, whether it is on screen,
-//! the program's blocks, the reader's bests, the open game's board with
-//! its accounts' names, and the one op it sends, an ended game's score.
+//! the program's blocks, the reader's bests, the open board with its
+//! accounts' names, and the one op it sends, an ended game's score.
+//!
+//! A board is read without a game being played: the desktop opens the
+//! game's board with the game, for its overlays and its panel, and the
+//! phone, where no game is played, opens a board alone.
 use ::identity::Identity;
 use arcade::{Entry, Op, ask};
 use view::methods::Submitted;
@@ -8,7 +12,7 @@ use view::prelude::*;
 
 use crate::games::Game;
 use crate::versus::Versus;
-use crate::{Arcade, Post};
+use crate::{Arcade, Post, words};
 
 /// The rows a board shows.
 pub(crate) const BOARD_ROWS: u32 = 10;
@@ -18,6 +22,14 @@ pub(crate) const BOARD_ROWS: u32 = 10;
 pub(crate) struct Row {
     pub(crate) entry: Entry,
     pub(crate) name: String,
+}
+
+/// The open board: a game's top ten, each with its account's name.
+#[derive(Default)]
+pub(crate) struct Board {
+    /// Its game, a place in [`arcade::GAMES`]; none while no board is open.
+    pub(crate) game: Option<usize>,
+    pub(crate) rows: Loadable<Vec<Row>>,
 }
 
 impl Arcade {
@@ -69,14 +81,13 @@ impl Arcade {
         {
             self.read_bests(cx);
         }
-        if let Some(play) = &self.play {
-            let game = play.which as u8;
-            if touched(&ask::Top {
-                game,
+        if let Some(game) = self.board.game
+            && touched(&ask::Top {
+                game: game as u8,
                 limit: BOARD_ROWS,
-            }) {
-                self.read_board(cx);
-            }
+            })
+        {
+            self.read_board(cx);
         }
     }
 
@@ -93,13 +104,28 @@ impl Arcade {
         self.bests.ready()?.get(which).copied()
     }
 
-    /// The open game's top ten, and the names of their accounts.
+    /// Opens game `which`'s board, in place of any board open, and reads
+    /// it: a read still out for the board it replaces is dropped with it.
+    pub(crate) fn open_board(&mut self, which: usize, cx: &mut Context<Self>) {
+        self.board = Board {
+            game: Some(which),
+            rows: Loadable::Idle,
+        };
+        self.read_board(cx);
+    }
+
+    /// Closes the board, and drops a read of it still out.
+    pub(crate) fn close_board(&mut self) {
+        self.board = Board::default();
+    }
+
+    /// The open board's top ten, and the names of their accounts.
     pub(crate) fn read_board(&mut self, cx: &mut Context<Self>) {
-        let Some(play) = &self.play else {
+        let Some(game) = self.board.game else {
             return;
         };
-        let board = board(cx.host(), play.which as u8);
-        cx.load(self, board, |view| &mut view.board);
+        let rows = board(cx.host(), game as u8);
+        cx.load(self, rows, |view| &mut view.board.rows);
     }
 
     /// The host said whether the view is on screen: off it, a running game
@@ -240,7 +266,7 @@ async fn board(host: Host, game: u8) -> Result<Vec<Row>, Error> {
     for (entry, name) in top.into_iter().zip(names) {
         let name = match name.await {
             Ok(::identity::Reply::Profile(Some(profile))) => profile.name,
-            _ => format!("account {}", entry.account),
+            _ => words::unnamed(entry.account),
         };
         rows.push(Row { entry, name });
     }
