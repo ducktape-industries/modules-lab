@@ -567,6 +567,20 @@ fn trouble_is_said_and_retried() {
     assert!(camera_piece(&cx).is_none(), "joined without the camera");
 }
 
+/// In the room a camera that is not found says so, with Try again, and
+/// offers no "Join without camera": the person has joined already.
+#[test]
+fn a_missing_camera_in_the_room_offers_no_join() {
+    let (mut cx, ..) = opened();
+    cx.simulate_click("huddle-join");
+    cx.run_until_parked();
+    let (key, ..) = camera_piece(&cx).unwrap();
+    cx.simulate_media_state(&key, status(MediaStatus::NoDevice));
+    assert!(cx.has_text("No camera found"));
+    assert!(cx.find("huddle-camera-retry").is_some());
+    assert!(cx.find("huddle-camera-without").is_none());
+}
+
 /// A host that can open the system's settings for a refused camera says
 /// so: Open Settings asks for exactly that page.
 #[test]

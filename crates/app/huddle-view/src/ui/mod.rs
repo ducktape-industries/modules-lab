@@ -243,7 +243,7 @@ fn preview(
                 .child(mic_toggle(view.muted, theme.danger, cx))
                 .child(camera_toggle(off, theme.danger, cx)),
         )
-        .children(troubled.then(|| state_card(Device::Camera, &view.camera_state, cx, theme)))
+        .children(troubled.then(|| state_card(view, Device::Camera, cx, theme)))
         .child(chip(view, off, theme))
 }
 
@@ -615,7 +615,7 @@ fn mic_trouble(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Statef
                 .child(design::icon(ALERT, px(12.)).mt(px(1.)))
                 .child(div().flex_1().min_w(px(0.)).child(line)),
         )
-        .child(actions(Device::Microphone, state, cx, theme))
+        .child(actions(view, Device::Microphone, cx, theme))
 }
 
 /// Test: the host's chime on the picked speaker; muted or with the
@@ -830,11 +830,12 @@ fn trouble_glyph(status: &MediaStatus) -> &'static str {
 /// The card in the middle of the picture: glyph, title, text, what fixes
 /// it. No ground of its own: the picture's box is raised behind it.
 fn state_card(
+    view: &Huddle,
     device: Device,
-    state: &MediaState,
     cx: &mut Context<Huddle>,
     theme: &Theme,
 ) -> Stateful<Div> {
+    let state = state(view, device);
     let (title, text) = words::trouble(device, state);
     div()
         .id("huddle-camera-trouble")
@@ -864,12 +865,22 @@ fn state_card(
                     .child(text),
             )
         })
-        .child(actions(device, state, cx, theme))
+        .child(actions(view, device, cx, theme))
+}
+
+/// What a device's piece last told.
+fn state(view: &Huddle, device: Device) -> &MediaState {
+    match device {
+        Device::Camera => &view.camera_state,
+        Device::Microphone => &view.mic_state,
+    }
 }
 
 /// What fixes a device's trouble: Open Settings where the host can open
-/// them, Try again, and for a missing device, joining without it.
-fn actions(device: Device, state: &MediaState, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
+/// them, Try again, and on the check, for a missing device, joining
+/// without it.
+fn actions(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
+    let state = state(view, device);
     let camera = device == Device::Camera;
     let prefix = if camera {
         "huddle-camera"
@@ -877,7 +888,7 @@ fn actions(device: Device, state: &MediaState, cx: &mut Context<Huddle>, theme: 
         "huddle-microphone"
     };
     let settings = state.status == MediaStatus::Denied && state.opens_settings;
-    let missing = state.status == MediaStatus::NoDevice;
+    let missing = state.status == MediaStatus::NoDevice && view.screen == Screen::Check;
     let page = match camera {
         true => Place::CameraSettings,
         false => Place::MicrophoneSettings,
@@ -1064,7 +1075,7 @@ fn tile(
     // between two equal sides, the chip's never narrower than the chip,
     // so in a float sized up to the room the line moves off it, wrapping
     // if it must
-    tile.children(troubled.then(|| state_card(Device::Camera, &view.camera_state, cx, theme)))
+    tile.children(troubled.then(|| state_card(view, Device::Camera, cx, theme)))
         .child(
             div()
                 .absolute()
