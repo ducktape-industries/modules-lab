@@ -214,16 +214,68 @@ pub(crate) fn trouble(state: &MediaState) -> bool {
 }
 
 impl Huddle {
-    /// The device lists, read again (the values on screen stay meanwhile).
+    /// The device lists, read again (the lists on screen stay meanwhile).
     pub(crate) fn list(&mut self, cx: &mut Context<Self>) {
         let cameras = cx.host().ask::<CameraDevices>(());
-        cx.load(self, cameras, |view| &mut view.cameras);
+        self.read(cameras, |view| &mut view.cameras, cx);
         let audio = cx.host().ask::<MicrophoneDevices>(());
-        cx.load(self, audio, |view| &mut view.audio);
+        self.read(audio, |view| &mut view.audio, cx);
+    }
+
+    /// Reads one device list into the slot `at` finds, as `cx.load` does,
+    /// and drops the picks the list landed without.
+    fn read<T: 'static>(
+        &mut self,
+        list: impl Future<Output = Result<T, Error>> + 'static,
+        at: fn(&mut Self) -> &mut Loadable<T>,
+        cx: &mut Context<Self>,
+    ) {
+        let landing = cx.land(list, move |view, listed, cx| {
+            *at(view) = listed.into();
+            view.forget_unlisted();
+            cx.notify();
+        });
+        let slot = at(self);
+        *slot = match slot.take() {
+            Loadable::Ready(shown) | Loadable::Reloading(shown, _) => {
+                Loadable::Reloading(shown, landing)
+            }
+            _ => Loadable::Loading(landing),
+        };
+    }
+
+    /// Drops each pick its list no longer holds (a device unplugged since
+    /// it was picked, or since the pick was saved): its piece and the
+    /// speaker test go back to the system's default, since the host opens
+    /// only a device it lists.
+    fn forget_unlisted(&mut self) {
+        let audio = self.audio.ready();
+        let gone = [
+            (
+                Kind::Camera,
+                self.cameras
+                    .ready()
+                    .is_some_and(|cameras| !holds(cameras, &self.camera)),
+            ),
+            (
+                Kind::Microphone,
+                audio.is_some_and(|audio| !holds(&audio.inputs, &self.microphone)),
+            ),
+            (
+                Kind::Speaker,
+                audio.is_some_and(|audio| !holds(&audio.outputs, &self.speaker)),
+            ),
+        ];
+        for (kind, gone) in gone {
+            if gone {
+                self.set_pick(kind, None);
+            }
+        }
     }
 
     /// Both devices opened again, the lists read again: after a device
-    /// went away, was refused or was busy.
+    /// went away, was refused or was busy. A pick the lists land without
+    /// is let go then.
     pub(crate) fn retry(&mut self, cx: &mut Context<Self>) {
         self.attempt += 1;
         self.camera_state = MediaState::default();
@@ -381,23 +433,28 @@ impl Huddle {
         if let Some(row) = self.rows(menu.which).into_iter().nth(index)
             && let Some(id) = row.id
         {
-            match row.kind {
-                Kind::Camera => {
-                    self.camera = Some(id);
-                    self.camera_state = MediaState::default();
-                    self.camera_since = self.ticks;
-                }
-                Kind::Microphone => {
-                    self.microphone = Some(id);
-                    self.mic_state = MediaState::default();
-                }
-                Kind::Speaker => {
-                    self.speaker = Some(id);
-                    self.mic_state = MediaState::default();
-                }
-            }
+            self.set_pick(row.kind, Some(id));
         }
         self.close_menu(cx)
+    }
+
+    /// `kind`'s pick set to `id` (`None`: the system's default): its piece
+    /// opens again on it, and a microphone or a speaker picked ends the
+    /// live loop and a recording, as muting does.
+    fn set_pick(&mut self, kind: Kind, id: Option<String>) {
+        match kind {
+            Kind::Camera => {
+                self.camera = id;
+                self.camera_state = MediaState::default();
+                self.camera_since = self.ticks;
+                return;
+            }
+            Kind::Microphone => self.microphone = id,
+            Kind::Speaker => self.speaker = id,
+        }
+        self.mic_state = MediaState::default();
+        self.monitor = false;
+        self.recording_since = None;
     }
 
     /// The rows of menu `which`: each kind's devices in turn.
@@ -549,6 +606,13 @@ fn rows<D: Listed>(
             picked: picked == Some(at),
         })
         .collect()
+}
+
+/// Whether `devices` lists the device `pick` names (no pick, the system's
+/// default, always is).
+fn holds<D: Listed>(devices: &[D], pick: &Option<String>) -> bool {
+    pick.as_deref()
+        .is_none_or(|id| devices.iter().any(|device| device.id() == id))
 }
 
 /// Why a device list is not there, in the host's words.

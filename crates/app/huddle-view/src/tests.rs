@@ -230,6 +230,103 @@ fn picks_reach_the_pieces() {
     assert_eq!(mic_piece(&cx).unwrap().1.as_deref(), Some("alsa:default"));
 }
 
+/// The host now lists the front camera alone, and the speakers alone.
+fn unplugged(cx: &TestAppContext) {
+    cx.host()
+        .handle::<CameraDevices>(|()| Ok(vec![camera("0", "Front Camera", true, Facing::Front)]));
+    cx.host().handle::<MicrophoneDevices>(|()| {
+        Ok(AudioDevices {
+            inputs: vec![audio(
+                "alsa:default",
+                "Built-in Microphone",
+                true,
+                AudioKind::Other,
+            )],
+            outputs: vec![audio("alsa:speakers", "Speakers", true, AudioKind::Speaker)],
+        })
+    });
+}
+
+/// A pick saved with the view whose device the host no longer lists (it
+/// was unplugged since) is let go when the list lands: the pieces and the
+/// speaker test ask for the system's default, which the pickers name,
+/// not a device the host would not open.
+#[test]
+fn a_saved_pick_the_host_no_longer_lists_falls_back_to_the_default() {
+    let (mut cx, ..) = opened();
+    cx.simulate_click("huddle-pick-camera");
+    cx.simulate_click("huddle-menu-1");
+    cx.simulate_click("huddle-pick-speaker");
+    cx.simulate_click("huddle-menu-1");
+    let saved = cx.snapshot().expect("a snapshot");
+    unplugged(&cx);
+    cx.restore::<Huddle>(&saved).expect("restored");
+    cx.run_until_parked();
+    assert_eq!(camera_piece(&cx).unwrap().1, None);
+    assert_eq!(mic_piece(&cx).unwrap().2, None);
+    assert_eq!(
+        cx.interactivity("huddle-pick-camera").aria.label.as_deref(),
+        Some("Camera: Front Camera")
+    );
+    cx.host().handle::<MicrophoneChime>(|_| Ok(()));
+    cx.simulate_click("huddle-speaker-test");
+    cx.run_until_parked();
+    assert_eq!(cx.host().requests::<MicrophoneChime>(), [None]);
+}
+
+/// A list read again without the picked camera (here as its menu opens)
+/// lets the pick go, and the trouble its going caused with it: the piece
+/// opens the system's default.
+#[test]
+fn a_list_read_again_without_the_pick_lets_it_and_its_trouble_go() {
+    let (mut cx, ..) = opened();
+    cx.simulate_click("huddle-pick-camera");
+    cx.simulate_click("huddle-menu-1");
+    let (key, ..) = camera_piece(&cx).unwrap();
+    unplugged(&cx);
+    cx.simulate_media_state(&key, status(MediaStatus::NoDevice));
+    assert!(cx.has_text("No camera found"));
+    cx.simulate_click("huddle-pick-camera");
+    cx.run_until_parked();
+    cx.simulate_key_down("huddle-menu", "escape");
+    assert!(!cx.has_text("No camera found"), "{:?}", cx.texts());
+    assert_eq!(camera_piece(&cx).unwrap().1, None);
+}
+
+/// Try again after a picked camera went away opens the system's default:
+/// the lists, read again, no longer hold the pick, so the camera that went
+/// away is not asked for again.
+#[test]
+fn try_again_does_not_ask_again_for_a_camera_that_went_away() {
+    let (mut cx, ..) = opened();
+    cx.simulate_click("huddle-pick-camera");
+    cx.simulate_click("huddle-menu-1");
+    let (key, ..) = camera_piece(&cx).unwrap();
+    unplugged(&cx);
+    cx.simulate_media_state(&key, status(MediaStatus::Gone));
+    assert!(cx.has_text("The camera went away"));
+    cx.simulate_click("huddle-camera-retry");
+    cx.run_until_parked();
+    assert_eq!(camera_piece(&cx).unwrap().1, None);
+    assert!(!cx.has_text("The camera went away"));
+}
+
+/// Picking a microphone or a speaker ends the live loop, as muting does:
+/// a speaker picked mid-loop could be the one the microphone hears.
+#[test]
+fn picking_a_microphone_or_speaker_ends_the_live_loop() {
+    let (mut cx, ..) = opened();
+    for picker in ["huddle-pick-speaker", "huddle-pick-microphone"] {
+        let key = mic_key(&cx);
+        cx.simulate_media_state(&key, live("Built-in Microphone"));
+        cx.simulate_click("huddle-monitor");
+        assert!(mic_piece(&cx).unwrap().3, "looping");
+        cx.simulate_click(picker);
+        cx.simulate_click("huddle-menu-0");
+        assert!(!mic_piece(&cx).unwrap().3, "{picker}: the loop ends");
+    }
+}
+
 /// The menu by keys: ↓ on a picker opens it on the picked row, ↓ moves,
 /// Enter picks and closes; Escape closes without a pick and gives the keys
 /// back to the picker.
