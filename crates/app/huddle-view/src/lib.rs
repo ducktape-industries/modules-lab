@@ -30,6 +30,8 @@
 use serde::{Deserialize, Serialize};
 use view::prelude::*;
 
+use crate::words::Device;
+
 mod ui;
 mod words;
 
@@ -315,6 +317,15 @@ impl Huddle {
     /// Whether the microphone piece is placed: unmuted, and not in trouble.
     pub(crate) fn mic_placed(&self) -> bool {
         !self.muted && !trouble(&self.mic_state)
+    }
+
+    /// Whether `device`'s piece is in trouble: switched on, and neither
+    /// starting nor live.
+    pub(crate) fn troubled(&self, device: Device) -> bool {
+        match device {
+            Device::Camera => !self.camera_off && trouble(&self.camera_state),
+            Device::Microphone => !self.muted && trouble(&self.mic_state),
+        }
     }
 
     pub(crate) fn mic_live(&self) -> bool {

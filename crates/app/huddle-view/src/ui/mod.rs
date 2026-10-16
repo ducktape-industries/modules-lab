@@ -209,7 +209,7 @@ fn preview(
     theme: &Theme,
 ) -> Stateful<Div> {
     let off = view.camera_off;
-    let troubled = !off && trouble(&view.camera_state);
+    let troubled = view.troubled(Device::Camera);
     let mut preview = div()
         .id("huddle-preview")
         .relative()
@@ -570,7 +570,7 @@ fn anchor(
 /// The microphone's level, drawn by the host in the bar's colour; with
 /// the microphone muted or in trouble, its line instead.
 fn meter(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> AnyElement {
-    if !view.muted && trouble(&view.mic_state) {
+    if view.troubled(Device::Microphone) {
         return mic_trouble(view, cx, theme).into_any_element();
     }
     div()
@@ -1022,7 +1022,7 @@ fn tile(
     theme: &Theme,
 ) -> Stateful<Div> {
     let off = view.camera_off;
-    let troubled = !off && trouble(&view.camera_state);
+    let troubled = view.troubled(Device::Camera);
     let speaking = view.mic_placed() && view.mic_state.speaking;
     let mut tile = div()
         .id("huddle-tile-you")
@@ -1066,7 +1066,7 @@ fn tile(
         // controls in the keys' order
         return tile
             .child(float_strip(view, speaking, cx, theme))
-            .children(troubled.then(|| trouble_row(&view.camera_state, cx, theme)))
+            .children(trouble_rows(view, cx, theme))
             .when(view.no_keep_on_top_line, |tile| {
                 tile.child(no_keep_on_top_line(cx))
             });
@@ -1099,6 +1099,12 @@ fn tile(
                 )
                 .child(div().flex_1()),
         )
+}
+
+/// The microphone's control draws it off, slashed on the danger fill:
+/// muted, or in trouble.
+fn mic_off(view: &Huddle) -> bool {
+    view.muted || view.troubled(Device::Microphone)
 }
 
 /// The muted or the speaking mark a chip carries, named for a reader.
@@ -1190,6 +1196,10 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                 ),
         )
         .child(split(view, Device::Microphone, cx, theme).ml_auto())
+        .children(
+            view.troubled(Device::Microphone)
+                .then(|| retry(Device::Microphone, cx, theme)),
+        )
         .child(split(view, Device::Camera, cx, theme))
         .child(
             div()
@@ -1352,10 +1362,10 @@ fn float_strip(
         .gap(design::space::XS)
         .child(
             small(
-                ("huddle-mic", if view.muted { MIC_OFF } else { MIC }),
+                ("huddle-mic", if mic_off(view) { MIC_OFF } else { MIC }),
                 words::mute(view.muted),
                 true,
-                view.muted,
+                mic_off(view),
                 &theme_,
                 cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_mute(cx)),
             )
@@ -1405,17 +1415,34 @@ fn float_strip(
         )
 }
 
-/// A camera in trouble in the compact room: its card as one row in the
-/// tile's middle, the title and Try again.
-fn trouble_row(state: &MediaState, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
-    let theme_ = *theme;
-    let (title, _) = words::trouble(Device::Camera, state);
+/// The compact room's troubles in the tile's middle, the camera's over
+/// the microphone's, each its card as one row.
+fn trouble_rows(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Option<Div> {
+    let rows: Vec<Div> = [Device::Camera, Device::Microphone]
+        .into_iter()
+        .filter(|device| view.troubled(*device))
+        .map(|device| trouble_row(view, device, cx, theme))
+        .collect();
+    (!rows.is_empty()).then(|| {
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap(design::space::SM)
+            .children(rows)
+    })
+}
+
+/// A device's trouble as one row: its glyph, its title and Try again.
+fn trouble_row(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
+    let state = state(view, device);
+    let (title, _) = words::trouble(device, state);
     div()
-        .absolute()
-        .inset_0()
         .flex()
         .items_center()
-        .justify_center()
         .gap(design::space::SM)
         .child(design::icon(trouble_glyph(&state.status), px(16.)).text_color(theme.muted))
         .child(
@@ -1424,21 +1451,28 @@ fn trouble_row(state: &MediaState, cx: &mut Context<Huddle>, theme: &Theme) -> D
                 .text_color(theme.foreground)
                 .child(title),
         )
-        .child(
-            div()
-                .id("huddle-camera-retry")
-                .h(design::size::CONTROL)
-                .flex()
-                .items_center()
-                .text_size(design::text::SECONDARY)
-                .text_color(theme.muted)
-                .cursor_pointer()
-                .hover(move |style| style.text_color(theme_.foreground))
-                .role(Role::Button)
-                .focusable()
-                .on_click(cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx)))
-                .child("Try again"),
-        )
+        .child(retry(device, cx, theme))
+}
+
+/// Try again, quiet: both pieces opened again, the lists read again.
+fn retry(device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
+    let theme = *theme;
+    div()
+        .id(match device {
+            Device::Camera => "huddle-camera-retry",
+            Device::Microphone => "huddle-microphone-retry",
+        })
+        .h(design::size::CONTROL)
+        .flex()
+        .items_center()
+        .text_size(design::text::SECONDARY)
+        .text_color(theme.muted)
+        .cursor_pointer()
+        .hover(move |style| style.text_color(theme.foreground))
+        .role(Role::Button)
+        .focusable()
+        .on_click(cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx)))
+        .child("Try again")
 }
 
 /// What the float says once where the host keeps no window on top
@@ -1488,28 +1522,39 @@ fn no_keep_on_top_line(cx: &mut Context<Huddle>) -> Div {
 
 /// A device's split control in the room's bar: its toggle, and the caret
 /// that opens its menu upward (the microphone's lists the speakers too).
+/// The toggle is danger-filled while off; the microphone's while in trouble
+/// too, its trouble told to assistive technology (the camera's trouble is
+/// its tile's card).
 fn split(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
     let theme = *theme;
-    let (id, icon, name, off, which, caret_id, caret_name) = match device {
+    let (id, name, off, alarm, which, caret_id, caret_name) = match device {
         Device::Microphone => (
             "huddle-mic",
-            if view.muted { MIC_OFF } else { MIC },
             words::mute(view.muted),
             view.muted,
+            mic_off(view),
             Which::Sound,
             "huddle-mic-menu",
             "Choose microphone and speaker",
         ),
         Device::Camera => (
             "huddle-camera",
-            if view.camera_off { VIDEO_OFF } else { VIDEO },
             words::camera_toggle(view.camera_off),
+            view.camera_off,
             view.camera_off,
             Which::Kind(Kind::Camera),
             "huddle-camera-menu",
             "Choose camera",
         ),
     };
+    let icon = match (device, alarm) {
+        (Device::Microphone, true) => MIC_OFF,
+        (Device::Microphone, false) => MIC,
+        (Device::Camera, true) => VIDEO_OFF,
+        (Device::Camera, false) => VIDEO,
+    };
+    let trouble = (device == Device::Microphone && view.troubled(device))
+        .then(|| words::trouble(device, &view.mic_state).0);
     let expanded = view.menu.is_some_and(|menu| menu.which == which);
     let caret = div()
         .id(caret_id)
@@ -1549,7 +1594,7 @@ fn split(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme)
                 .items_center()
                 .justify_center()
                 .cursor_pointer()
-                .map(|main| match off {
+                .map(|main| match alarm {
                     true => main.bg(theme.danger).text_color(white()),
                     false => main
                         .text_color(theme.foreground)
@@ -1557,6 +1602,7 @@ fn split(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme)
                 })
                 .role(Role::Button)
                 .aria_label(name)
+                .when_some(trouble, |main, trouble| main.aria_description(trouble))
                 .aria_toggled(off.into())
                 .focusable()
                 .on_click(cx.listener(

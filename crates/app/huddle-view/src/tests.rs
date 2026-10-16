@@ -674,6 +674,40 @@ fn the_room_mutes_by_key_and_shows_who_speaks() {
     assert!(mic_piece(&cx).is_some());
 }
 
+/// A microphone in trouble in the room is not silent. In the room the
+/// bar's microphone is danger-filled and slashed, its trouble said to
+/// assistive technology, with Try again after it; in the float the trouble
+/// is a row in the tile with Try again. Each Try again opens a new piece.
+#[test]
+fn a_microphone_in_trouble_in_the_room_says_so() {
+    let (mut cx, ..) = opened();
+    cx.simulate_click("huddle-join");
+    cx.run_until_parked();
+    let key = mic_key(&cx);
+    cx.simulate_media_state(&key, status(MediaStatus::Gone));
+    assert!(mic_piece(&cx).is_none(), "a vanished microphone is let go");
+    assert_eq!(
+        cx.interactivity("huddle-mic").aria.description.as_deref(),
+        Some("The microphone went away")
+    );
+    cx.simulate_click("huddle-microphone-retry");
+    cx.run_until_parked();
+    assert_ne!(mic_key(&cx), key, "a new piece");
+
+    cx.host().stream::<HostPlacement>().send(Placement {
+        floating: true,
+        on_top: true,
+    });
+    cx.simulate_resize(320., 200.);
+    cx.run_until_parked();
+    let key = mic_key(&cx);
+    cx.simulate_media_state(&key, status(MediaStatus::Busy));
+    assert!(cx.has_text("Another app is using the microphone"));
+    cx.simulate_click("huddle-microphone-retry");
+    cx.run_until_parked();
+    assert_ne!(mic_key(&cx), key, "a new piece");
+}
+
 /// A host without camera and microphone support: said once, no piece.
 #[test]
 fn a_host_without_media_says_so() {
