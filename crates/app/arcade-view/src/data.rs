@@ -63,9 +63,12 @@ impl Arcade {
         if self.session.account != prev.account {
             // the bests and the name on screen are another account's
             self.bests = Loadable::Idle;
+            self.reader_name = Loadable::Idle;
             self.read_bests(cx);
             self.read_reader_name(cx);
         } else if self.session.connected && !prev.connected {
+            // a name read with no link to read it over is the number
+            self.read_reader_name(cx);
             self.changed(None, cx);
         }
         self.versus_session(&prev, cx);
@@ -101,9 +104,8 @@ impl Arcade {
     }
 
     /// What identity calls the reader: the reader's own row on a board
-    /// shows it.
+    /// shows it. A name already read stays on screen until the answer.
     fn read_reader_name(&mut self, cx: &mut Context<Self>) {
-        self.reader_name = Loadable::Idle;
         let Some(account) = self.session.account else {
             return;
         };

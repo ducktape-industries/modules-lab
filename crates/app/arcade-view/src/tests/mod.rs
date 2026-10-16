@@ -77,6 +77,24 @@ pub(crate) fn answer_reads(cx: &TestAppContext, world: &Shared) {
     });
 }
 
+/// Identity answers the view's asks for names from `world`, as it would.
+pub(crate) fn answer_names(cx: &TestAppContext, world: &Shared) {
+    let named = world.clone();
+    cx.host().handle::<Ask<Identity>>(move |query| {
+        let ::identity::Query::Profile { number } = query else {
+            panic!("the view asks identity for a profile alone");
+        };
+        let name = named.borrow().names.get(&number).cloned();
+        Ok(::identity::Reply::Profile(name.map(|name| {
+            identity::Profile {
+                number,
+                name,
+                kind: identity::Kind::User,
+            }
+        })))
+    });
+}
+
 /// The view open on the fake host, the session said, and the feeds a test
 /// speaks for the host through.
 pub(crate) struct Opened {
@@ -104,20 +122,7 @@ pub(crate) fn opened(world: World, account: Option<u64>) -> Opened {
     let mut cx = TestAppContext::new();
     let world = Rc::new(RefCell::new(world));
     answer_reads(&cx, &world);
-    let named = world.clone();
-    cx.host().handle::<Ask<Identity>>(move |query| {
-        let ::identity::Query::Profile { number } = query else {
-            panic!("the view asks identity for a profile alone");
-        };
-        let name = named.borrow().names.get(&number).cloned();
-        Ok(::identity::Reply::Profile(name.map(|name| {
-            identity::Profile {
-                number,
-                name,
-                kind: identity::Kind::User,
-            }
-        })))
-    });
+    answer_names(&cx, &world);
     cx.host()
         .handle::<HostId>(|prefix| Ok(format!("{prefix}-18f2c0a1b2c3d4e5-1")));
     let told = world.clone();

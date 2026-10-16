@@ -187,6 +187,31 @@ fn outside_the_ten_the_readers_name_and_best_show_under_you_with_no_rank() {
     );
 }
 
+/// A name asked with no link comes back as the account's number; the link
+/// back, it is asked again.
+#[test]
+fn a_reconnect_reads_the_readers_name_again() {
+    let mut opened = phone(outside_the_ten(), None);
+    let sessions = opened.cx.host().stream::<HostSession>();
+    opened
+        .cx
+        .host()
+        .refuse::<Ask<Identity>>("not_connected", "no node is connected");
+    sessions.send(session(Some(READER)));
+    opened.cx.run_until_parked();
+    sessions.send(Session {
+        connected: false,
+        ..session(Some(READER))
+    });
+    opened.cx.run_until_parked();
+    answer_names(&opened.cx, &opened.world);
+    sessions.send(session(Some(READER)));
+    opened.cx.run_until_parked();
+    open_board(&mut opened.cx, SNAKE);
+    assert!(shows_in(&opened.cx, "arcade-rank-you", "reader"));
+    assert!(!opened.cx.has_text(&format!("account {READER}")));
+}
+
 #[test]
 fn signed_out_the_hub_says_so_and_a_board_says_whose_best_would_show() {
     let mut opened = phone(World::default(), None);
