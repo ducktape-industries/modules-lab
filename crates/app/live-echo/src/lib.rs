@@ -21,9 +21,12 @@ pub const PROGRAM: &str = "live-echo";
 /// The room the view talks in.
 pub const LOBBY: &str = "lobby";
 
-/// The longest room name an op opens: the host stamps the chain and the
-/// program in front of it, and the whole namespace is at most 192 bytes.
-pub const MAX_ROOM: usize = 64;
+/// The longest room name an op opens: the host stamps `<chain>/<program>/`
+/// in front of it, the chain's name a byte at least, and the whole
+/// namespace is the wire's [`MAX_NAMESPACE`](::program::live::MAX_NAMESPACE)
+/// at most. A room past this fits on no chain; one that fits here and not
+/// beside a longer chain's name is the host's to refuse when a view asks.
+pub const MAX_ROOM: usize = ::program::live::MAX_NAMESPACE - "c/".len() - PROGRAM.len() - "/".len();
 
 /// An open room's one row, every account's ([`Op::Open`]): each may
 /// subscribe to every track and publish its own line alone, under its

@@ -58,4 +58,12 @@ fn a_key_with_no_account_or_a_bad_room_opens_nothing() {
         assert!(open(&store, who, room).is_err(), "{who:?} {room:?}");
     }
     assert!(store.borrow().state.is_empty());
+    // the longest room fills the wire's namespace beside the shortest
+    // chain's stamp: one more byte is past it on every chain
+    let longest = "r".repeat(MAX_ROOM);
+    assert_eq!(
+        format!("c/{PROGRAM}/{longest}").len(),
+        ::program::live::MAX_NAMESPACE
+    );
+    assert!(open(&store, Some(ADA), &longest).is_ok());
 }
