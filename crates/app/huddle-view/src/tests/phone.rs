@@ -785,9 +785,9 @@ fn a_refused_microphone_offers_settings_where_the_host_can() {
     );
 }
 
-/// A microphone in trouble in the room is said over the stage, with Try
-/// again in the check's word, and its bar button is slashed on the danger
-/// fill.
+/// A microphone in trouble in the room is said over the stage as an
+/// alert, at once, with Try again in the check's word, and its bar button
+/// is slashed on the danger fill.
 #[test]
 fn a_microphone_in_trouble_in_the_room_says_so() {
     let (mut cx, _ticks) = phone();
@@ -795,6 +795,9 @@ fn a_microphone_in_trouble_in_the_room_says_so() {
     let key = mic_key(&cx);
     cx.simulate_media_state(&key, status(MediaStatus::Busy));
     has_all(&cx, &["Another app is using the microphone.", "Try again"]);
+    let band = cx.interactivity("huddle-mic-trouble");
+    assert_eq!(band.role, Some(Role::Alert), "said at once");
+    assert_eq!(band.aria.live, Some(view::wire::Live::Assertive));
     cx.simulate_click("huddle-microphone-retry");
     cx.run_until_parked();
     assert_ne!(mic_key(&cx), key, "a new piece");

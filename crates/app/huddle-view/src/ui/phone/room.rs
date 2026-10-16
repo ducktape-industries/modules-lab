@@ -67,7 +67,9 @@ fn stage(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme
 }
 
 /// The microphone's trouble, in the danger tone over the stage: its line
-/// (the check's Sound row's), and what fixes it under the line.
+/// (the check's Sound row's), and what fixes it under the line. An alert,
+/// said at once (the SDK notice's shape): a microphone failing mid-call is
+/// heard, not only seen.
 fn mic_trouble(
     view: &Huddle,
     cx: &mut Context<Huddle>,
@@ -85,6 +87,8 @@ fn mic_trouble(
         .bg(theme.danger_soft)
         .border_b_1()
         .border_color(theme.danger)
+        .role(Role::Alert)
+        .aria_live(view::accesskit::Live::Assertive)
         .child(
             div()
                 .text_type(ladder.secondary)
