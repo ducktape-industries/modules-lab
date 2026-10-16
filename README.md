@@ -287,7 +287,7 @@ make wasm-programs    # each program for wasm32
 make wasm-describes   # each program's describe module, ABI-checked
 make wasm-views       # each view's wasm, optimized and ABI-checked by modules' own gate
 make shots APP=/path/to/app   # the view's frames, painted by the app's real renderer
-make live QA=/path/to/qa      # the modules in the real app, on a stage of qa's kit ("A view on its own", 3)
+make live QA=/path/to/qa      # the programs in the real app, on a stage of qa's kit ("A view on its own", 3)
 ```
 
 `make wasm-views` needs Binaryen `wasm-opt` 132 and `wasm-tools`, as modules
@@ -316,9 +316,8 @@ There is no runner that keeps one view alive without a node. What there is:
    that point is on a candle, and its frame holds the line the view draws
    on that candle.
 3. **Live, in the app.** A view is served with its program, so it needs
-   a network founded with it: a stage of qa's `kit`. With a qa
-   checkout, and `core`, `app` and `modules` checked out beside it as qa's
-   README says:
+   a network founded with it: a stage of qa's `kit`. With a qa checkout
+   (kit fetches core, app and programs itself, as qa's README says):
 
    ```sh
    make live QA=/path/to/qa
@@ -327,13 +326,15 @@ There is no runner that keeps one view alive without a node. What there is:
    It builds every program, its describe module and its view, packs those
    two into `<program>.wasm` as custom sections with programs' own
    `founding` packer (`crates/app/trade/examples/pack.rs`), and founds stage `lab`
-   (`STAGE=`) with them: kit's own founding with `live/founding.toml` after
-   it, the week of history as trade's params. Then it seeds the
+   (`STAGE=`) with them: the founding programs published for the rev this
+   workspace pins, which `kit build` copies into the stage's `programs/`,
+   with the lab's programs beside its own and `live/founding.toml`'s
+   entries after them, the week of history as trade's params. Then it seeds the
    stage with the ops `examples/seed.rs` writes. Wallet `dev`, the one the
    app opens with, gets an account and its funds; a second wallet, `bo`,
    rests 36 orders around BTC/USD's last price; two market orders of
    `dev`'s trade against them. It ends with the command that opens the app
-   on the stage, a `kit app` with the lab's root: the wallet's password is
+   on the stage, a `kit app` on qa's root: the wallet's password is
    `ducktape`, and Trade, Arcade and Live echo are on the rail. `live/live.sh` is all of it. Run
    again, it founds a fresh network on the same stage.
 
@@ -350,9 +351,12 @@ There is no runner that keeps one view alive without a node. What there is:
    preconfirm) and the rounds follow each other: about 9 rounds and 450
    ops a minute in all, and 10 to 13 trades a minute in each market.
 
-   The stage's modules is the rev this workspace pins, and its app is
+   The stage's programs is the rev this workspace pins, and its app is
    `APP_REF` (`dev` when not given), which must pin that same rev:
-   `make live` stops and names both revs when it does not.
+   `make live` stops and names both revs when it does not. kit founds
+   only from a founding programs published (a GitHub release
+   `wasm-<commit>`, made for each commit on programs' `main`), so a pin
+   with none stops at `kit build`, which says so.
 
    Beyond the tools above it needs what qa's README asks of a machine that
    runs `kit`, and `git`, `python3` and `ps`. A first run builds kit, the
@@ -365,7 +369,7 @@ There is no runner that keeps one view alive without a node. What there is:
    ```sh
    make wasm-views
    mkdir -p /tmp/views && cp target/wasm32-unknown-unknown/release/trade_view.wasm /tmp/views/
-   DUCKTAPE_VIEWS_DIR=/tmp/views kit app lab --root ...   # the command `make live` printed
+   DUCKTAPE_VIEWS_DIR=/tmp/views kit app lab --root /path/to/qa   # the command `make live` printed
    ```
 
    The file is read again each time the pane opens: rebuild, copy, close
