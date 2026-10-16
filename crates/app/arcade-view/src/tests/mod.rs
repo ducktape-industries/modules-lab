@@ -23,6 +23,7 @@ use crate::{Arcade, Post};
 mod breakout;
 mod games;
 mod invaders;
+mod phone;
 mod snake;
 mod versus;
 
@@ -58,6 +59,24 @@ impl Default for World {
 
 pub(crate) type Shared = Rc<RefCell<World>>;
 
+/// The program answers the view's reads from `world`, as the node would.
+pub(crate) fn answer_reads(cx: &TestAppContext, world: &Shared) {
+    let asked = world.clone();
+    cx.host().handle::<Ask<arcade::Arcade>>(move |query| {
+        let world = asked.borrow();
+        Ok(match query {
+            Query::Top { game, limit } => Reply::Top(
+                world.boards[usize::from(game)]
+                    .iter()
+                    .take(limit as usize)
+                    .copied()
+                    .collect(),
+            ),
+            Query::Bests { .. } => Reply::Bests(world.bests.clone()),
+        })
+    });
+}
+
 /// The view open on the fake host, the session said, and the feeds a test
 /// speaks for the host through.
 pub(crate) struct Opened {
@@ -84,20 +103,7 @@ pub(crate) fn session(account: Option<u64>) -> Session {
 pub(crate) fn opened(world: World, account: Option<u64>) -> Opened {
     let mut cx = TestAppContext::new();
     let world = Rc::new(RefCell::new(world));
-    let asked = world.clone();
-    cx.host().handle::<Ask<arcade::Arcade>>(move |query| {
-        let world = asked.borrow();
-        Ok(match query {
-            Query::Top { game, limit } => Reply::Top(
-                world.boards[usize::from(game)]
-                    .iter()
-                    .take(limit as usize)
-                    .copied()
-                    .collect(),
-            ),
-            Query::Bests { .. } => Reply::Bests(world.bests.clone()),
-        })
-    });
+    answer_reads(&cx, &world);
     let named = world.clone();
     cx.host().handle::<Ask<Identity>>(move |query| {
         let ::identity::Query::Profile { number } = query else {

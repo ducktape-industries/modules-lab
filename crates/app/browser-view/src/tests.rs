@@ -8,6 +8,8 @@ use view::wire::{Node, WebCommand, WebState, WidgetCommand};
 
 use crate::{Browser, address, host_shown};
 
+mod phone;
+
 struct Opened {
     cx: TestAppContext,
     view: Entity<Browser>,
