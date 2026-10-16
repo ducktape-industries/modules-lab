@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "abi"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "borsh",
  "design",
@@ -280,7 +280,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 [[package]]
 name = "attribution"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "abi",
  "borsh",
@@ -532,7 +532,7 @@ dependencies = [
 [[package]]
 name = "blobs"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "abi",
  "blob",
@@ -701,7 +701,7 @@ dependencies = [
 [[package]]
 name = "chat"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "abi",
  "attribution",
@@ -1792,7 +1792,7 @@ dependencies = [
 [[package]]
 name = "describe"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "borsh",
  "serde",
@@ -1801,7 +1801,7 @@ dependencies = [
 [[package]]
 name = "design"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "sha2 0.10.9",
 ]
@@ -1881,7 +1881,7 @@ checksum = "4c3cf4824e2d5f025c7b531afcb2325364084a16806f6d47fbc1f5fbd9960590"
 [[package]]
 name = "ducklink"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "abi",
  "program",
@@ -2074,7 +2074,7 @@ dependencies = [
 [[package]]
 name = "error"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "borsh",
  "serde",
@@ -2294,7 +2294,7 @@ dependencies = [
 [[package]]
 name = "forge"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "abi",
  "borsh",
@@ -2317,7 +2317,7 @@ dependencies = [
 [[package]]
 name = "founding"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "abi",
  "forge",
@@ -2522,7 +2522,7 @@ dependencies = [
 [[package]]
 name = "gitcore"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "miniz_oxide 0.8.9",
  "sha1-checked",
@@ -2784,6 +2784,18 @@ dependencies = [
 [[package]]
 name = "halo"
 version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
+dependencies = [
+ "abi",
+ "borsh",
+ "describe",
+ "program",
+ "store",
+]
+
+[[package]]
+name = "halo"
+version = "0.1.0"
 source = "git+https://github.com/ducktape-industries/ducktape?rev=8a0151a411c3558453c34bb8272b93dfc428cb74#8a0151a411c3558453c34bb8272b93dfc428cb74"
 dependencies = [
  "abi",
@@ -2799,18 +2811,6 @@ dependencies = [
  "tokio",
  "tracing",
  "x509-parser",
-]
-
-[[package]]
-name = "halo"
-version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
-dependencies = [
- "abi",
- "borsh",
- "describe",
- "program",
- "store",
 ]
 
 [[package]]
@@ -3158,7 +3158,7 @@ checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
 [[package]]
 name = "identity"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "abi",
  "borsh",
@@ -4440,7 +4440,7 @@ dependencies = [
 [[package]]
 name = "program"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "abi",
  "blob",
@@ -4454,7 +4454,7 @@ dependencies = [
 [[package]]
 name = "program-derive"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4464,7 +4464,7 @@ dependencies = [
 [[package]]
 name = "programs"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "abi",
  "blob",
@@ -5745,7 +5745,7 @@ dependencies = [
 [[package]]
 name = "store"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "abi",
  "borsh",
@@ -6687,12 +6687,12 @@ dependencies = [
 [[package]]
 name = "valset"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "abi",
  "borsh",
  "describe",
- "halo 0.1.0 (git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f)",
+ "halo 0.1.0 (git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be)",
  "program",
  "programs",
  "store",
@@ -6713,7 +6713,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "view"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "base64 0.22.1",
  "blobs",
@@ -6741,7 +6741,7 @@ dependencies = [
 [[package]]
 name = "view-derive"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "quote",
  "syn 2.0.119",
@@ -6750,7 +6750,7 @@ dependencies = [
 [[package]]
 name = "view-wire"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/programs?rev=b0b8852e7f6fd5a46e5df099f0443d24c7d2211f#b0b8852e7f6fd5a46e5df099f0443d24c7d2211f"
+source = "git+https://github.com/ducktape-industries/programs?rev=38d79ea219b7230679a53578e8b285d62010a6be#38d79ea219b7230679a53578e8b285d62010a6be"
 dependencies = [
  "accesskit",
  "borsh",
