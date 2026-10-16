@@ -33,12 +33,13 @@
 //! This file is the model: what the person picked and switched, what the
 //! host listed and the pieces told, and what each press changes. What is
 //! drawn is `ui` (the desktop's tree) or `ui::phone` (the phone's), in the
-//! words of `words`.
+//! words of `words`, with what both draw alike in `look`.
 use serde::{Deserialize, Serialize};
 use view::prelude::*;
 
 use crate::words::Device;
 
+mod look;
 mod ui;
 mod words;
 
@@ -361,13 +362,14 @@ impl Huddle {
         self.mic_state.playback == Playback::Idle && !self.chiming
     }
 
-    /// The seconds a recording under way has left, at least one: the
-    /// host's playback takes over at the end.
-    pub(crate) fn seconds_left(&self) -> u64 {
+    /// A recording's countdown, `0:SS`: the seconds it has left, at least
+    /// one (the host's playback takes over at the end).
+    pub(crate) fn countdown(&self) -> String {
         let since = self.recording_since.unwrap_or(self.ticks);
-        u64::from(RECORD_SECONDS)
+        let left = u64::from(RECORD_SECONDS)
             .saturating_sub(self.ticks.saturating_sub(since))
-            .max(1)
+            .max(1);
+        format!("0:{left:02}")
     }
 
     /// The time in the room, `MM:SS`, `H:MM:SS` past an hour.

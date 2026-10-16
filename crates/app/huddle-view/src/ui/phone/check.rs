@@ -16,7 +16,8 @@ use view::prelude::*;
 use view::{AnyElement, Div, Stateful};
 
 use super::SOUND;
-use super::parts::{self, FLIP, MIC, MIC_OFF, SPEAKER, VIDEO, VIDEO_OFF};
+use super::parts::{self, FLIP};
+use crate::look::{self, MIC, MIC_OFF, PLAY, SPEAKER, STOP, VIDEO, VIDEO_OFF, black, glass, white};
 use crate::words::{self, Device};
 use crate::{Huddle, Kind, RECORD_SECONDS};
 
@@ -29,9 +30,6 @@ const GLASS_GLYPH: Pixels = px(20.);
 
 /// How tall the microphone's level is (SPEC §1.2).
 const METER: Pixels = px(4.);
-
-const PLAY: &str = "play";
-const STOP: &str = "square";
 
 pub(super) fn screen(
     view: &Huddle,
@@ -100,13 +98,20 @@ fn preview(
         .overflow_hidden()
         .bg(match off || view.troubled(Device::Camera) {
             true => theme.surface_raised,
-            false => parts::black(),
+            false => black(),
         })
         .when(view.camera_placed(), |preview| {
             preview.child(parts::camera_piece(view, cx).size_full())
         })
         .when(off, |preview| {
-            preview.child(parts::face(FACE, Some(words::CAMERA_IS_OFF), ladder, theme))
+            preview.child(
+                look::face(FACE, theme).child(
+                    div()
+                        .text_type(ladder.secondary)
+                        .text_color(theme.muted)
+                        .child(words::CAMERA_IS_OFF),
+                ),
+            )
         })
         .children(card)
         .child(parts::chip(view, false, ladder, theme))
@@ -144,8 +149,8 @@ fn glass_button(
         .items_center()
         .justify_center()
         .map(|button| match (off, view.camera_off) {
-            (true, _) => button.bg(theme.danger).text_color(parts::white()),
-            (false, false) => button.bg(parts::glass()).text_color(parts::white()),
+            (true, _) => button.bg(theme.danger).text_color(white()),
+            (false, false) => button.bg(glass()).text_color(white()),
             (false, true) => button
                 .bg(theme.background)
                 .border_1()
@@ -336,7 +341,7 @@ fn record(
         Playback::Recording => design::row_caption(line, ladder, theme).child(
             div()
                 .font_family(design::fonts::FAMILY_MONO)
-                .child(format!("0:{:02}", view.seconds_left())),
+                .child(view.countdown()),
         ),
         _ => design::row_caption(line, ladder, theme),
     };

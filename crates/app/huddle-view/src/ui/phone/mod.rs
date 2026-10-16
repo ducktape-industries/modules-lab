@@ -22,6 +22,7 @@ use view::design::{Ladder, Nav};
 use view::prelude::*;
 use view::{AnyElement, Div, Stateful};
 
+use crate::look::{HEADPHONES, SPEAKER, VIDEO_OFF};
 use crate::words;
 use crate::{Huddle, Kind, Row, Screen, Which};
 
@@ -125,9 +126,9 @@ fn route(
         return nothing(row.name, ladder, theme).into_any_element();
     };
     let glyph = match view.speaker(&id).map(|speaker| speaker.kind) {
-        Some(AudioKind::Headphones) => "headphones",
-        Some(AudioKind::Earpiece) => "smartphone",
-        _ => parts::SPEAKER,
+        Some(AudioKind::Headphones) => HEADPHONES,
+        Some(AudioKind::Earpiece) => parts::SMARTPHONE,
+        _ => SPEAKER,
     };
     let pick = cx.listener(move |view: &mut Huddle, _: &ClickEvent, _, cx| {
         view.pick(index, cx);
@@ -180,7 +181,7 @@ fn unsupported(ladder: &Ladder, theme: &Theme) -> impl IntoElement {
             .justify_center()
             .child(design::empty_state(
                 "huddle-unsupported",
-                parts::VIDEO_OFF,
+                VIDEO_OFF,
                 words::UNSUPPORTED,
                 words::UNSUPPORTED_DETAIL,
                 ladder,

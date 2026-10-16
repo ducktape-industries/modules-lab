@@ -17,6 +17,10 @@ use view::{
     accesskit,
 };
 
+use crate::look::{
+    self, ALERT, HEADPHONES, LEAVE, MIC, MIC_OFF, PLAY, SPEAKER, SPEAKING, STOP, VIDEO, VIDEO_OFF,
+    black, glass, muted_mark, trouble_glyph, white,
+};
 use crate::words::{self, Device};
 use crate::{Huddle, Kind, Menu, RECORD_SECONDS, Row, Screen, Which, trouble};
 
@@ -115,24 +119,12 @@ fn closed(menu: Option<Menu>, window: &mut Window) {
     }
 }
 
-// the glyphs, by the Lucide names `design::icon` draws
-const MIC: &str = "mic";
-const MIC_OFF: &str = "mic-off";
-const VIDEO: &str = "video";
-const VIDEO_OFF: &str = "video-off";
-const SPEAKER: &str = "volume-2";
-const HEADPHONES: &str = "headphones";
-const LEAVE: &str = "phone-off";
+// the desktop's own glyphs, by the Lucide names `design::icon` draws (the
+// ones the phone draws too are `look`'s)
 const CARET: &str = "chevron-down";
 const MIRROR: &str = "flip-horizontal-2";
-const ALERT: &str = "circle-alert";
-const CAMERA_OFF: &str = "camera-off";
-const PLAY: &str = "play";
-const STOP: &str = "square";
 const CHECK: &str = "check";
 const PEOPLE: &str = "users";
-const SPEAKING: &str = "audio-lines";
-const PERSON: &str = "user-round";
 const PIN: &str = "pin";
 const PIN_OFF: &str = "pin-off";
 const BACK: &str = "picture-in-picture-2";
@@ -140,26 +132,6 @@ const CLOSE: &str = "x";
 
 fn f(pixels: Pixels) -> f32 {
     pixels.into()
-}
-
-/// Over the camera's picture the picture is the ground: controls and chips
-/// are this dark glass with a white glyph, not the theme's.
-fn glass() -> Hsla {
-    hsla(0., 0., 0., 0.55)
-}
-
-fn white() -> Hsla {
-    hsla(0., 0., 1., 1.)
-}
-
-fn black() -> Hsla {
-    hsla(0., 0., 0., 1.)
-}
-
-/// The muted mark on the glass: the dark theme's danger, legible on black
-/// in either theme.
-fn muted_mark() -> Hsla {
-    Theme::dark().danger
 }
 
 pub(crate) fn render(view: &mut Huddle, cx: &mut Context<Huddle>) -> AnyElement {
@@ -248,7 +220,8 @@ fn preview(
         preview = preview.child(camera_piece(view, ObjectFit::Contain, cx).size_full());
     }
     if off {
-        preview = preview.child(camera_off(72., Some(words::CAMERA_IS_OFF), theme));
+        preview = preview
+            .child(look::face(px(72.), theme).child(design::quiet(words::CAMERA_IS_OFF, theme)));
     }
     let mirrored = !view.unmirrored;
     preview
@@ -418,33 +391,6 @@ fn chip(view: &Huddle, off: bool, theme: &Theme) -> Div {
                     .child(words::MIRRORED),
             )
         })
-}
-
-/// The camera that is off: your avatar in the middle of the raised ground
-/// (no account name reaches the view: the person's glyph), and a line.
-fn camera_off(size: f32, line: Option<&'static str>, theme: &Theme) -> Div {
-    let avatar = div()
-        .size(px(size))
-        .flex_none()
-        .rounded_full()
-        .flex()
-        .items_center()
-        .justify_center()
-        .bg(theme.background)
-        .border_1()
-        .border_color(theme.border)
-        .text_color(theme.muted)
-        .child(design::icon(PERSON, px((size * 0.4).round())));
-    div()
-        .absolute()
-        .inset_0()
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .gap(design::space::SM)
-        .child(avatar)
-        .children(line.map(|line| design::quiet(line, theme)))
 }
 
 /// The settings column: the three devices, the meter, the tests, Join.
@@ -682,21 +628,18 @@ fn record(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
     .justify_start();
     let line: AnyElement = match (&playback, under_way) {
         _ if view.muted => caption(words::record_line(true, &playback), theme),
-        (Playback::Recording, true) => {
-            let left = view.seconds_left();
-            div()
-                .id("huddle-record-line")
-                .flex()
-                .text_size(design::text::CAPTION)
-                .text_color(theme.muted)
-                .child(words::RECORDING)
-                .child(
-                    div()
-                        .font_family(design::fonts::FAMILY_MONO)
-                        .child(format!("0:{left:02}")),
-                )
-                .into_any_element()
-        }
+        (Playback::Recording, true) => div()
+            .id("huddle-record-line")
+            .flex()
+            .text_size(design::text::CAPTION)
+            .text_color(theme.muted)
+            .child(words::RECORDING)
+            .child(
+                div()
+                    .font_family(design::fonts::FAMILY_MONO)
+                    .child(view.countdown()),
+            )
+            .into_any_element(),
         _ => caption(words::record_line(false, &playback), theme),
     };
     div()
@@ -834,14 +777,6 @@ fn record_button(
 // ---------- states ----------
 
 /// The glyph a device's trouble shows.
-fn trouble_glyph(status: &MediaStatus) -> &'static str {
-    match status {
-        MediaStatus::NoDevice | MediaStatus::Gone => CAMERA_OFF,
-        MediaStatus::Busy => VIDEO_OFF,
-        _ => ALERT,
-    }
-}
-
 /// The card in the middle of the picture: glyph, title, text, what fixes
 /// it. No ground of its own: the picture's box is raised behind it.
 fn state_card(
@@ -1041,7 +976,7 @@ fn tile(
             w if w >= 180. => 48.,
             _ => 32.,
         };
-        tile = tile.child(camera_off(size, None, theme));
+        tile = tile.child(look::face(px(size), theme));
     }
     let tile = tile.when(speaking, |tile| {
         tile.child(

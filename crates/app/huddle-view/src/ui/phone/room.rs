@@ -14,7 +14,8 @@ use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
 use super::SOUND;
-use super::parts::{self, FLIP, MIC, MIC_OFF, SPEAKER, VIDEO, VIDEO_OFF};
+use super::parts::{self, FLIP};
+use crate::look::{self, LEAVE, MIC, MIC_OFF, SPEAKER, VIDEO, VIDEO_OFF, black, glass, white};
 use crate::words::{self, Device};
 use crate::{Huddle, Kind};
 
@@ -28,8 +29,6 @@ const BAR_BUTTON: Pixels = px(56.);
 /// (SPEC §2.1).
 const SOLO_ABOVE: Pixels = px(68.);
 const SOLO_WIDTH: Pixels = px(320.);
-
-const LEAVE: &str = "phone-off";
 
 pub(super) fn screen(
     view: &Huddle,
@@ -88,7 +87,7 @@ fn tile(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme)
         .aria_label(words::YOU)
         .bg(match off || view.troubled(Device::Camera) {
             true => theme.surface_raised,
-            false => parts::black(),
+            false => black(),
         })
         .when(view.camera_placed(), |tile| {
             tile.child(parts::camera_piece(view, cx).size_full())
@@ -98,9 +97,7 @@ fn tile(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme)
         .when(view.mic_placed(), |tile| {
             tile.child(parts::mic_piece(view, cx).absolute().size(px(0.)))
         })
-        .when(off, |tile| {
-            tile.child(parts::face(FACE, None, ladder, theme))
-        })
+        .when(off, |tile| tile.child(look::face(FACE, theme)))
         .children(parts::state_card(view, cx, ladder, theme))
         .when(speaking, |tile| tile.child(ring(theme)))
         .child(parts::chip(view, speaking, ladder, theme))
@@ -132,8 +129,8 @@ fn solo(ladder: &Ladder) -> Div {
                 .max_w(SOLO_WIDTH)
                 .px(design::space::SM)
                 .py(design::space::XXS)
-                .bg(parts::glass())
-                .text_color(parts::white())
+                .bg(glass())
+                .text_color(white())
                 .text_type(ladder.caption)
                 .text_center()
                 .child(words::SOLO),
@@ -179,7 +176,7 @@ fn square(
         .items_center()
         .justify_center()
         .map(|button| match off {
-            true => button.bg(theme.danger).text_color(parts::white()),
+            true => button.bg(theme.danger).text_color(white()),
             false => button
                 .border_1()
                 .border_color(theme.border_strong)
@@ -280,7 +277,7 @@ fn leave(cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme) -> Stateful<D
         .justify_center()
         .gap(design::space::SM)
         .bg(theme.danger)
-        .text_color(parts::white())
+        .text_color(white())
         .text_type(ladder.body)
         .font_weight(FontWeight::MEDIUM)
         .role(Role::Button)
