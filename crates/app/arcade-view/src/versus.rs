@@ -44,7 +44,9 @@ use ::identity::Identity;
 use arcade::Op;
 use borsh::{BorshDeserialize, BorshSerialize};
 use program::code;
+use view::design::Ladder;
 use view::live::{DEFAULT_PRIORITY, Received, Track, subscribe};
+use view::methods::Submitted;
 use view::prelude::*;
 use view::{AnyElement, Div, FontWeight, Stateful};
 
@@ -570,13 +572,15 @@ impl Arcade {
         versus.note = None;
         let submit = cx.host().ask::<Submit<arcade::Arcade>>(Op::OpenVersus);
         versus.waits.push(cx.land(submit, |view, opened, cx| {
-            if let (Some(versus), Err(refused)) = (&mut view.versus, opened) {
-                // the next `Waiting` asks again
+            let why = match opened {
+                Ok(Submitted::Applied { .. }) => return,
+                Ok(Submitted::Refused { refusal, .. }) | Err(refusal) => refusal.message,
+                Ok(Submitted::InDoubt { .. }) => "no answer came back".into(),
+            };
+            if let Some(versus) = &mut view.versus {
+                // the next `Waiting` asks again: the op writes the same row
                 versus.knocked = false;
-                versus.note = Some(format!(
-                    "The arcade could not open the versus room: {}",
-                    refused.message
-                ));
+                versus.note = Some(format!("The arcade could not open the versus room: {why}"));
                 cx.notify();
             }
         }));
@@ -853,6 +857,7 @@ impl Arcade {
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
+        ladder: &Ladder,
         theme: &Theme,
     ) -> impl IntoElement + use<> {
         let theme = *theme;
@@ -877,6 +882,7 @@ impl Arcade {
                 design::button(
                     "versus-back",
                     "Games",
+                    ladder,
                     &theme,
                     cx.listener(|view, _: &ClickEvent, window, cx| view.leave_versus(window, cx)),
                 )
@@ -890,8 +896,8 @@ impl Arcade {
             )
             .children(against.map(|against| design::quiet(against, &theme)));
         let body = match versus.game.is_some() {
-            true => self.match_view(cx, &theme).into_any_element(),
-            false => self.lobby(cx, &theme).into_any_element(),
+            true => self.match_view(cx, ladder, &theme).into_any_element(),
+            false => self.lobby(cx, ladder, &theme).into_any_element(),
         };
         div()
             .flex_1()
@@ -904,7 +910,7 @@ impl Arcade {
 
     /// Who waits and who asked: a row an account, its button challenging
     /// it, accepting its challenge, or taking this side's back.
-    fn lobby(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
+    fn lobby(&self, cx: &mut Context<Self>, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
         let theme = *theme;
         let versus = self.versus.as_ref().expect("versus is on screen");
         let me = self.session.account;
@@ -950,6 +956,7 @@ impl Arcade {
                         design::button(
                             format!("versus-player-{them}"),
                             action,
+                            ladder,
                             &theme,
                             cx.listener(move |view, _: &ClickEvent, _, cx| {
                                 view.challenge(them, cx)
@@ -1004,7 +1011,7 @@ impl Arcade {
 
     /// The match: this side's well, taking the keys, its hold, next and
     /// the garbage on its way, and beside it the other's.
-    fn match_view(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
+    fn match_view(&self, cx: &mut Context<Self>, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
         let theme = *theme;
         let versus = self.versus.as_ref().expect("versus is on screen");
         let game = versus.game.as_ref().expect("a match");
@@ -1034,7 +1041,7 @@ impl Arcade {
             self.stage_room(),
             &game.play.tetris,
             board,
-            self.ended(&game.play, &them, cx, &theme),
+            self.ended(&game.play, &them, cx, ladder, &theme),
             stats,
             Some((them.clone(), game.their_well.as_ref())),
             &theme,
@@ -1049,6 +1056,7 @@ impl Arcade {
         game: &Match,
         them: &str,
         cx: &mut Context<Self>,
+        ladder: &Ladder,
         theme: &Theme,
     ) -> Option<Div> {
         let end = game.end.filter(|_| !game.tetris.ending())?;
@@ -1070,6 +1078,7 @@ impl Arcade {
             design::button(
                 "versus-again",
                 "Rematch",
+                ladder,
                 &theme,
                 cx.listener(|view, _: &ClickEvent, _, cx| view.rematch(cx)),
             )
@@ -1078,6 +1087,7 @@ impl Arcade {
         let lobby = design::button(
             "versus-lobby-back",
             "Leave",
+            ladder,
             &theme,
             cx.listener(|view, _: &ClickEvent, _, cx| view.back_to_lobby(cx)),
         )

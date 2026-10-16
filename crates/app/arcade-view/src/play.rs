@@ -7,6 +7,7 @@
 //! The board takes the keys: it is focused as the game starts, and every
 //! key the games read stops there. It hears Shift too, which gpui tells as
 //! a change of the modifiers, not as a key.
+use view::design::Ladder;
 use view::prelude::*;
 use view::{AnyElement, Div, FontWeight, Stateful};
 
@@ -194,6 +195,7 @@ impl Arcade {
     pub(crate) fn play_screen(
         &mut self,
         cx: &mut Context<Self>,
+        ladder: &Ladder,
         theme: &Theme,
     ) -> impl IntoElement + use<> {
         let theme = *theme;
@@ -204,6 +206,7 @@ impl Arcade {
             design::button(
                 "arcade-pause",
                 if play.paused { "Resume" } else { "Pause" },
+                ladder,
                 &theme,
                 cx.listener(|view, _: &ClickEvent, _, cx| view.pause(cx)),
             )
@@ -222,6 +225,7 @@ impl Arcade {
                 design::button(
                     "arcade-back",
                     "Games",
+                    ladder,
                     &theme,
                     cx.listener(|view, _: &ClickEvent, window, cx| view.back(window, cx)),
                 )
@@ -236,12 +240,14 @@ impl Arcade {
             .child(div().flex_1())
             .children(pause);
         let body = match play.game.ready() {
-            Some(Game::Tetris(tetris)) => self.tetris(tetris, cx, &theme).into_any_element(),
+            Some(Game::Tetris(tetris)) => {
+                self.tetris(tetris, cx, ladder, &theme).into_any_element()
+            }
             _ => div()
                 .flex_1()
                 .min_h_0()
                 .flex()
-                .child(self.stage(cx, &theme))
+                .child(self.stage(cx, ladder, &theme))
                 .child(self.panel(&theme))
                 .into_any_element(),
         };
@@ -257,7 +263,13 @@ impl Arcade {
     /// Tetris's screen: its score, lines, level and the reader's best
     /// under hold, and on the well the overlay, with the top ten, once the
     /// well's end has flashed.
-    fn tetris(&self, tetris: &Tetris, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
+    fn tetris(
+        &self,
+        tetris: &Tetris,
+        cx: &mut Context<Self>,
+        ladder: &Ladder,
+        theme: &Theme,
+    ) -> Stateful<Div> {
         let play = self.play.as_ref().expect("a game is on screen");
         let mut stats = vec![("Score", design::grouped(tetris.score()))];
         stats.extend(tetris.facts());
@@ -266,7 +278,8 @@ impl Arcade {
             self.stage_room(),
             tetris,
             self.board(cx, theme),
-            self.overlay(cx, theme, true).filter(|_| !tetris.ending()),
+            self.overlay(cx, ladder, theme, true)
+                .filter(|_| !tetris.ending()),
             stats,
             None,
             theme,
@@ -276,7 +289,7 @@ impl Arcade {
 
     /// The board, centred in what the bar and the panel leave, with the
     /// overlay over it while the game is paused or over.
-    fn stage(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
+    fn stage(&self, cx: &mut Context<Self>, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
         let play = self.play.as_ref().expect("a game is on screen");
         let room = self.room();
         let drawn = match play.game.ready() {
@@ -305,7 +318,7 @@ impl Arcade {
             .justify_center()
             .bg(theme.background)
             .child(self.board(cx, theme).child(drawn))
-            .children(self.overlay(cx, theme, false))
+            .children(self.overlay(cx, ladder, theme, false))
     }
 
     /// The board's frame, which takes the keys, and on Minesweeper's field
@@ -354,12 +367,19 @@ impl Arcade {
 
     /// What lies on the board: why there is no game, the pause, or the
     /// end; with `top`, the top ten under it.
-    fn overlay(&self, cx: &mut Context<Self>, theme: &Theme, top: bool) -> Option<Div> {
+    fn overlay(
+        &self,
+        cx: &mut Context<Self>,
+        ladder: &Ladder,
+        theme: &Theme,
+        top: bool,
+    ) -> Option<Div> {
         let theme = *theme;
         let play = self.play.as_ref()?;
         let back = design::button(
             "arcade-leave",
             "Back to games",
+            ladder,
             &theme,
             cx.listener(|view, _: &ClickEvent, window, cx| view.back(window, cx)),
         )
@@ -378,6 +398,7 @@ impl Arcade {
                     design::button(
                         "arcade-again",
                         "Play again",
+                        ladder,
                         &theme,
                         cx.listener(move |view, _: &ClickEvent, window, cx| {
                             view.open(which, window, cx)
@@ -394,6 +415,7 @@ impl Arcade {
                     design::button(
                         "arcade-resume",
                         "Resume",
+                        ladder,
                         &theme,
                         cx.listener(|view, _: &ClickEvent, _, cx| view.pause(cx)),
                     )

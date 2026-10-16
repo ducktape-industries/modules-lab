@@ -104,15 +104,7 @@ fn the_room_is_named_on_the_chain_as_the_app_names_it() {
             0xab, 0x01, 0xff, 0x10, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
             7, 7, 7, 7, 7, 7, 7,
         ],
-        roles: core_abi::Roles {
-            programs: "programs".into(),
-            validators: "valset".into(),
-            identity: "identity".into(),
-            blobs: "blobs".into(),
-            awaits: "awaits".into(),
-            egress: None,
-            halo: "halo".into(),
-        },
+        roles: roles(),
     };
     assert_eq!(
         namespace(&status("garage").chain()),
@@ -120,6 +112,21 @@ fn the_room_is_named_on_the_chain_as_the_app_names_it() {
     );
     // a name that is no chain label stands alone, as `ChainId::of` leaves it
     assert_eq!(status("Lab_1").chain(), "Lab_1");
+}
+
+/// A founding's role table, every row the kernel requires and egress.
+fn roles() -> core_abi::Roles {
+    use core_abi::role::{AWAITS, BLOBS, EGRESS, HALO, IDENTITY, PROGRAMS, VALIDATORS};
+    let rows = [
+        (PROGRAMS, "programs"),
+        (VALIDATORS, "valset"),
+        (IDENTITY, "identity"),
+        (BLOBS, "blobs"),
+        (AWAITS, "awaits"),
+        (EGRESS, "egress"),
+        (HALO, "halo"),
+    ];
+    rows.into_iter().collect()
 }
 
 #[test]
@@ -136,15 +143,7 @@ fn the_status_copy_reads_what_the_nodes_own_type_writes() {
         identity: vec![4; 32],
         contract: noded::wire::NODE_CONTRACT,
         genesis: [5; 32],
-        roles: core_abi::Roles {
-            programs: "programs".into(),
-            validators: "valset".into(),
-            identity: "identity".into(),
-            blobs: "blobs".into(),
-            awaits: "awaits".into(),
-            egress: Some("egress".into()),
-            halo: "halo".into(),
-        },
+        roles: roles(),
     };
     let bytes = borsh::to_vec(&node).unwrap();
     let read: Status = borsh::from_slice(&bytes).expect("the copy reads the node's status");

@@ -11,7 +11,7 @@ use trade::{
     UNIT,
 };
 use view::host::Error;
-use view::methods::{HostSession, Query as Ask, Session, Submit};
+use view::methods::{HostSession, Query as Ask, Session, Submit, Submitted};
 use view::testing::TestAppContext;
 use view::{Entity, MouseMoveEvent, Point, View, px};
 
@@ -110,8 +110,13 @@ pub fn serve(cx: &TestAppContext, world: World) -> Shared {
     let told = world.clone();
     cx.host()
         .handle::<Submit<trade::Trade>>(move |_| match &told.borrow().refusal {
-            Some(message) => Err(Error::new("refused", message.clone())),
-            None => Ok(Vec::new()),
+            // the program's refusal, as the node predicts it
+            Some(message) => Ok(Submitted::Refused {
+                frame: [0; 32],
+                until: 0,
+                refusal: Error::new("refused", message.clone()),
+            }),
+            None => Ok(view::testing::applied(Vec::new())),
         });
     world
 }

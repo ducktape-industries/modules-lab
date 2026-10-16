@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use trade::{ASSETS, LOT, Level, Op, Side, UNIT};
 use view::accesskit::Invalid;
-use view::design::Orientation;
+use view::design::{Ladder, Orientation};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful, wire};
 
@@ -205,7 +205,12 @@ impl Trade {
         self.submit(op, cx);
     }
 
-    pub(crate) fn ticket(&self, cx: &mut Context<Self>, theme: &Theme) -> impl IntoElement + use<> {
+    pub(crate) fn ticket(
+        &self,
+        cx: &mut Context<Self>,
+        ladder: &Ladder,
+        theme: &Theme,
+    ) -> impl IntoElement + use<> {
         let theme = *theme;
         let ticket = &self.ticket;
         let (base, quote) = self.assets();
@@ -253,6 +258,7 @@ impl Trade {
         let kinds = tabs(
             "trade-kind",
             "Order type",
+            ladder,
             &theme,
             usize::from(ticket.market),
             [

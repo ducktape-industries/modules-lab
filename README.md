@@ -14,8 +14,8 @@ it is.
 | `crates/app/browser-view` | a view alone, no program: web pages in tabs on the SDK's `web` piece |
 | `crates/bots/tetris-bot` | a Tetris versus player with an account of its own: a client of the node's live lane, playing the view's own match step |
 
-The SDK is programs at the rev the app pins (`Cargo.toml`'s `sdk-line`,
-programs `pin/app-live` today). The app refuses a view built against another
+The SDK is programs at the live lane's pin (`Cargo.toml`'s `sdk-line`,
+programs `feat/live` today). The app refuses a view built against another
 wire, so the pin moves when the app's does.
 
 ## trade

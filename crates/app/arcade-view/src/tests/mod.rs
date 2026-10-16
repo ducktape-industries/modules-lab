@@ -11,6 +11,7 @@ use abi::role::identity;
 use arcade::{Entry, Op, Query, Reply, state};
 use view::methods::{
     Change, Changes, ClockTicks, HostId, HostSession, HostVisible, Query as Ask, Session, Submit,
+    Submitted,
 };
 use view::prelude::Capability;
 use view::testing::{StreamSender, TestAppContext};
@@ -116,8 +117,13 @@ pub(crate) fn opened(world: World, account: Option<u64>) -> Opened {
     let told = world.clone();
     cx.host()
         .handle::<Submit<arcade::Arcade>>(move |_| match &told.borrow().refusal {
-            Some(message) => Err(view::host::Error::new("refused", message.clone())),
-            None => Ok(Vec::new()),
+            // the program's refusal, as the node predicts it
+            Some(message) => Ok(Submitted::Refused {
+                frame: [0; 32],
+                until: 0,
+                refusal: view::host::Error::new("refused", message.clone()),
+            }),
+            None => Ok(view::testing::applied(Vec::new())),
         });
     let sessions = cx.host().stream::<HostSession>();
     let ticks = cx.host().stream::<ClockTicks>();
