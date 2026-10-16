@@ -12,7 +12,8 @@ it is.
 | `crates/app/arcade` | the high scores of six classic games, and the door to Tetris versus's live room: the program |
 | `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, the boards, and Tetris versus over live tracks |
 | `crates/app/browser-view` | a view alone, no program: web pages in tabs on the SDK's `web` piece |
-| `crates/app/huddle-view` | a view alone, no program: check your camera and microphone, then huddle (alone, for now), on the SDK's `camera` and `microphone` pieces |
+| `crates/app/huddle` | calls between accounts: who is asked in, who joined, and each one's row in the call's live room: the program |
+| `crates/app/huddle-view` | its view: check your camera and microphone, then call people, on the SDK's `camera`, `microphone` and remote pieces; and, built with `notifier`, its notifier: a call ringing you |
 | `crates/bots/tetris-bot` | a Tetris versus player with an account of its own: a client of the node's live lane, playing the view's own match step |
 
 The SDK is programs at the live lane's pin (`Cargo.toml`'s `sdk-line`,
@@ -246,9 +247,26 @@ DUCKTAPE_APP=/path/to/app/target/debug/ducktape-app cargo run -p browser-view --
 runs it in the real app over a fake node; the app must be built with its
 `web` feature (CEF); without it the piece only says the build has no web view.
 
+## huddle
+
+A call is a row under `call/<id>`: its caller, who is asked in (each with
+when their ring started), who joined, who declined, when it started and
+ended. `Op::Start { call, invited }` makes one with the caller joined and
+gives everyone asked in their row in the call's live room (the room is the
+call's id): each publishes only `cam/{account}` and `mic/{account}`, under
+their own number, and hears every track; never a `*` row.
+`Op::Invite` (someone joined) asks more in, or rings again; `Op::Join`
+(someone asked in, the call not over) and `Op::Decline` answer a ring;
+`Op::Leave` stands you up, and the last one out ends the call; `Op::End`
+(the caller) ends it for everyone and takes every row back. A ring lasts
+`RING_SECONDS` (45) by the chain's time; a call with fewer than two joined
+and no ring left is over. `Query::Call { id }` answers one call,
+`Query::Mine { account }` the newest calls an account is in or asked into,
+`Query::Ringing { account }` the ones ringing it now.
+
 ## huddle-view
 
-A view alone, no program: a person checks themselves, then joins a huddle.
+Huddle's view: a person checks themselves, then calls people.
 Its manifest declares `camera` and `microphone` (each gates its piece and
 its device list; the system asks for each apart), `clock` for the room's
 clock and the recording's countdown, and `host` for the title, the float,
@@ -266,8 +284,22 @@ piece, and the host releases the device with it.
 
 The room is your tile (the picture covering it, a green ring while you
 speak, your muted mark) and a bar with the microphone and camera, each with
-its device menu, and Leave; M mutes, V turns the camera off. Calls with
-other people are not connected yet, and the room says so. A refused, busy,
+its device menu, Invite (the people identity lists) and Leave; M mutes, V
+turns the camera off. In a call your camera and microphone publish your
+tracks (muted, the microphone's track stays up: it is your presence), each
+other person is a voice and a tile (their picture while their camera's
+track is up), the speaker takes the main tile, six tiles at most and "+N"
+for the rest, and a network row says when a track does not come through. A
+call ringing you is a card on the check (a whole screen on a phone) with
+Answer and Decline; a `duck://<chain>/huddle/call/<id>` link answers at
+once. A track the node holds (`Waiting`) sends one `Join` each time.
+
+Built with `--features notifier` (`make wasm-notifiers`, packed as
+`ducktape.notify`) it is huddle's notifier instead: it rings each call
+ringing the reader (`NoticeKind::Call`, `until` the ring's end, tagged
+`call/<id>`) and takes the ring down (`notify.seen`) once it is answered,
+declined, ended or run out. What it rang it keeps in the store under
+`rung/<signer>`, so a new run never rings a call twice or one that is over. A refused, busy,
 vanished or missing device says so in a card with what fixes it (Try
 again opens the piece under a new id). A host without camera and microphone
 support does not answer the lists (`unknown_request`), and the view says so
@@ -290,6 +322,7 @@ make test             # fmt, clippy, and each crate's tests: the view on a fake 
 make wasm-programs    # each program for wasm32
 make wasm-describes   # each program's describe module, ABI-checked
 make wasm-views       # each view's wasm, optimized and ABI-checked by modules' own gate
+make wasm-notifiers   # each notifier's wasm (a view built with `notifier`), gated as one
 make shots APP=/path/to/app   # the view's frames, painted by the app's real renderer
 make live QA=/path/to/qa      # the programs in the real app, on a stage of qa's kit ("A view on its own", 3)
 ```

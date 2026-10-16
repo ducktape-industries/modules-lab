@@ -84,6 +84,21 @@ pub(crate) enum Piece {
     Picture,
 }
 
+impl Person {
+    /// Starts or stops the clock of a piece waiting: a piece placed anew
+    /// waits (the host tells a state only when it moves off `Starting`),
+    /// and a picture is drawn only while their camera is up.
+    fn clock(&mut self, now: u64) {
+        let starting = self.voice.status == MediaStatus::Starting
+            || (self.camera && self.picture.status == MediaStatus::Starting);
+        self.starting_since = match (starting, self.starting_since) {
+            (true, None) => Some(now),
+            (true, since) => since,
+            (false, _) => None,
+        };
+    }
+}
+
 impl Call {
     fn new(id: String, watch: Task<()>) -> Self {
         Self {
@@ -434,9 +449,7 @@ impl Huddle {
         }
         if announce.name == huddle::microphone_track(who) {
             match announce.up {
-                true => {
-                    call.people.entry(who).or_default();
-                }
+                true => call.people.entry(who).or_default().clock(self.ticks),
                 false => {
                     call.people.remove(&who);
                 }
@@ -448,7 +461,10 @@ impl Huddle {
         } else if announce.name == huddle::camera_track(who)
             && let Some(person) = call.people.get_mut(&who)
         {
+            // a picture placed anew starts over
             person.camera = announce.up;
+            person.picture = MediaState::default();
+            person.clock(self.ticks);
         }
         cx.notify();
     }
@@ -487,14 +503,7 @@ impl Huddle {
             Piece::Voice => person.voice = state.clone(),
             Piece::Picture => person.picture = state.clone(),
         }
-        // a picture is drawn only while their camera is up
-        let starting = person.voice.status == MediaStatus::Starting
-            || (person.camera && person.picture.status == MediaStatus::Starting);
-        person.starting_since = match (starting, person.starting_since) {
-            (true, None) => Some(now),
-            (true, since) => since,
-            (false, _) => None,
-        };
+        person.clock(now);
         if piece == Piece::Voice
             && was_speaking
             && !state.speaking

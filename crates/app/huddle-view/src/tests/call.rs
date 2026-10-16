@@ -12,7 +12,7 @@ use view::methods::{
     Change, Changes, HostId, HostRoute, HostSession, LiveAnnounce, LiveMode, LiveTrack, LiveTracks,
     Query as Ask, Session, Submit, Watching,
 };
-use view::testing::{StreamSender, TestAppContext};
+use view::testing::{Relay, StreamSender, TestAppContext};
 use view::wire::{MediaState, MediaStatus, Node, RemoteMedia, TrackState};
 
 use super::{hosted, walk};
@@ -58,9 +58,12 @@ fn run(chain: &MockHost, now: u64, who: u64, op: Op) -> Result<(), view::host::E
 /// The view open in the desk's pane, the reader seated, over a chain with
 /// the huddle program and people named Ada and Bo.
 fn line(touch: bool) -> Line {
+    seated(ME, MockHost::default(), Rc::new(Cell::new(1_000)), touch)
+}
+
+/// The view open as account `me`, over `chain` at `now`.
+fn seated(me: u64, chain: MockHost, now: Rc<Cell<u64>>, touch: bool) -> Line {
     let (mut cx, ticks) = hosted();
-    let chain = MockHost::default();
-    let now = Rc::new(Cell::new(1_000));
     let sent = Rc::new(RefCell::new(Vec::new()));
     let (asked, at) = (chain.clone(), now.clone());
     cx.host().handle::<Ask<Calls>>(move |query| {
@@ -70,7 +73,7 @@ fn line(touch: bool) -> Line {
     let (ran, at, log) = (chain.clone(), now.clone(), sent.clone());
     cx.host().handle::<Submit<Calls>>(move |op| {
         log.borrow_mut().push(op.clone());
-        Ok(match run(&ran, at.get(), ME, op) {
+        Ok(match run(&ran, at.get(), me, op) {
             Ok(()) => view::testing::applied(Vec::new()),
             Err(refusal) => view::methods::Submitted::Refused {
                 frame: [0; 32],
@@ -113,7 +116,7 @@ fn line(touch: bool) -> Line {
         connected: true,
         chain_id: "lab-0a1b2c3d".into(),
         signer: "0102".into(),
-        account: Some(ME),
+        account: Some(me),
         endpoint: String::new(),
     });
     cx.run_until_parked();
@@ -134,6 +137,11 @@ impl Line {
         if let Err(refusal) = run(&self.chain, self.now.get(), who, op) {
             panic!("refused: {refusal:?}");
         }
+        self.wrote();
+    }
+
+    /// A block that wrote the calls reaching the view.
+    fn wrote(&mut self) {
         let keys = vec![huddle::state::CALLS.key(&String::new())];
         self.changes.send(Some(Change { height: 2, keys }));
         self.cx.run_until_parked();
@@ -591,4 +599,63 @@ fn on_a_phone_a_ring_is_the_whole_screen() {
     let tracks = line.tracks();
     line.arrives(&tracks, ADA);
     assert_eq!(line.tiles(), ["huddle-tile-2", "huddle-tile-you"]);
+}
+
+/// Each view runs until neither has anything left from the other: what
+/// one frame asks of the relay lands in the other's host.
+fn settle(lines: &mut [&mut Line]) {
+    for _ in 0..4 {
+        for line in lines.iter_mut() {
+            line.cx.run_until_parked();
+        }
+    }
+}
+
+/// Two views in one call over the test relay, each its own account on one
+/// chain: Ada rings me from her room's Invite and I answer; each plays the
+/// other's voice on their tile. Ada leaving ends her track under me and
+/// takes her tile away; I stay in the call alone.
+#[test]
+fn two_views_call_each_other_over_the_relay() {
+    let (chain, now) = (MockHost::default(), Rc::new(Cell::new(1_000)));
+    let mut me = seated(ME, chain.clone(), now.clone(), false);
+    let mut ada = seated(ADA, chain, now, false);
+    let relay = Relay::new();
+    relay.link(&me.cx).link(&ada.cx);
+    // the rows the call's Start writes: each one asked in, never `*`
+    relay.hold(MINTED);
+    for who in [ME, ADA] {
+        relay.grant(MINTED, Some(who), huddle::seat());
+    }
+
+    ada.cx.simulate_click("huddle-join");
+    ada.cx.simulate_click("huddle-invite");
+    ada.cx.run_until_parked();
+    // me, then bo: Ada is not on her own list
+    ada.cx.simulate_click("huddle-menu-0");
+    ada.wrote();
+    me.wrote();
+    let answer = format!("huddle-answer-{MINTED}");
+    assert!(me.cx.has_text("ada is calling"), "{:?}", me.cx.texts());
+    me.cx.simulate_click(&answer);
+    settle(&mut [&mut me, &mut ada]);
+
+    assert_eq!(me.pieces().voices, ["mic/2"]);
+    assert_eq!(ada.pieces().voices, ["mic/1"]);
+    assert!(me.tiles().contains(&"huddle-tile-2".to_owned()));
+    assert!(ada.tiles().contains(&"huddle-tile-1".to_owned()));
+    assert_eq!((me.joins(), ada.joins()), (1, 0), "the rows were up");
+
+    ada.cx.simulate_click("huddle-leave");
+    relay.revoke(MINTED, Some(ADA));
+    settle(&mut [&mut me, &mut ada]);
+    assert_eq!(
+        ada.sent.borrow().last(),
+        Some(&Op::Leave {
+            call: MINTED.into()
+        })
+    );
+    assert!(me.pieces().voices.is_empty(), "her voice ended");
+    assert!(!me.tiles().contains(&"huddle-tile-2".to_owned()));
+    assert!(me.cx.find("huddle-leave").is_some(), "still in the call");
 }

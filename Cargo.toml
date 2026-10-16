@@ -13,27 +13,27 @@ edition = "2024"
 version = "0.1.0"
 
 [workspace.dependencies]
-# ---- sdk-line: programs @ 3465453f (programs `feat/huddle-call-sdk`: the call's pieces and a ring's
-# notice, on dev b0b8852e with the notifiers of `feat/notify-split`; on core dev 8a0151a41 and gpui-pre
-# ef025a32). The app refuses a view built against another wire, so this moves when the app's pin moves.
-view = { git = "https://github.com/ducktape-industries/programs", rev = "3465453ffcd925a414eebeaeecd7e521f73985f9" }
+# ---- sdk-line: programs @ abc45b7e (programs `feat/huddle-call-sdk`, PR #430: the call's pieces and a
+# ring's notice, on dev 38d79ea2 with the notifiers of #418; on core dev 8a0151a41 and gpui-pre ef025a32;
+# WIRE_ID 5da8eae9). The app refuses a view built against another wire, so this moves when the app's pin moves.
+view = { git = "https://github.com/ducktape-industries/programs", rev = "abc45b7ee45d4ab80e822145af9571840336e91e" }
 # What a program is written against: the kernel ABI (a copy of core's, never
 # to drift from it), the program SDK and its mock host, the tables, and the
 # describe module.
-abi = { git = "https://github.com/ducktape-industries/programs", rev = "3465453ffcd925a414eebeaeecd7e521f73985f9" }
-program = { git = "https://github.com/ducktape-industries/programs", rev = "3465453ffcd925a414eebeaeecd7e521f73985f9" }
-store = { git = "https://github.com/ducktape-industries/programs", rev = "3465453ffcd925a414eebeaeecd7e521f73985f9" }
-describe = { git = "https://github.com/ducktape-industries/programs", rev = "3465453ffcd925a414eebeaeecd7e521f73985f9" }
+abi = { git = "https://github.com/ducktape-industries/programs", rev = "abc45b7ee45d4ab80e822145af9571840336e91e" }
+program = { git = "https://github.com/ducktape-industries/programs", rev = "abc45b7ee45d4ab80e822145af9571840336e91e" }
+store = { git = "https://github.com/ducktape-industries/programs", rev = "abc45b7ee45d4ab80e822145af9571840336e91e" }
+describe = { git = "https://github.com/ducktape-industries/programs", rev = "abc45b7ee45d4ab80e822145af9571840336e91e" }
 # The op that gives a key its account: what a live stage's seed sends first
 # (`crates/app/trade/examples/seed.rs`), and the profiles arcade-view reads
 # names from.
-identity = { git = "https://github.com/ducktape-industries/programs", rev = "3465453ffcd925a414eebeaeecd7e521f73985f9" }
+identity = { git = "https://github.com/ducktape-industries/programs", rev = "abc45b7ee45d4ab80e822145af9571840336e91e" }
 # What packs a program with its view and its describe module, as a founding
 # takes it (`crates/app/trade/examples/pack.rs`, which `live/live.sh` runs).
-founding = { git = "https://github.com/ducktape-industries/programs", rev = "3465453ffcd925a414eebeaeecd7e521f73985f9" }
+founding = { git = "https://github.com/ducktape-industries/programs", rev = "abc45b7ee45d4ab80e822145af9571840336e91e" }
 # The chain id a live track's namespace starts with (`ChainId::of`), as the
 # app names it: what tetris-bot names the versus room by.
-ducklink = { git = "https://github.com/ducktape-industries/programs", rev = "3465453ffcd925a414eebeaeecd7e521f73985f9" }
+ducklink = { git = "https://github.com/ducktape-industries/programs", rev = "abc45b7ee45d4ab80e822145af9571840336e91e" }
 # `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
 # the SDK does not re-export.
 # The rev is the one modules names.
@@ -93,4 +93,4 @@ gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", 
 # core's `blob` and with it core's abi: one abi in the graph, the programs
 # copy, as the app patches it.
 [patch."https://github.com/ducktape-industries/ducktape"]
-abi = { git = "https://github.com/ducktape-industries/programs", rev = "3465453ffcd925a414eebeaeecd7e521f73985f9", package = "abi" }
+abi = { git = "https://github.com/ducktape-industries/programs", rev = "abc45b7ee45d4ab80e822145af9571840336e91e", package = "abi" }

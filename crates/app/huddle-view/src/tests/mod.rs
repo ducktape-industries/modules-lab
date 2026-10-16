@@ -360,6 +360,8 @@ fn picking_a_microphone_or_speaker_ends_the_live_loop() {
     let (mut cx, ..) = opened();
     for picker in ["huddle-pick-speaker", "huddle-pick-microphone"] {
         let key = mic_key(&cx);
+        // the piece opens its device anew on a pick: starting, then live
+        cx.simulate_media_state(&key, status(MediaStatus::Starting));
         cx.simulate_media_state(&key, live("Built-in Microphone"));
         cx.simulate_click("huddle-monitor");
         assert!(mic_piece(&cx).unwrap().3, "looping");
