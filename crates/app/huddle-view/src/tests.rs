@@ -9,6 +9,7 @@ use view::methods::{
     Place, Placement,
 };
 use view::testing::{StreamSender, TestAppContext};
+use view::wire::list::UniformListScrollStrategy;
 use view::wire::{ImageObjectFit, MediaState, MediaStatus, MicCommand, Node, Playback};
 
 use crate::{FLOAT, Huddle, RECORD_SECONDS};
@@ -401,6 +402,79 @@ fn the_room_sound_menu_lists_microphones_then_speakers() {
         Some("alsa:headphones")
     );
     assert_eq!(focused(&cx).as_deref(), Some("huddle-mic-menu"));
+}
+
+/// The open menu's list: its lines, and the line it is asked to scroll to
+/// and how.
+fn menu_list(cx: &TestAppContext) -> (usize, Option<(usize, UniformListScrollStrategy)>) {
+    let mut found = None;
+    walk(cx.node("huddle-menu"), &mut |node| {
+        if let Node::UniformList {
+            count,
+            scroll_request,
+            ..
+        } = node
+        {
+            let request = scroll_request
+                .as_ref()
+                .map(|request| (request.index, request.strategy));
+            found = Some((*count, request));
+        }
+    });
+    found.expect("the menu's lines are a uniform list")
+}
+
+/// A sound menu longer than eight lines scrolls: it opens on the picked
+/// microphone, centred, and the arrows keep the active row in sight,
+/// counting the speakers' heading above it.
+#[test]
+fn a_long_menu_keeps_its_active_row_in_sight() {
+    let (mut cx, _) = hosted();
+    cx.host().handle::<MicrophoneDevices>(|()| {
+        let inputs = (0..10)
+            .map(|at| {
+                let id = format!("alsa:mic{at}");
+                audio(&id, &format!("Microphone {at}"), at == 0, AudioKind::Other)
+            })
+            .collect();
+        Ok(AudioDevices {
+            inputs,
+            outputs: vec![
+                audio("alsa:speakers", "Speakers", true, AudioKind::Speaker),
+                audio(
+                    "alsa:headphones",
+                    "Headphones",
+                    false,
+                    AudioKind::Headphones,
+                ),
+            ],
+        })
+    });
+    cx.open::<Huddle>();
+    cx.run_until_parked();
+    cx.simulate_click("huddle-join");
+    cx.run_until_parked();
+    // the lists the menu reads again on open stay out, so the frame that
+    // opens it is the last one, and holds its scroll
+    cx.host().never::<CameraDevices>();
+    cx.host().never::<MicrophoneDevices>();
+    cx.simulate_click("huddle-mic-menu");
+    // two headings, ten microphones, two speakers
+    assert_eq!(
+        menu_list(&cx),
+        (14, Some((1, UniformListScrollStrategy::Center)))
+    );
+    cx.run_until_parked();
+    for _ in 0..10 {
+        cx.simulate_key_down("huddle-menu", "down");
+    }
+    // row 10 is the first speaker, under the second heading
+    assert_eq!(
+        menu_list(&cx).1,
+        Some((12, UniformListScrollStrategy::Nearest))
+    );
+    cx.simulate_key_down("huddle-menu", "enter");
+    assert_eq!(mic_piece(&cx).unwrap().2.as_deref(), Some("alsa:speakers"));
 }
 
 /// Record asks the host once, for five seconds; the host's recording and

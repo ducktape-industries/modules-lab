@@ -8,6 +8,9 @@
 //! goes through the one menu overlay, and both room layouts hold the pieces
 //! under the same room, stage and tile, so a menu or a float moving between
 //! layouts opens no device again.
+use std::ops::Range;
+use std::rc::Rc;
+
 use view::prelude::*;
 use view::{
     Anchor, AnchoredPositionMode, AnyElement, Bounds, Div, Edges, FontWeight, Point, Stateful,
@@ -31,12 +34,17 @@ const ROOM: &str = "huddle-room";
 const JOIN: &str = "huddle-join";
 const MENU: &str = "huddle-menu";
 
+/// A menu longer than this many lines scrolls.
+const MENU_LINES: usize = 8;
+
 /// What the desktop's tree keeps between frames.
 #[derive(Default)]
 pub(crate) struct Desk {
     /// Where layout put each menu's opener, in window pixels: a menu hangs
     /// under its picker, or over the room's caret.
     anchors: Vec<(Which, Bounds<Pixels>)>,
+    /// The open menu's list, scrolled to its active row.
+    menu_scroll: UniformListScrollHandle,
 }
 
 impl Desk {
@@ -81,6 +89,11 @@ fn open(
     cx: &mut Context<Huddle>,
 ) {
     view.open_menu(which, opener, cx);
+    if let Some(menu) = view.menu {
+        // centred, so the pick shows with its neighbours; the arrows keep
+        // Nearest
+        reveal(view, which, menu.cursor, ScrollStrategy::Center);
+    }
     window.focus(MENU);
 }
 
@@ -1621,77 +1634,101 @@ fn split(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme)
 /// The open device menu: one Tab stop whose ↑ ↓ walk the rows, Enter or
 /// Space picks, Escape closes; under its picker on the check, over its
 /// caret in the room.
+/// A line of an open menu: a group's heading (the room's sound menu has
+/// two), or row `index` of its devices. Every line is a row tall, so the
+/// menu is one uniform list.
+#[derive(Clone, Copy)]
+enum Line {
+    Head(Kind),
+    Row(usize),
+}
+
+/// The lines of the menu of `which` over its `rows`: the sound menu heads
+/// each kind's rows.
+fn lines(which: Which, rows: &[Row]) -> Vec<Line> {
+    let mut lines = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        if which == Which::Sound && (index == 0 || rows[index - 1].kind != row.kind) {
+            lines.push(Line::Head(row.kind));
+        }
+        lines.push(Line::Row(index));
+    }
+    lines
+}
+
+/// Row `index` of the menu of `which` scrolled into its list.
+fn reveal(view: &Huddle, which: Which, index: usize, strategy: ScrollStrategy) {
+    let lines = lines(which, &view.rows(which));
+    let line = lines
+        .iter()
+        .position(|line| matches!(line, Line::Row(at) if *at == index));
+    if let Some(line) = line {
+        view.desk.menu_scroll.scroll_to_item(line, strategy);
+    }
+}
+
+/// The arrows on row `index` of the open menu: it is active, and scrolled
+/// to before the frame that claims it.
+fn step(view: &mut Huddle, index: usize, cx: &mut Context<Huddle>) {
+    let Some(menu) = &mut view.menu else {
+        return;
+    };
+    menu.cursor = index;
+    let which = menu.which;
+    reveal(view, which, index, ScrollStrategy::Nearest);
+    cx.notify();
+}
+
+/// A group's heading in the sound menu; the second is ruled off the first.
+fn heading(kind: Kind, first: bool, theme: &Theme) -> AnyElement {
+    div()
+        .h(design::size::ROW)
+        .flex_none()
+        .px(design::space::SM)
+        .flex()
+        .items_center()
+        .when(!first, |head| head.border_t_1().border_color(theme.border))
+        .text_size(design::text::CAPTION)
+        .text_color(theme.muted)
+        .child(words::kind(kind))
+        .into_any_element()
+}
+
 fn menu(view: &Huddle, open: Menu, cx: &mut Context<Huddle>, theme: &Theme) -> AnyElement {
     let theme = *theme;
     let rows = view.rows(open.which);
     let count = rows.len();
     let active = open.cursor.min(count.saturating_sub(1));
-    let mut lines: Vec<AnyElement> = Vec::new();
-    for (index, row) in rows.iter().enumerate() {
-        // the room's sound menu: its two groups, headed
-        if open.which == Which::Sound && (index == 0 || rows[index - 1].kind != row.kind) {
-            if index > 0 {
-                lines.push(
-                    div()
-                        .h(px(1.))
-                        .my(design::space::XXS)
-                        .bg(theme.border)
-                        .into_any_element(),
-                );
-            }
-            lines.push(
-                div()
-                    .px(design::space::SM)
-                    .pt(design::space::XXS)
-                    .h(px(22.))
-                    .flex()
-                    .items_center()
-                    .text_size(design::text::CAPTION)
-                    .text_color(theme.muted)
-                    .child(words::kind(row.kind))
-                    .into_any_element(),
-            );
-        }
-        lines.push(
-            design::item(
-                menu_row(index, row, index == active, cx, &theme),
-                Role::MenuItemRadio,
-                index == active,
-            )
-            .into_any_element(),
-        );
-    }
+    let lines = lines(open.which, &rows);
+    let total = lines.len();
+    let pick = Rc::new(cx.processor(|view: &mut Huddle, index: usize, window, cx| {
+        closed(view.pick(index, cx), window)
+    }));
+    let pressed = pick.clone();
+    let paint = move |range: Range<usize>, _: &mut Window, _: &mut App| {
+        range
+            .map(|at| match lines[at] {
+                Line::Head(kind) => heading(kind, at == 0, &theme),
+                Line::Row(index) => {
+                    let pick = pick.clone();
+                    let click = move |_: &ClickEvent, window: &mut Window, app: &mut App| {
+                        pick(index, window, app)
+                    };
+                    let row = menu_row(index, &rows[index], index == active, click, &theme);
+                    design::item(row, Role::MenuItemRadio, index == active).into_any_element()
+                }
+            })
+            .collect()
+    };
     let escape = cx.listener(|view: &mut Huddle, event: &KeyDownEvent, window, cx| {
         if event.keystroke.key == "escape" && !event.keystroke.modifiers.modified() {
             closed(view.close_menu(cx), window);
         }
     });
-    let body = match count > 8 {
-        // a long list scrolls in eight rows' height
-        true => div()
-            .id("huddle-menu-rows")
-            .h(design::size::ROW * 8.)
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .children(lines),
-        false => div()
-            .id("huddle-menu-rows")
-            .flex()
-            .flex_col()
-            .children(lines),
-    };
     let frame = design::composite(MENU, Role::Menu, words::menu(open.which))
         .active(active, count)
-        .on_move(cx.processor(|view: &mut Huddle, index: usize, _, cx| {
-            if let Some(menu) = &mut view.menu {
-                menu.cursor = index;
-            }
-            cx.notify();
-        }))
-        .on_press(cx.processor(|view: &mut Huddle, index: usize, window, cx| {
-            closed(view.pick(index, cx), window)
-        }))
+        .on_move(cx.processor(|view: &mut Huddle, index: usize, _, cx| step(view, index, cx)))
+        .on_press(move |index, window, app| pressed(index, window, app))
         .build()
         // Escape is the menu's: the overlay around it does not close it again
         .on_key_down(escape)
@@ -1705,7 +1742,12 @@ fn menu(view: &Huddle, open: Menu, cx: &mut Context<Huddle>, theme: &Theme) -> A
         .bg(theme.background)
         .shadow_lg()
         .occlude()
-        .child(body);
+        .child(
+            uniform_list("huddle-menu-rows", total, paint)
+                .track_scroll(&view.desk.menu_scroll)
+                .w_full()
+                .h(design::size::ROW * total.min(MENU_LINES) as f32),
+        );
     // the ring would replace the shadow: the frame draws both
     let frame = design::focus_shown(frame, &theme, |style| style.shadow_lg());
     let (at, side) = place(view, open.which);
@@ -1753,7 +1795,7 @@ fn menu_row(
     index: usize,
     row: &Row,
     active: bool,
-    cx: &mut Context<Huddle>,
+    click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     theme: &Theme,
 ) -> Stateful<Div> {
     let theme = *theme;
@@ -1778,11 +1820,7 @@ fn menu_row(
             false => line
                 .cursor_pointer()
                 .hover(move |style| style.bg(theme.surface_raised))
-                .on_click(
-                    cx.listener(move |view: &mut Huddle, _: &ClickEvent, window, cx| {
-                        closed(view.pick(index, cx), window)
-                    }),
-                ),
+                .on_click(click),
         })
         .child(match row.picked {
             true => design::icon(CHECK, px(14.))
