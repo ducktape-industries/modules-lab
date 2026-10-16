@@ -109,10 +109,11 @@ impl View for Arcade {
 impl Render for Arcade {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.global::<Theme>();
+        let ladder = &design::ladder(window.touch());
         let size = window.viewport_size();
         self.viewport = (size.width.into(), size.height.into());
         let screen = match self.play.is_some() {
-            true => self.play_screen(cx, &theme).into_any_element(),
+            true => self.play_screen(cx, ladder, &theme).into_any_element(),
             false => self.hub(cx, &theme).into_any_element(),
         };
         div()

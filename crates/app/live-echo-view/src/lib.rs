@@ -24,6 +24,7 @@ use live_echo::{LOBBY, LiveEcho, Op};
 use program::code;
 use serde::{Deserialize, Serialize};
 use view::live::{DEFAULT_PRIORITY, Received, Track, subscribe};
+use view::methods::Submitted;
 use view::prelude::*;
 
 /// The name every reader's track starts with; the rest is its account.
@@ -251,10 +252,14 @@ impl Echo {
             room: LOBBY.to_owned(),
         });
         cx.land(submit, |view, answer, cx| {
-            if let Err(refusal) = answer {
-                view.stop(refusal.code);
-                cx.notify();
+            match answer {
+                Ok(Submitted::Applied { .. }) => return,
+                Ok(Submitted::Refused { refusal, .. }) | Err(refusal) => view.stop(refusal.code),
+                // no answer: the asks wait as they do, and the next
+                // `Waiting` sends the op again (it writes the same row)
+                Ok(Submitted::InDoubt { .. }) => view.opened = false,
             }
+            cx.notify();
         })
         .detach();
     }
@@ -286,8 +291,9 @@ fn track(name: &str) -> LiveTrack {
 }
 
 impl Render for Echo {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.global::<Theme>();
+        let ladder = &design::ladder(window.touch());
         let me = self.session.account;
         let status = match &self.lobby {
             Lobby::Away => "Take an account to talk in the lobby.".to_owned(),
@@ -325,6 +331,7 @@ impl Render for Echo {
         let send = design::button(
             "send",
             "Send",
+            ladder,
             &theme,
             cx.listener(|view: &mut Echo, _: &ClickEvent, _, cx| view.say(cx)),
         )

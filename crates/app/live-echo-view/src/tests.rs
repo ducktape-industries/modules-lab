@@ -85,7 +85,8 @@ fn a_lobby_nobody_opened_is_opened_once_and_the_readers_go_in_on_its_block() {
     let relay = Relay::new();
     relay.hold(LOBBY).link(&a).link(&b);
     for (cx, account) in [(&mut a, 1), (&mut b, 2)] {
-        cx.host().handle::<Submit<LiveEcho>>(|_| Ok(Vec::new()));
+        cx.host()
+            .handle::<Submit<LiveEcho>>(|_| Ok(view::testing::applied(Vec::new())));
         cx.open::<Echo>();
         seat(cx, account);
     }
@@ -121,7 +122,8 @@ fn a_grant_taken_back_is_shown_and_opens_nothing() {
     let relay = Relay::new();
     relay.link(&a).link(&b);
     for (cx, account) in [(&mut a, 1), (&mut b, 2)] {
-        cx.host().handle::<Submit<LiveEcho>>(|_| Ok(Vec::new()));
+        cx.host()
+            .handle::<Submit<LiveEcho>>(|_| Ok(view::testing::applied(Vec::new())));
         cx.open::<Echo>();
         seat(cx, account);
     }

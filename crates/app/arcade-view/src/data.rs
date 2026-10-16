@@ -3,6 +3,7 @@
 //! its accounts' names, and the one op it sends, an ended game's score.
 use ::identity::Identity;
 use arcade::{Entry, Op, ask};
+use view::methods::Submitted;
 use view::prelude::*;
 
 use crate::games::Game;
@@ -142,8 +143,15 @@ impl Arcade {
                 cx.land(submit, move |view, result, cx| {
                     if let Some(play) = view.play.as_mut().filter(|play| play.seed == seed) {
                         play.post = match result {
-                            Ok(_) => Post::Posted,
-                            Err(refused) => Post::Refused(refused.message),
+                            Ok(Submitted::Applied { .. }) => Post::Posted,
+                            Ok(Submitted::Refused { refusal, .. }) | Err(refusal) => {
+                                Post::Refused(refusal.message)
+                            }
+                            // a doubt reads as a refusal: the board shows the
+                            // score if it landed
+                            Ok(Submitted::InDoubt { .. }) => Post::Refused(
+                                "no answer came back: it may have gone through".into(),
+                            ),
                         };
                     }
                     view.changed(None, cx);
