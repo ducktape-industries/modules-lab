@@ -201,29 +201,20 @@ pub(super) fn fixes(
     ladder: &Ladder,
     theme: &Theme,
 ) -> Div {
-    let state = view.state(device);
-    let settings = state.status == MediaStatus::Denied && state.opens_settings;
-    let missing = state.status == MediaStatus::NoDevice && view.screen == Screen::Check;
-    let (prefix, page) = match device {
-        Device::Camera => ("huddle-camera", Place::CameraSettings),
-        Device::Microphone => ("huddle-microphone", Place::MicrophoneSettings),
-    };
+    let prefix = look::fixes_id(device);
     let id = |what: &str| format!("{prefix}-{what}");
-    let open_settings = cx
-        .listener(move |_: &mut Huddle, _: &ClickEvent, _, cx| cx.host().notify::<HostShow>(page));
+    let open_settings =
+        cx.listener(move |view: &mut Huddle, _: &ClickEvent, _, cx| view.open_settings(device, cx));
     let try_again = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx));
     let without = cx.listener(move |view: &mut Huddle, _: &ClickEvent, _, cx| {
-        match device {
-            Device::Camera => view.camera_off = true,
-            Device::Microphone => view.muted = true,
-        }
+        view.do_without(device);
         view.enter_room(cx)
     });
     div()
         .flex()
         .flex_wrap()
         .gap(design::space::SM)
-        .when(settings, |row| {
+        .when(view.settings_page(device).is_some(), |row| {
             let open = design::button(
                 id("settings"),
                 words::OPEN_SETTINGS,
@@ -234,7 +225,7 @@ pub(super) fn fixes(
             row.child(open.small())
         })
         .child(design::button(id("retry"), words::TRY_AGAIN, ladder, theme, try_again).small())
-        .when(missing, |row| {
+        .when(view.can_do_without(device), |row| {
             let join = design::button(
                 id("without"),
                 words::join_without(device),

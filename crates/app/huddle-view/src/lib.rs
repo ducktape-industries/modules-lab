@@ -368,6 +368,40 @@ impl Huddle {
         }
     }
 
+    /// The system's page that lets a refused `device` back, where the host
+    /// says its settings can: what Open Settings opens.
+    pub(crate) fn settings_page(&self, device: Device) -> Option<Place> {
+        let state = self.state(device);
+        let helps = state.status == MediaStatus::Denied && state.opens_settings;
+        helps.then_some(match device {
+            Device::Camera => Place::CameraSettings,
+            Device::Microphone => Place::MicrophoneSettings,
+        })
+    }
+
+    /// Open Settings: the system's page for refused `device`, where the
+    /// host can open it.
+    pub(crate) fn open_settings(&self, device: Device, cx: &mut Context<Self>) {
+        if let Some(page) = self.settings_page(device) {
+            cx.host().notify::<HostShow>(page);
+        }
+    }
+
+    /// Whether the person can join without `device`: the host found none,
+    /// and they are on the check (in the room they have joined already).
+    pub(crate) fn can_do_without(&self, device: Device) -> bool {
+        self.state(device).status == MediaStatus::NoDevice && self.screen == Screen::Check
+    }
+
+    /// `device` switched off, to join without it: the camera off, or the
+    /// microphone muted. Each design then joins its own way.
+    pub(crate) fn do_without(&mut self, device: Device) {
+        match device {
+            Device::Camera => self.camera_off = true,
+            Device::Microphone => self.muted = true,
+        }
+    }
+
     pub(crate) fn mic_live(&self) -> bool {
         !self.muted && self.mic_state.status == MediaStatus::Live
     }

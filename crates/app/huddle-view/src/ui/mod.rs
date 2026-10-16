@@ -775,7 +775,6 @@ fn record_button(
 
 // ---------- states ----------
 
-/// The glyph a device's trouble shows.
 /// The card in the middle of the picture: glyph, title, text, what fixes
 /// it. No ground of its own: the picture's box is raised behind it.
 fn state_card(
@@ -821,27 +820,12 @@ fn state_card(
 /// them, Try again, and on the check, for a missing device, joining
 /// without it.
 fn actions(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
-    let state = view.state(device);
-    let camera = device == Device::Camera;
-    let prefix = if camera {
-        "huddle-camera"
-    } else {
-        "huddle-microphone"
-    };
-    let settings = state.status == MediaStatus::Denied && state.opens_settings;
-    let missing = state.status == MediaStatus::NoDevice && view.screen == Screen::Check;
-    let page = match camera {
-        true => Place::CameraSettings,
-        false => Place::MicrophoneSettings,
-    };
-    let open_settings = cx
-        .listener(move |_: &mut Huddle, _: &ClickEvent, _, cx| cx.host().notify::<HostShow>(page));
+    let prefix = look::fixes_id(device);
+    let open_settings =
+        cx.listener(move |view: &mut Huddle, _: &ClickEvent, _, cx| view.open_settings(device, cx));
     let try_again = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx));
     let without = cx.listener(move |view: &mut Huddle, _: &ClickEvent, window, cx| {
-        match camera {
-            true => view.camera_off = true,
-            false => view.muted = true,
-        }
+        view.do_without(device);
         join(view, window, cx)
     });
     let id = |what: &str| format!("{prefix}-{what}");
@@ -851,7 +835,7 @@ fn actions(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Them
         .items_center()
         .justify_center()
         .gap(design::space::SM)
-        .when(settings, |row| {
+        .when(view.settings_page(device).is_some(), |row| {
             let open = design::button(
                 id("settings"),
                 words::OPEN_SETTINGS,
@@ -865,7 +849,7 @@ fn actions(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Them
             design::button(id("retry"), words::TRY_AGAIN, pointer, theme, try_again)
                 .kind(design::Kind::Outline),
         )
-        .when(missing, |row| {
+        .when(view.can_do_without(device), |row| {
             let join = design::button(
                 id("without"),
                 words::join_without(device),

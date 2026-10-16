@@ -7,6 +7,8 @@
 use view::Div;
 use view::prelude::*;
 
+use crate::words::Device;
+
 // the glyphs both trees draw, by the Lucide names `design::icon` draws
 pub(crate) const MIC: &str = "mic";
 pub(crate) const MIC_OFF: &str = "mic-off";
@@ -45,6 +47,15 @@ pub(crate) fn black() -> Hsla {
 /// in either theme.
 pub(crate) fn muted_mark() -> Hsla {
     Theme::dark().danger
+}
+
+/// What the ids of `device`'s fixes begin with, in both designs
+/// (`huddle-camera-retry`, `huddle-microphone-settings`).
+pub(crate) fn fixes_id(device: Device) -> &'static str {
+    match device {
+        Device::Camera => "huddle-camera",
+        Device::Microphone => "huddle-microphone",
+    }
 }
 
 /// The glyph a camera's trouble shows.
