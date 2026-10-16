@@ -334,7 +334,9 @@ impl Huddle {
 
     fn tick(&mut self, cx: &mut Context<Self>) {
         self.ticks += 1;
-        // only what the clock shows is drawn again
+        // drawn again only while something counts seconds: the room (its
+        // bar's clock; the compact tile, which has none, is the tree's
+        // business), a recording's countdown, a camera slow to open
         let starting = !self.camera_off && self.camera_state.status == MediaStatus::Starting;
         if self.screen == Screen::Room || self.recording_since.is_some() || starting {
             cx.notify();

@@ -26,6 +26,12 @@ const COLUMN: f32 = 272.;
 /// Below this the room is one tile with its controls over it.
 const COMPACT: (f32, f32) = (480., 320.);
 
+/// The room's bar, under the stage.
+const BAR: Pixels = px(48.);
+
+/// A field's label over its control: one line of CAPTION.
+const FIELD_LABEL: Pixels = px(15.);
+
 /// The accesskit popup kind a picker and a caret announce.
 const MENU_POPUP: accesskit::HasPopup = accesskit::HasPopup::Menu;
 
@@ -562,8 +568,9 @@ fn picker(
     anchor(which, id, button, cx).w_full()
 }
 
-/// A menu's opener `id` in a sensor: where layout puts it is where the
-/// menu of `which` hangs.
+/// `control` in a sensor named after the menu's opener `id`: where layout
+/// puts it is where the menu of `which` hangs (a picker, or the room's
+/// split around its caret).
 fn anchor(
     which: Which,
     id: &str,
@@ -1145,7 +1152,7 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
     };
     div()
         .id("huddle-bar")
-        .h(px(48.))
+        .h(BAR)
         .flex_none()
         .px(design::space::LG)
         .flex()
@@ -1498,7 +1505,7 @@ fn no_keep_on_top_line(cx: &mut Context<Huddle>) -> Div {
 /// The toggle is danger-filled while off; the microphone's while in trouble
 /// too, its trouble told to assistive technology (the camera's trouble is
 /// its tile's card).
-fn split(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
+fn split(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> view::Sensor {
     let theme = *theme;
     let (id, name, off, alarm, which, caret_id, caret_name) = match device {
         Device::Microphone => (
@@ -1552,7 +1559,7 @@ fn split(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme)
             }),
         )
         .child(design::icon(CARET, px(12.)));
-    div()
+    let split = div()
         .flex()
         .flex_none()
         .h(px(32.))
@@ -1586,14 +1593,12 @@ fn split(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme)
                 ))
                 .child(design::icon(icon, px(16.))),
         )
-        .child(anchor(which, caret_id, caret, cx).h_full())
+        .child(caret);
+    anchor(which, caret_id, split, cx)
 }
 
 // ---------- the device menu ----------
 
-/// The open device menu: one Tab stop whose ↑ ↓ walk the rows, Enter or
-/// Space picks, Escape closes; under its picker on the check, over its
-/// caret in the room.
 /// A line of an open menu: a group's heading (the room's sound menu has
 /// two), or row `index` of its devices. Every line is a row tall, so the
 /// menu is one uniform list.
@@ -1654,6 +1659,9 @@ fn heading(kind: Kind, first: bool, theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
+/// The open device menu: one Tab stop whose ↑ ↓ walk the rows, Enter or
+/// Space picks, Escape closes; under its picker on the check, over its
+/// caret in the room.
 fn menu(view: &Huddle, open: Menu, cx: &mut Context<Huddle>, theme: &Theme) -> AnyElement {
     let theme = *theme;
     let rows = view.rows(open.which);
@@ -1722,29 +1730,30 @@ fn menu(view: &Huddle, open: Menu, cx: &mut Context<Huddle>, theme: &Theme) -> A
 
 /// Where a menu hangs: under its picker's left edge on the check; over its
 /// split's left edge, a little above, in the room. Before layout told the
-/// opener's bounds, the column's own geometry.
+/// opener's bounds, the layout's own geometry: under the column's first
+/// picker, or over the middle of the bar.
 fn place(view: &Huddle, which: Which) -> (Point<Pixels>, Anchor) {
     let (width, height) = view.viewport;
     match (view.screen, view.desk.anchor(which)) {
         (Screen::Check, Some(bounds)) => (bounds.bottom_left(), Anchor::TopLeft),
         (Screen::Room, Some(bounds)) => (
             Point {
-                x: bounds.origin.x - px(37.),
+                x: bounds.origin.x,
                 y: bounds.origin.y - design::space::XS,
             },
             Anchor::BottomLeft,
         ),
         (Screen::Check, None) => (
             Point {
-                x: px(width - f(design::space::BLOCK) - COLUMN),
-                y: design::space::BLOCK + px(47.),
+                x: px(width - COLUMN) - design::space::BLOCK,
+                y: design::space::BLOCK + FIELD_LABEL + design::space::XXS + design::size::CONTROL,
             },
             Anchor::TopLeft,
         ),
         (Screen::Room, None) => (
             Point {
                 x: px(width / 2.),
-                y: px(height - 48.),
+                y: px(height) - BAR,
             },
             Anchor::BottomLeft,
         ),

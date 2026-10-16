@@ -404,6 +404,27 @@ fn the_room_sound_menu_lists_microphones_then_speakers() {
     assert_eq!(focused(&cx).as_deref(), Some("huddle-mic-menu"));
 }
 
+/// In the room a menu hangs over its split's left edge, a little above
+/// it, wherever layout put the split.
+#[test]
+fn a_room_menu_hangs_over_its_split() {
+    let (mut cx, ..) = opened();
+    cx.simulate_click("huddle-join");
+    cx.run_until_parked();
+    cx.simulate_bounds("huddle-mic-menu-at", (500., 400.), (56., 32.));
+    cx.simulate_click("huddle-mic-menu");
+    let mut hung = Vec::new();
+    walk(cx.root(), &mut |node| {
+        if let Node::Anchored {
+            position: Some(at), ..
+        } = node
+        {
+            hung.push(*at);
+        }
+    });
+    assert_eq!(hung, [[500., 394.]]);
+}
+
 /// The open menu's list: its lines, and the line it is asked to scroll to
 /// and how.
 fn menu_list(cx: &TestAppContext) -> (usize, Option<(usize, UniformListScrollStrategy)>) {
