@@ -1,7 +1,8 @@
 //! The market maker: a process off the chain that keeps every market's book
 //! two-sided and its price moving, at a load a live network carries. It
-//! trades as one wallet, through the node's own binary: `NODE submit trade`
-//! with an op's borsh bytes, `NODE query trade` with a query's.
+//! trades as one wallet, through the node's own binary: `NODE submit
+//! --preconfirm trade` with an op's borsh bytes, `NODE query trade` with a
+//! query's.
 //!
 //! `cargo run -p trade --example bot -- NODE HOME WALLET` runs until it is
 //! stopped. HOME is the node's workspace (`DUCKTAPE_HOME`, the wallet's key
@@ -300,11 +301,13 @@ impl Node {
     }
 
     /// Sends `op`: `Err` with the node's words when the program refuses it.
-    /// An applied op's first line says so (`preconfirmed applied <hex>`).
+    /// The node runs it only when asked to preconfirm, and an applied op's
+    /// first line then says so (`preconfirmed applied <hex>`); without it
+    /// every op answers `pooled` and reads as refused.
     fn submit(&self, op: &Op) -> Result<(), String> {
         let payload = borsh::to_vec(op).expect("an op encodes");
-        let said = String::from_utf8(self.run(&["submit", trade::PROGRAM], &payload))
-            .expect("the node's answer is text");
+        let args = ["submit", "--preconfirm", trade::PROGRAM];
+        let said = String::from_utf8(self.run(&args, &payload)).expect("the node's answer is text");
         let first = said.lines().next().unwrap_or_default();
         match first.split_whitespace().any(|word| word == "applied") {
             true => Ok(()),

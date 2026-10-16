@@ -117,7 +117,7 @@ as() {
 }
 # WALLET PROGRAM OP: a refused op is exit 0 too, so the answer is read.
 submit() {
-  answer=$(as "$1" submit "$2" "$OUT/seed/$3")
+  answer=$(as "$1" submit --preconfirm "$2" "$OUT/seed/$3")
   case $answer in
   "preconfirmed applied"*) ;;
   *) die "$1's $3 was not applied: $answer" ;;
