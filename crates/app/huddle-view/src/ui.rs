@@ -650,6 +650,8 @@ fn monitor(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
                     "Hear myself live",
                     view.monitor,
                     view.mic_live(),
+                    // the desktop's sizes: a phone gets a tree of its own
+                    &design::POINTER,
                     theme,
                     cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
                         view.monitor = !view.monitor;
