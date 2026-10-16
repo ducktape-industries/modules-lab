@@ -3474,26 +3474,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
-name = "live-echo"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "describe",
- "program",
-]
-
-[[package]]
-name = "live-echo-view"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "live-echo",
- "program",
- "serde",
- "view",
-]
-
-[[package]]
 name = "live-wire"
 version = "0.1.0"
 source = "git+https://github.com/ducktape-industries/ducktape?rev=8a0151a411c3558453c34bb8272b93dfc428cb74#8a0151a411c3558453c34bb8272b93dfc428cb74"
