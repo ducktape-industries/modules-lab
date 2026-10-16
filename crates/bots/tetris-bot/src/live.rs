@@ -208,6 +208,7 @@ where
         | Control::Published { .. }
         | Control::Subscribed { .. }
         | Control::Subscribers { .. }
+        | Control::Watching { .. }
         | Control::Announce { .. }
         | Control::Ended { .. }
         | Control::Waiting { .. }
@@ -421,6 +422,8 @@ impl Wire {
                     self.heard.retain(|(heard, _), _| *heard != alias);
                 }
             }
+            // the watch is on; the room's tracks up now follow as `Announce`s
+            Control::Watching { .. } => {}
             Control::Announce { track, by, up, .. } if track.namespace == self.namespace => {
                 bot.announced(track.name, by, up)
             }

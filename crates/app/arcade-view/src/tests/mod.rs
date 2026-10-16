@@ -108,7 +108,7 @@ pub(crate) fn opened(world: World, account: Option<u64>) -> Opened {
             identity::Profile {
                 number,
                 name,
-                kind: identity::Kind::Person,
+                kind: identity::Kind::User,
             }
         })))
     });

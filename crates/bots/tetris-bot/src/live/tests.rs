@@ -246,6 +246,8 @@ async fn a_challenge_from_the_room_is_a_match_over_the_wire() {
         },
     )
     .await;
+    // the watch is on, the room empty so far
+    tell(&mut node, Control::Watching { request: room }).await;
 
     // account 9 challenges it
     let theirs = ask_track(9, ME, "abc");
