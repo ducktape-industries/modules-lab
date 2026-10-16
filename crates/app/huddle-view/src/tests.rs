@@ -31,9 +31,9 @@ fn audio(id: &str, name: &str, default: bool, kind: AudioKind) -> AudioDevice {
     }
 }
 
-/// The view on a host listing two cameras, a microphone and two speakers,
-/// in a pane of the desk's default size; its clock.
-fn opened() -> (TestAppContext, Entity<Huddle>, StreamSender<ClockTicks>) {
+/// A host listing two cameras, a microphone and two speakers, a pane of
+/// the desk's default size; its clock.
+fn hosted() -> (TestAppContext, StreamSender<ClockTicks>) {
     let mut cx = TestAppContext::new();
     cx.host().handle::<CameraDevices>(|()| {
         Ok(vec![
@@ -69,6 +69,12 @@ fn opened() -> (TestAppContext, Entity<Huddle>, StreamSender<ClockTicks>) {
     });
     let ticks = cx.host().stream::<ClockTicks>();
     cx.simulate_resize(768., 500.);
+    (cx, ticks)
+}
+
+/// The view open on [`hosted`]'s host.
+fn opened() -> (TestAppContext, Entity<Huddle>, StreamSender<ClockTicks>) {
+    let (mut cx, ticks) = hosted();
     let view = cx.open::<Huddle>();
     cx.run_until_parked();
     (cx, view, ticks)
@@ -787,6 +793,40 @@ fn wayland_floats_with_no_pin_and_says_so_once() {
     assert!(
         !cx.has_text("Wayland: no keep-on-top here."),
         "the next press"
+    );
+}
+
+/// A host that cannot float a pane (a phone) answers none of the float's
+/// requests, `host.placement` refused `unknown_request` at subscribe: Join
+/// keeps the view where it is, asking no float, the room has no pin or
+/// back at any size, and Leave asks no unfloat.
+#[test]
+fn a_host_that_cannot_float_keeps_the_room_in_place() {
+    let (mut cx, _ticks) = hosted();
+    let unknown = view::methods::refusal::UNKNOWN_REQUEST;
+    cx.host().refuse::<HostPlacement>(unknown, "no float here");
+    cx.host().refuse::<HostFloat>(unknown, "no float here");
+    cx.host().refuse::<HostUnfloat>(unknown, "no float here");
+    cx.open::<Huddle>();
+    cx.run_until_parked();
+    cx.simulate_click("huddle-join");
+    cx.run_until_parked();
+    assert!(cx.has_text("00:00 · only you"), "in the room");
+    assert!(
+        cx.host().requests::<HostFloat>().is_empty(),
+        "no float asked"
+    );
+    for size in [(768., 500.), (320., 200.)] {
+        cx.simulate_resize(size.0, size.1);
+        cx.run_until_parked();
+        assert!(cx.find("huddle-pin").is_none(), "{size:?}: no pin");
+        assert!(cx.find("huddle-back").is_none(), "{size:?}: no back");
+    }
+    cx.simulate_click("huddle-leave");
+    assert!(cx.has_text("Join huddle"));
+    assert!(
+        cx.host().requests::<HostUnfloat>().is_empty(),
+        "no unfloat asked"
     );
 }
 

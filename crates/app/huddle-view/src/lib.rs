@@ -13,7 +13,9 @@
 //! it back (`host.unfloat`). Below 480 by 320 the room is one tile with its
 //! controls over it (pin: keep on top or not; back: to the full window);
 //! the layout follows the window's size alone, and only the pin's state and
-//! back read where the pane is (`host.placement`).
+//! back read where the pane is (`host.placement`). A host that cannot float
+//! a pane refuses that subscription `unknown_request`: the room then has no
+//! pin, and Join keeps the view where it is.
 //!
 //! The view never touches a device: it places the SDK's `camera` and
 //! `microphone` pieces, which the host captures, draws and plays, and hears
@@ -154,6 +156,10 @@ pub struct Huddle {
     /// keeps no window on top (Wayland), so there is no pin.
     #[serde(skip)]
     pub(crate) no_keep_on_top: bool,
+    /// The host cannot float a pane (it refused `host.placement`
+    /// `unknown_request`): no pin, and Join stays in place.
+    #[serde(skip)]
+    pub(crate) no_float: bool,
     /// The line that says so, once per float, until closed or the next
     /// press in the float.
     #[serde(skip)]
@@ -194,6 +200,10 @@ impl View for Huddle {
                     cx.notify();
                 }
             }
+            Err(refusal) if unknown(&refusal) => {
+                view.no_float = true;
+                cx.notify();
+            }
             Err(refusal) => cx.log_refused("where the pane is", &refusal),
         })
         .detach();
@@ -201,7 +211,7 @@ impl View for Huddle {
 }
 
 /// Whether the host does not answer that kind of request at all: a host
-/// without camera and microphone.
+/// without camera and microphone, or one that cannot float a pane.
 fn unknown(error: &Error) -> bool {
     error.code == refusal::UNKNOWN_REQUEST
 }
@@ -291,8 +301,9 @@ impl Huddle {
         cx.notify();
     }
 
-    /// Into the room, floated in the same press: the call stays in sight
-    /// above other windows while the person works elsewhere.
+    /// Into the room, floated in the same press where the host floats: the
+    /// call stays in sight above other windows while the person works
+    /// elsewhere.
     pub(crate) fn join(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.screen = Screen::Room;
         self.entered = self.ticks;
@@ -302,7 +313,9 @@ impl Huddle {
         self.camera_since = self.ticks;
         cx.host()
             .notify::<HostTitle>("Huddle \u{b7} just you".into());
-        self.float(true, cx);
+        if !self.no_float {
+            self.float(true, cx);
+        }
         window.focus("huddle-room");
         cx.notify();
     }
@@ -315,7 +328,9 @@ impl Huddle {
         self.camera_since = self.ticks;
         self.no_keep_on_top_line = false;
         cx.host().notify::<HostTitle>("Huddle".into());
-        cx.host().notify::<HostUnfloat>(());
+        if !self.no_float {
+            cx.host().notify::<HostUnfloat>(());
+        }
         window.focus("huddle-join");
         cx.notify();
     }

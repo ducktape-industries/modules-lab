@@ -271,7 +271,10 @@ other people are not connected yet, and the room says so. A refused, busy,
 vanished or missing device says so in a card with what fixes it (Try
 again opens the piece under a new id). A host without camera and microphone
 support does not answer the lists (`unknown_request`), and the view says so
-instead of placing pieces.
+instead of placing pieces. Join floats the room into a small window kept on
+top (`host.float`) and Leave puts it back; a host that cannot float a pane
+refuses `host.placement` the same way, and the room then stays where it is,
+with no pin.
 
 ```sh
 DUCKTAPE_APP=/path/to/app/target/debug/ducktape-app cargo run -p huddle-view --example live

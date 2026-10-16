@@ -1264,7 +1264,7 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
 /// The pin and back after the bar's count, or at the float strip's end:
 /// floating, the pin keeps the window on top or not (none where the host
 /// keeps nothing on top) and back returns it to the full window; on the
-/// desk the pin floats it again.
+/// desk the pin floats it again. Neither where the host cannot float.
 fn pin_back(
     view: &Huddle,
     glassy: bool,
@@ -1273,7 +1273,7 @@ fn pin_back(
 ) -> Vec<Stateful<Div>> {
     let floating = view.placement.floating;
     let on_top = floating && view.placement.on_top;
-    let pin = (!floating || !view.no_keep_on_top).then(|| {
+    let pin = (!view.no_float && (!floating || !view.no_keep_on_top)).then(|| {
         small(
             ("huddle-pin", if on_top { PIN } else { PIN_OFF }),
             if floating {
