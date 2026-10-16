@@ -12,6 +12,7 @@ it is.
 | `crates/app/arcade` | the high scores of six classic games, and the door to Tetris versus's live room: the program |
 | `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, the boards, and Tetris versus over live tracks |
 | `crates/app/browser-view` | a view alone, no program: web pages in tabs on the SDK's `web` piece |
+| `crates/app/huddle-view` | a view alone, no program: check your camera and microphone, then huddle (alone, for now), on the SDK's `camera` and `microphone` pieces |
 | `crates/bots/tetris-bot` | a Tetris versus player with an account of its own: a client of the node's live lane, playing the view's own match step |
 
 The SDK is programs at the live lane's pin (`Cargo.toml`'s `sdk-line`,
@@ -244,6 +245,40 @@ DUCKTAPE_APP=/path/to/app/target/debug/ducktape-app cargo run -p browser-view --
 
 runs it in the real app over a fake node; the app must be built with its
 `web` feature (CEF); without it the piece only says the build has no web view.
+
+## huddle-view
+
+A view alone, no program: a person checks themselves, then joins a huddle.
+Its manifest declares `camera` and `microphone` (each gates its piece and
+its device list; the system asks for each apart), `clock` for the room's
+clock and the recording's countdown, `host` for the title and the log, and
+`link` for the settings page a refused device opens (macOS).
+
+The device check is a big picture of yourself (the SDK's `camera` piece,
+the host's picture, mirrored unless turned off) with the mirror, mute and
+camera toggles over it, and a column: the camera, microphone and speaker
+pickers (each a menu, read again whenever it opens), the microphone's level
+(a meter the host draws, so a level never wakes the view), Test (the host's
+chime on the speaker, `microphone.chime`: apart from the microphone, so it
+works muted), "Record 5 s and play back", "Hear myself live" with the
+headphones warning, and Join. Turning the camera off or muting removes the
+piece, and the host releases the device with it.
+
+The room is your tile (the picture covering it, a green ring while you
+speak, your muted mark) and a bar with the microphone and camera, each with
+its device menu, and Leave; M mutes, V turns the camera off. Calls with
+other people are not connected yet, and the room says so. A refused, busy,
+vanished or missing device says so in a card with what fixes it (Try
+again opens the piece under a new id). A host without camera and microphone
+support refuses both lists `media_unsupported`, and the view says so instead
+of placing pieces.
+
+```sh
+DUCKTAPE_APP=/path/to/app/target/debug/ducktape-app cargo run -p huddle-view --example live
+```
+
+runs it in the real app over a fake node. The app's `av` feature (on by
+default) captures; a build without it says it has no camera or microphone.
 
 ## Loop
 

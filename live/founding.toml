@@ -23,6 +23,12 @@ code = "arcade.wasm"
 name = "browser"
 code = "browser_view.wasm"
 
+# Huddle: a view with no program, which checks the person's camera and
+# microphone (the app's `av` feature captures; without it the view says so).
+[[views]]
+name = "huddle"
+code = "huddle_view.wasm"
+
 # A kit stage meters nothing without limits. These are the ones core's README
 # gives: the program is checked against a host that counts.
 [limits]
