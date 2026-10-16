@@ -4,7 +4,7 @@
 //! open shows over its picture. They draw what the model says; the card's
 //! buttons write through its verbs. What the desktop draws alike (the
 //! glass, the shared glyphs, your face) is `look`'s. The ones marked "SDK
-//! gap" are pieces the kit lacks, drawn here until it has them.
+//! gap" are pieces the kit (#417) lacks, drawn here until it has them.
 use view::design::{Kind as ButtonKind, Ladder};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
@@ -21,7 +21,8 @@ pub(super) const SMARTPHONE: &str = "smartphone";
 const CHIP: Pixels = px(24.);
 const MARK: Pixels = px(12.);
 
-/// A state card's glyph, and how wide its text runs (SPEC §3).
+/// A camera opening says so in the kit's empty state's measures: its
+/// glyph, and how wide its line runs (SPEC §3).
 const CARD_GLYPH: Pixels = px(28.);
 const CARD_TEXT: Pixels = px(280.);
 
@@ -52,7 +53,9 @@ pub(super) fn mic_piece(view: &Huddle, cx: &mut Context<Huddle>) -> view::Microp
         .when_some(view.speaker.clone(), |piece, id| piece.output(id))
 }
 
-// SDK gap: the chip over a picture, swap when feat/phone-kit lands
+// SDK gap: #417's badge holds a label alone, and the chip leads with a
+// mark and trails the mirror's tag; swap when the kit has a chip over a
+// picture
 /// "You" at the picture's top left: the muted mark before it (or, while
 /// `speaking`, the speaking one), "· mirrored" after it while the picture
 /// is (not while the camera is still opening: there is no picture yet).
@@ -107,75 +110,84 @@ pub(super) fn chip(view: &Huddle, speaking: bool, ladder: &Ladder, theme: &Theme
         })
 }
 
-// SDK gap: the state card over a picture, swap when feat/phone-kit lands
-/// The card over the picture (SPEC §3) while the camera is in trouble,
-/// with what fixes it, or still opening (the system asking first): no
-/// ground of its own, the picture's box is raised behind a trouble, and
-/// black under a camera still opening, so that card is white.
+/// The card over the picture (SPEC §3) while the camera is still opening
+/// (the system asking first) or in trouble; none while it is neither.
 pub(super) fn state_card(
     view: &Huddle,
     cx: &mut Context<Huddle>,
     ladder: &Ladder,
     theme: &Theme,
 ) -> Option<Stateful<Div>> {
-    let opening = view.camera_slow();
-    if !opening && !view.troubled(Device::Camera) {
-        return None;
-    }
-    let state = &view.camera_state;
-    let (glyph, title, text) = match opening {
-        true => (VIDEO, words::OPENING_CAMERA, words::ALLOW_CAMERA.to_owned()),
-        false => {
-            let (title, text) = words::phone_trouble(Device::Camera, state);
-            // in the room the person has joined already: no word of joining
-            let text = match (&state.status, view.screen) {
-                (MediaStatus::NoDevice, Screen::Room) => String::new(),
-                _ => text,
-            };
-            (look::trouble_glyph(&state.status), title, text)
-        }
+    let card = match view.camera_slow() {
+        true => opening(ladder),
+        false if view.troubled(Device::Camera) => trouble(view, cx, ladder, theme),
+        false => return None,
     };
-    let (glyph_tone, title_tone, text_tone) = match opening {
-        true => (white(), white(), white()),
-        false => (theme.faint, theme.foreground, theme.muted),
-    };
-    let card = div()
-        .id("huddle-camera-card")
-        .absolute()
-        .inset_0()
+    Some(
+        div()
+            .id("huddle-camera-card")
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(card),
+    )
+}
+
+// SDK gap: #417's empty_state draws on the window's ground, and this card
+// sits white on the black of a picture not drawn yet; swap when the kit
+// has a card over a picture
+/// A camera still opening: its glyph, what is happening and what the
+/// phone is about to ask, white on the black under the picture.
+fn opening(ladder: &Ladder) -> Stateful<Div> {
+    div()
+        .id("huddle-camera-opening")
         .flex()
         .flex_col()
         .items_center()
-        .justify_center()
         .gap(design::space::SM)
         .p(design::space::XL)
         .text_center()
-        .child(design::icon(glyph, CARD_GLYPH).text_color(glyph_tone))
+        .text_color(white())
+        .child(design::icon(VIDEO, CARD_GLYPH))
         .child(
             div()
                 .text_type(ladder.body)
                 .font_weight(FontWeight::MEDIUM)
-                .text_color(title_tone)
-                .child(title),
+                .child(words::OPENING_CAMERA),
         )
-        .when(!text.is_empty(), |card| {
-            card.child(
-                div()
-                    .max_w(CARD_TEXT)
-                    .text_type(ladder.secondary)
-                    .text_color(text_tone)
-                    .when(opening, |text| text.opacity(0.7))
-                    .child(text),
-            )
-        });
-    Some(match opening {
-        true => card,
-        false => card.child(
-            fixes(view, Device::Camera, cx, ladder, theme)
-                .mt(design::space::SM)
-                .justify_center(),
-        ),
-    })
+        .child(
+            div()
+                .max_w(CARD_TEXT)
+                .text_type(ladder.secondary)
+                .opacity(0.7)
+                .child(words::ALLOW_CAMERA),
+        )
+}
+
+/// A camera in trouble: the kit's empty state on the raised ground behind
+/// it (its glyph, title and line), and what fixes it under them. In the
+/// room the person has joined already: a missing camera says no word of
+/// joining.
+fn trouble(
+    view: &Huddle,
+    cx: &mut Context<Huddle>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> Stateful<Div> {
+    let state = &view.camera_state;
+    let (title, text) = words::phone_trouble(Device::Camera, state);
+    let text = match (&state.status, view.screen) {
+        (MediaStatus::NoDevice, Screen::Room) => String::new(),
+        _ => text,
+    };
+    let glyph = look::trouble_glyph(&state.status);
+    design::empty_state("huddle-camera-trouble", glyph, title, text, ladder, theme).child(
+        fixes(view, Device::Camera, cx, ladder, theme)
+            .mt(design::space::SM)
+            .justify_center(),
+    )
 }
 
 /// What fixes `device`'s trouble, in a row that wraps: Open Settings where

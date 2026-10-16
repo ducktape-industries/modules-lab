@@ -727,10 +727,6 @@ fn a_microphone_in_trouble_in_the_room_says_so() {
     let key = mic_key(&cx);
     cx.simulate_media_state(&key, status(MediaStatus::Busy));
     has_all(&cx, &["Another app is using the microphone.", "Try again"]);
-    assert_eq!(
-        cx.interactivity("huddle-mic").aria.description.as_deref(),
-        Some("Another app is using the microphone")
-    );
     cx.simulate_click("huddle-microphone-retry");
     cx.run_until_parked();
     assert_ne!(mic_key(&cx), key, "a new piece");

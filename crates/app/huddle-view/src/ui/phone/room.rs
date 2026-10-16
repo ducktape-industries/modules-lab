@@ -9,7 +9,7 @@
 //! Reads the picks and switches, what the pieces told and the room's
 //! clock. Writes the toggles, the flip, a retry, the sound sheet's opening
 //! and the check (`leave_room`).
-use view::design::Ladder;
+use view::design::{IconButton, Ladder};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
@@ -126,7 +126,8 @@ fn tile(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme)
         .child(solo(ladder))
 }
 
-// SDK gap: the speaking ring, swap when feat/phone-kit lands
+// SDK gap: #417 draws no ring round a tile while its person speaks; swap
+// when the kit has one
 /// The ring round the tile of whoever speaks.
 fn ring(theme: &Theme) -> Div {
     div()
@@ -180,59 +181,34 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme) 
         .child(leave(cx, ladder, theme))
 }
 
-// SDK gap: the room's square bar button, swap when feat/phone-kit lands
-/// A square of the bar: its glyph in a strong hairline, the danger fill
-/// while `off`. The caller makes it press.
-fn square(
-    (id, glyph): (&'static str, &'static str),
-    name: impl Into<SharedString>,
-    off: bool,
-    ladder: &Ladder,
-    theme: &Theme,
-) -> Stateful<Div> {
-    div()
-        .id(id)
-        .size(BAR_BUTTON)
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .map(|button| match off {
-            true => button.bg(theme.danger).text_color(white()),
-            false => button
-                .border_1()
-                .border_color(theme.border_strong)
-                .text_color(theme.foreground),
-        })
-        .role(Role::Button)
-        .aria_label(name)
-        .child(design::icon(glyph, ladder.icon))
+/// A square of the bar (SPEC §2), the kit's glyph button grown to the
+/// thumb's reach: its glyph in a strong hairline, the danger fill while
+/// `off`.
+fn square<F>(button: IconButton<F>, off: bool, theme: &Theme) -> IconButton<F>
+where
+    F: Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+{
+    let button = button.size(BAR_BUTTON);
+    match off {
+        true => button.bg(theme.danger).text_color(white()),
+        false => button.border_1().border_color(theme.border_strong),
+    }
 }
 
-/// The microphone: slashed on the danger fill while muted or in trouble,
-/// its trouble told to assistive technology.
+/// The microphone: slashed on the danger fill while muted or in trouble
+/// (the line over the stage says what the trouble is).
 fn mic_toggle(
     view: &Huddle,
     cx: &mut Context<Huddle>,
     ladder: &Ladder,
     theme: &Theme,
-) -> Stateful<Div> {
-    let troubled = view.troubled(Device::Microphone);
-    let off = view.muted || troubled;
-    let glyph = if off { MIC_OFF } else { MIC };
-    let trouble = troubled.then(|| words::phone_trouble(Device::Microphone, &view.mic_state).0);
-    let button = square(
-        ("huddle-mic", glyph),
-        words::mute(view.muted),
-        off,
-        ladder,
-        theme,
-    );
-    design::pressed(button, ladder)
-        .aria_toggled(view.muted.into())
-        .when_some(trouble, |button, trouble| button.aria_description(trouble))
-        .focusable()
-        .on_click(cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_mute(cx)))
+) -> impl IntoElement {
+    let off = view.muted || view.troubled(Device::Microphone);
+    let glyph = design::icon(if off { MIC_OFF } else { MIC }, ladder.icon);
+    let toggle = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_mute(cx));
+    let name = words::mute(view.muted);
+    let button = design::icon_button("huddle-mic", glyph, name, ladder, theme, toggle);
+    square(button.toggled(view.muted), off, theme)
 }
 
 fn camera_toggle(
@@ -240,51 +216,49 @@ fn camera_toggle(
     cx: &mut Context<Huddle>,
     ladder: &Ladder,
     theme: &Theme,
-) -> Stateful<Div> {
+) -> impl IntoElement {
     let off = view.camera_off;
-    let glyph = if off { VIDEO_OFF } else { VIDEO };
-    let button = square(
-        ("huddle-camera", glyph),
-        words::camera_toggle(off),
-        off,
-        ladder,
-        theme,
-    );
-    design::pressed(button, ladder)
-        .aria_toggled(off.into())
-        .focusable()
-        .on_click(cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_camera(cx)))
+    let glyph = design::icon(if off { VIDEO_OFF } else { VIDEO }, ladder.icon);
+    let toggle = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_camera(cx));
+    let name = words::camera_toggle(off);
+    let button = design::icon_button("huddle-camera", glyph, name, ladder, theme, toggle);
+    square(button.toggled(off), off, theme)
 }
 
 /// The flip to the camera on the other side; standing still while the
 /// camera is off, or where the host lists no camera on the other side.
-fn flip(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
+fn flip(
+    view: &Huddle,
+    cx: &mut Context<Huddle>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> impl IntoElement {
     let other = view.other_camera().map(|camera| camera.facing);
-    let to = other.unwrap_or(Facing::Back);
-    let button = square(("huddle-flip", FLIP), words::flip(to), false, ladder, theme);
-    match other.is_some() && !view.camera_off {
-        true => design::pressed(button, ladder)
-            .focusable()
-            .on_click(cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.flip(cx))),
-        false => button.opacity(0.5).aria_disabled(true),
-    }
+    let glyph = design::icon(FLIP, ladder.icon);
+    let flip = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.flip(cx));
+    let name = words::flip(other.unwrap_or(Facing::Back));
+    let button = design::icon_button("huddle-flip", glyph, name, ladder, theme, flip);
+    square(
+        button.enabled(other.is_some() && !view.camera_off),
+        false,
+        theme,
+    )
 }
 
 /// The Sound route, named with it: it opens the sound sheet.
-fn sound(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
-    let route = view.shown_device(Kind::Speaker);
-    let button = square(
-        ("huddle-sound", SPEAKER),
-        words::sound(&route),
-        false,
-        ladder,
-        theme,
-    );
-    design::pressed(button, ladder)
-        .focusable()
-        .on_click(cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
-            view.open_menu(SOUND, "huddle-sound", cx)
-        }))
+fn sound(
+    view: &Huddle,
+    cx: &mut Context<Huddle>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> impl IntoElement {
+    let glyph = design::icon(SPEAKER, ladder.icon);
+    let open = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
+        view.open_menu(SOUND, "huddle-sound", cx)
+    });
+    let name = words::sound(&view.shown_device(Kind::Speaker));
+    let button = design::icon_button("huddle-sound", glyph, name, ladder, theme, open);
+    square(button, false, theme)
 }
 
 /// Leave: back to the check.

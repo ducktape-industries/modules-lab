@@ -11,7 +11,7 @@
 //! told. Writes the toggles, the flip, the mirror, the live loop, a
 //! recording, the speaker test, a retry, the sound sheet's opening and the
 //! room (`enter_room`: a phone keeps one window, so Join floats nothing).
-use view::design::{Kind as ButtonKind, Ladder, Nav};
+use view::design::{IconButton, Kind as ButtonKind, Ladder, Nav};
 use view::prelude::*;
 use view::{AnyElement, Div, Stateful};
 
@@ -24,8 +24,7 @@ use crate::{Huddle, Kind, RECORD_SECONDS};
 /// Your face while the camera is off (SPEC §1.1).
 const FACE: Pixels = px(56.);
 
-/// A glass button over the picture, and its glyph (SPEC §1.1).
-const GLASS: Pixels = px(44.);
+/// A glyph over the picture (SPEC §1.1).
 const GLASS_GLYPH: Pixels = px(20.);
 
 /// How tall the microphone's level is (SPEC §1.2).
@@ -130,36 +129,22 @@ fn preview(
         )
 }
 
-// SDK gap: the glass button over a picture, swap when feat/phone-kit lands
-/// A button over the picture: the dark glass and a white glyph, the danger
-/// fill while `off`; over no picture (the camera off), the window's ground
-/// in a strong hairline. The caller makes it press.
-fn glass_button(
-    (id, glyph): (&'static str, &'static str),
-    name: &'static str,
-    off: bool,
-    view: &Huddle,
-    theme: &Theme,
-) -> Stateful<Div> {
-    div()
-        .id(id)
-        .size(GLASS)
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .map(|button| match (off, view.camera_off) {
-            (true, _) => button.bg(theme.danger).text_color(white()),
-            (false, false) => button.bg(glass()).text_color(white()),
-            (false, true) => button
-                .bg(theme.background)
-                .border_1()
-                .border_color(theme.border_strong)
-                .text_color(theme.foreground),
-        })
-        .role(Role::Button)
-        .aria_label(name)
-        .child(design::icon(glyph, GLASS_GLYPH))
+/// A glyph button over the picture (SPEC §1.1), the kit's, a finger's
+/// size: on the dark glass with a white glyph, the danger fill while
+/// `off`; over no picture (the camera off), the window's ground in a strong
+/// hairline.
+fn over_picture<F>(button: IconButton<F>, off: bool, view: &Huddle, theme: &Theme) -> IconButton<F>
+where
+    F: Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+{
+    match (off, view.camera_off) {
+        (true, _) => button.bg(theme.danger).text_color(white()),
+        (false, false) => button.bg(glass()).text_color(white()),
+        (false, true) => button
+            .bg(theme.background)
+            .border_1()
+            .border_color(theme.border_strong),
+    }
 }
 
 fn mic_toggle(
@@ -167,20 +152,13 @@ fn mic_toggle(
     cx: &mut Context<Huddle>,
     ladder: &Ladder,
     theme: &Theme,
-) -> Stateful<Div> {
+) -> impl IntoElement {
     let muted = view.muted;
-    let glyph = if muted { MIC_OFF } else { MIC };
-    let button = glass_button(
-        ("huddle-mic", glyph),
-        words::mute_microphone(muted),
-        muted,
-        view,
-        theme,
-    );
-    design::pressed(button, ladder)
-        .aria_toggled(muted.into())
-        .focusable()
-        .on_click(cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_mute(cx)))
+    let glyph = design::icon(if muted { MIC_OFF } else { MIC }, GLASS_GLYPH);
+    let toggle = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_mute(cx));
+    let name = words::mute_microphone(muted);
+    let button = design::icon_button("huddle-mic", glyph, name, ladder, theme, toggle);
+    over_picture(button.toggled(muted), muted, view, theme)
 }
 
 fn camera_toggle(
@@ -188,20 +166,13 @@ fn camera_toggle(
     cx: &mut Context<Huddle>,
     ladder: &Ladder,
     theme: &Theme,
-) -> Stateful<Div> {
+) -> impl IntoElement {
     let off = view.camera_off;
-    let glyph = if off { VIDEO_OFF } else { VIDEO };
-    let button = glass_button(
-        ("huddle-camera", glyph),
-        words::camera_toggle(off),
-        off,
-        view,
-        theme,
-    );
-    design::pressed(button, ladder)
-        .aria_toggled(off.into())
-        .focusable()
-        .on_click(cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_camera(cx)))
+    let glyph = design::icon(if off { VIDEO_OFF } else { VIDEO }, GLASS_GLYPH);
+    let toggle = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.toggle_camera(cx));
+    let name = words::camera_toggle(off);
+    let button = design::icon_button("huddle-camera", glyph, name, ladder, theme, toggle);
+    over_picture(button.toggled(off), off, view, theme)
 }
 
 /// The flip to the camera on the other side, where the host lists a front
@@ -211,21 +182,18 @@ fn flip(
     cx: &mut Context<Huddle>,
     ladder: &Ladder,
     theme: &Theme,
-) -> Option<Stateful<Div>> {
+) -> Option<impl IntoElement + use<>> {
     let other = view.other_camera()?;
-    let button = glass_button(
-        ("huddle-flip", FLIP),
-        words::flip(other.facing),
+    let glyph = design::icon(FLIP, GLASS_GLYPH);
+    let flip = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.flip(cx));
+    let name = words::flip(other.facing);
+    let button = design::icon_button("huddle-flip", glyph, name, ladder, theme, flip);
+    Some(over_picture(
+        button.enabled(!view.camera_off),
         false,
         view,
         theme,
-    );
-    Some(match view.camera_off {
-        true => button.opacity(0.5).aria_disabled(true),
-        false => design::pressed(button, ladder)
-            .focusable()
-            .on_click(cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.flip(cx))),
-    })
+    ))
 }
 
 /// The Sound route (SPEC §1.2): its name over the microphone's level, or
@@ -308,7 +276,8 @@ fn sound(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme
         .children(fixes)
 }
 
-// SDK gap: the meter, swap when feat/phone-kit lands
+// SDK gap: #417 has no level meter for a microphone piece; swap when the
+// kit has one
 /// The microphone's level, which the host draws as a bar in the text's
 /// colour over the track; the track alone while the microphone is muted.
 fn meter(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
