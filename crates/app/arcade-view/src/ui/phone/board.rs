@@ -1,11 +1,12 @@
 //! A game's board (phone boards 11 and 12, SPEC §1.3), pushed over the
 //! hub: the top ten, each with its rank, its account's name and its
-//! score, the reader's own row marked; the reader's best under them when
-//! it is not in the ten; while the board is read, a line saying so; an
-//! empty board's note; a refused read's sentence and Retry.
+//! score, the reader's own row marked; the reader's name and best under
+//! them when it is not in the ten; while the board is read, a line saying
+//! so; an empty board's note; a refused read's sentence and Retry. Each
+//! standing is a row of a table, read as one line.
 //!
-//! Reads the open board, the session and the reader's bests. Writes the
-//! board's closing (Back) and a second read of a refused one.
+//! Reads the open board, the session, and the reader's bests and name.
+//! Writes the board's closing (Back) and a second read of a refused one.
 use view::design::{Ladder, Nav};
 use view::prelude::*;
 use view::{AnyElement, Div, Stateful};
@@ -31,10 +32,7 @@ pub(super) fn screen(
     theme: &Theme,
 ) -> impl IntoElement {
     let name = arcade::GAMES[which];
-    let back = cx.listener(|view: &mut Arcade, _: &ClickEvent, _, cx| {
-        view.close_board();
-        cx.notify();
-    });
+    let back = cx.listener(|view: &mut Arcade, _: &ClickEvent, _, cx| view.close_board(cx));
     design::page("arcade-board", name, Nav::back(DEPTH, back), ladder, theme)
         .caption(words::board_caption(BLURBS[which]))
         .child(
@@ -85,12 +83,15 @@ fn body(
         ],
         Loadable::Ready(rows) | Loadable::Reloading(rows, _) => {
             let reader = view.session.account;
-            let mut drawn = vec![top_ten()];
-            drawn.extend(
-                rows.iter()
-                    .enumerate()
-                    .map(|(rank, row)| ranked(rank, row, reader, ladder, theme).into_any_element()),
-            );
+            let ten = rows.iter().enumerate().map(|(rank, row)| {
+                let own = reader == Some(row.entry.account);
+                standing(Some(rank), &row.name, row.entry.score, own, ladder, theme)
+                    .into_any_element()
+            });
+            let mut drawn = vec![
+                top_ten(),
+                table("arcade-ten", words::TOP_TEN, ten).into_any_element(),
+            ];
             drawn.extend(outside(view, which, rows, ladder, theme));
             drawn
         }
@@ -113,29 +114,9 @@ fn reading(ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
         .child(words::READING_BOARD)
 }
 
-/// Place `rank` of the ten: the reader's own marked.
-fn ranked(
-    rank: usize,
-    row: &Row,
-    reader: Option<u64>,
-    ladder: &Ladder,
-    theme: &Theme,
-) -> Stateful<Div> {
-    let own = reader == Some(row.entry.account);
-    standing(
-        format!("arcade-rank-{rank}"),
-        (rank + 1).to_string(),
-        named(&row.name, own, ladder, theme),
-        row.entry.score,
-        own,
-        ladder,
-        theme,
-    )
-}
-
 /// What follows the ten: with no account, the line that says whose best
-/// would show; with one not in the ten, the reader's best under its own
-/// head. The program gives no rank outside the ten.
+/// would show; with one not in the ten, the reader's name and best under
+/// their own head. The program gives no rank outside the ten.
 fn outside(
     view: &Arcade,
     which: usize,
@@ -156,24 +137,33 @@ fn outside(
         ];
     };
     let in_the_ten = rows.iter().any(|row| row.entry.account == reader);
-    match view.best(which) {
-        Some(best) if best > 0 && !in_the_ten => vec![
-            design::section_head("arcade-you-head", words::YOU, ladder, theme).into_any_element(),
-            standing(
-                "arcade-rank-you",
-                words::NOT_KNOWN.to_owned(),
-                design::row_words(design::row_title(words::YOU, ladder, theme))
-                    .child(design::row_caption(words::NOT_IN_TOP_TEN, ladder, theme)),
-                best,
-                true,
-                ladder,
-                theme,
-            )
-            .min_h(ladder.row_tall)
-            .into_any_element(),
-        ],
-        _ => Vec::new(),
-    }
+    let Some(best) = view.best(which).filter(|best| *best > 0 && !in_the_ten) else {
+        return Vec::new();
+    };
+    // the name still being read, the account's number stands in
+    let name = view
+        .reader_name
+        .ready()
+        .cloned()
+        .unwrap_or_else(|| words::unnamed(reader));
+    let you = standing(None, &name, best, true, ladder, theme);
+    vec![
+        design::section_head("arcade-you-head", words::YOU, ladder, theme).into_any_element(),
+        table("arcade-you", words::YOU, [you.into_any_element()]).into_any_element(),
+    ]
+}
+
+/// Standings, as one table named `name`.
+fn table(
+    id: &'static str,
+    name: &'static str,
+    rows: impl IntoIterator<Item = AnyElement>,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .role(Role::Table)
+        .aria_label(name)
+        .children(rows)
 }
 
 /// A row's name, and on the reader's own the tag that says so.
@@ -201,28 +191,49 @@ fn you(ladder: &Ladder, theme: &Theme) -> Div {
         .child(words::YOU)
 }
 
-/// One standing on the board: its rank, its words and its score; the
-/// reader's own on a raised ground, its rank in ink. A standing presses
-/// nothing.
+/// One standing on the board: its rank (0 is first; none for the reader's
+/// best outside the ten, which the program does not rank, and the row says
+/// so under the name), the account's name and its score; the reader's own
+/// on a raised ground, its rank in ink. A standing presses nothing;
+/// assistive technology reads it as one row: "3, ada, 420", and on the
+/// reader's own ", you" after it.
 fn standing(
-    id: impl Into<ElementId>,
-    rank: String,
-    words: Div,
+    rank: Option<usize>,
+    name: &str,
     score: u64,
     own: bool,
     ladder: &Ladder,
     theme: &Theme,
 ) -> Stateful<Div> {
+    let outside = rank.is_none();
+    // its id, its place as said, and its rank as drawn
+    let (id, place, drawn) = match rank {
+        Some(rank) => (
+            format!("arcade-rank-{rank}"),
+            (rank + 1).to_string(),
+            (rank + 1).to_string(),
+        ),
+        None => (
+            "arcade-rank-you".to_owned(),
+            words::NOT_IN_TOP_TEN.to_owned(),
+            words::NOT_KNOWN.to_owned(),
+        ),
+    };
     let mono = || div().flex_none().font_family(design::fonts::FAMILY_MONO);
     design::row(id, ladder, theme)
+        .when(outside, |row| row.min_h(ladder.row_tall))
         .when(own, |row| row.bg(theme.surface_raised))
+        .role(Role::Row)
+        .aria_label(words::standing(&place, name, score, own))
         .child(
             mono()
                 .w(RANK_W)
                 .text_type(ladder.secondary)
                 .text_color(if own { theme.foreground } else { theme.muted })
-                .child(rank),
+                .child(drawn),
         )
-        .child(words)
+        .child(named(name, own, ladder, theme).when(outside, |column| {
+            column.child(design::row_caption(words::NOT_IN_TOP_TEN, ladder, theme))
+        }))
         .child(mono().text_type(ladder.body).child(design::grouped(score)))
 }

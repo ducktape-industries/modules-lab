@@ -55,6 +55,9 @@ pub struct Arcade {
     /// The reader's best of every game, as the program keeps it.
     #[serde(skip)]
     pub(crate) bests: Loadable<Vec<u64>>,
+    /// What identity calls the reader.
+    #[serde(skip)]
+    pub(crate) reader_name: Loadable<String>,
     /// The board open: the open game's on the desktop, the one the reader
     /// opened on the phone.
     #[serde(skip)]

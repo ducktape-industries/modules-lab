@@ -67,7 +67,7 @@ impl Arcade {
         let Some(play) = self.play.take() else {
             return;
         };
-        self.close_board();
+        self.close_board(cx);
         window.focus(format!("arcade-card-{}", play.which));
         self.settle(cx);
         cx.notify();

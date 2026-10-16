@@ -1,6 +1,6 @@
 //! What the view follows and asks: the session, whether it is on screen,
-//! the program's blocks, the reader's bests, the open board with its
-//! accounts' names, and the one op it sends, an ended game's score.
+//! the program's blocks, the reader's bests and name, the open board with
+//! its accounts' names, and the one op it sends, an ended game's score.
 //!
 //! A board is read without a game being played: the desktop opens the
 //! game's board with the game, for its overlays and its panel, and the
@@ -61,9 +61,10 @@ impl Arcade {
         cx.notify();
         let prev = std::mem::replace(&mut self.session, next);
         if self.session.account != prev.account {
-            // the bests on screen are another account's
+            // the bests and the name on screen are another account's
             self.bests = Loadable::Idle;
             self.read_bests(cx);
+            self.read_reader_name(cx);
         } else if self.session.connected && !prev.connected {
             self.changed(None, cx);
         }
@@ -99,6 +100,19 @@ impl Arcade {
         cx.load(self, bests, |view| &mut view.bests);
     }
 
+    /// What identity calls the reader: the reader's own row on a board
+    /// shows it.
+    fn read_reader_name(&mut self, cx: &mut Context<Self>) {
+        self.reader_name = Loadable::Idle;
+        let Some(account) = self.session.account else {
+            return;
+        };
+        let named = name(&cx.host(), account);
+        cx.load(self, async move { Ok(named.await) }, |view| {
+            &mut view.reader_name
+        });
+    }
+
     /// The reader's best of game `which`, once the bests are read.
     pub(crate) fn best(&self, which: usize) -> Option<u64> {
         self.bests.ready()?.get(which).copied()
@@ -115,8 +129,9 @@ impl Arcade {
     }
 
     /// Closes the board, and drops a read of it still out.
-    pub(crate) fn close_board(&mut self) {
+    pub(crate) fn close_board(&mut self, cx: &mut Context<Self>) {
         self.board = Board::default();
+        cx.notify();
     }
 
     /// The open board's top ten, and the names of their accounts.
@@ -245,8 +260,7 @@ impl Arcade {
 }
 
 /// Game `game`'s best scores, each with its account's name: every name is
-/// asked of identity at once, and an account it does not name is called by
-/// its number.
+/// asked of identity at once.
 async fn board(host: Host, game: u8) -> Result<Vec<Row>, Error> {
     let top = host
         .query(ask::Top {
@@ -254,21 +268,26 @@ async fn board(host: Host, game: u8) -> Result<Vec<Row>, Error> {
             limit: BOARD_ROWS,
         })
         .await?;
-    let names: Vec<_> = top
-        .iter()
-        .map(|entry| {
-            host.ask::<Query<Identity>>(::identity::Query::Profile {
-                number: entry.account,
-            })
-        })
-        .collect();
+    let names: Vec<_> = top.iter().map(|entry| name(&host, entry.account)).collect();
     let mut rows = Vec::with_capacity(top.len());
     for (entry, name) in top.into_iter().zip(names) {
-        let name = match name.await {
-            Ok(::identity::Reply::Profile(Some(profile))) => profile.name,
-            _ => words::unnamed(entry.account),
-        };
-        rows.push(Row { entry, name });
+        rows.push(Row {
+            entry,
+            name: name.await,
+        });
     }
     Ok(rows)
+}
+
+/// What identity calls `account`, asked the moment this is called, so
+/// names asked one after another are all out at once; an account it does
+/// not name, or a refused ask, is called by its number.
+fn name(host: &Host, account: u64) -> impl Future<Output = String> + 'static {
+    let profile = host.ask::<Query<Identity>>(::identity::Query::Profile { number: account });
+    async move {
+        match profile.await {
+            Ok(::identity::Reply::Profile(Some(profile))) => profile.name,
+            _ => words::unnamed(account),
+        }
+    }
 }

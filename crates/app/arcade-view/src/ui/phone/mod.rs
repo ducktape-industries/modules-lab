@@ -42,10 +42,9 @@ pub(crate) fn render(view: &Arcade, cx: &mut Context<Arcade>) -> AnyElement {
         .text_color(theme.foreground)
         .text_type(ladder.body)
         .when(open.is_some(), |root| {
-            root.on_back(cx.listener(|view: &mut Arcade, _: &BackEvent, _, cx| {
-                view.close_board();
-                cx.notify();
-            }))
+            root.on_back(
+                cx.listener(|view: &mut Arcade, _: &BackEvent, _, cx| view.close_board(cx)),
+            )
         })
         .child(screen)
         .into_any_element()

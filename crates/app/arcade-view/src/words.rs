@@ -73,11 +73,24 @@ pub(crate) const NOT_IN_TOP_TEN: &str = "Not in the top ten";
 /// give.
 pub(crate) const NOT_KNOWN: &str = "\u{2014}";
 
+/// A standing on a board, as a screen reader reads its row: its place (a
+/// rank, or that it is outside the ten), the account's name, the score,
+/// and on the reader's own, that it is.
+pub(crate) fn standing(place: &str, name: &str, score: u64, own: bool) -> String {
+    let score = design::grouped(score);
+    match own {
+        true => format!("{place}, {name}, {score}, you"),
+        false => format!("{place}, {name}, {score}"),
+    }
+}
+
 /// A board read with no account seated.
 pub(crate) const OWN_BEST_NEEDS_AN_ACCOUNT: &str = "Your own best shows from an account.";
 
-/// A board no one has posted to, and what fills it.
+/// A board no one has posted to.
 pub(crate) const NO_SCORES: &str = "No scores yet";
+
+/// What puts the first score on game `name`'s empty board.
 pub(crate) fn first_score(name: &str) -> String {
     format!("The first game of {name} played on a computer puts a score here.")
 }

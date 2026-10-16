@@ -2,6 +2,9 @@
 //! and a game's board in each state, and each action, under a finger at
 //! 390 wide. No game is played on a phone: no test here deals one. The
 //! sweep holds every state at 360, 390 and 430.
+use view::Role;
+use view::wire::Node;
+
 use super::*;
 use crate::words;
 
@@ -37,6 +40,24 @@ fn outside_the_ten() -> World {
 fn open_board(cx: &mut TestAppContext, which: usize) {
     cx.simulate_click(&format!("arcade-game-{which}"));
     cx.run_until_parked();
+}
+
+/// Whether `text` is drawn inside node `key`.
+fn shows_in(cx: &TestAppContext, key: &str, text: &str) -> bool {
+    fn inside(node: &Node, text: &str) -> bool {
+        matches!(node, Node::Text(shown) if shown.content == text)
+            || node.children().iter().any(|child| inside(child, text))
+    }
+    inside(cx.node(key), text)
+}
+
+/// What assistive technology reads of node `key`.
+fn read_as(cx: &TestAppContext, key: &str) -> String {
+    cx.interactivity(key)
+        .aria
+        .label
+        .as_ref()
+        .map_or(String::new(), ToString::to_string)
 }
 
 /// The program refuses every read from now on.
@@ -124,21 +145,45 @@ fn a_row_opens_its_board_without_dealing_a_game_and_back_closes_it() {
 fn the_readers_own_row_is_marked_you() {
     let mut opened = phone(World::default(), Some(READER));
     open_board(&mut opened.cx, SNAKE);
-    // the reader is third, under Ada and Bo
-    assert!(opened.cx.find("arcade-rank-2").is_some());
-    shows(&opened.cx, &[words::YOU]);
-    assert!(opened.cx.find("arcade-rank-you").is_none(), "in the ten");
+    let cx = &opened.cx;
+    // the reader is third, under Ada and Bo: the tag is on that row alone
+    assert!(shows_in(cx, "arcade-rank-2", words::YOU));
+    assert!(!shows_in(cx, "arcade-rank-0", words::YOU));
+    assert!(!shows_in(cx, "arcade-rank-1", words::YOU));
+    assert!(cx.find("arcade-rank-you").is_none(), "in the ten");
+}
+
+/// Each standing is a row of a table, read as one line.
+#[test]
+fn a_standing_reads_as_one_row_of_the_ten() {
+    let mut opened = phone(World::default(), Some(READER));
+    open_board(&mut opened.cx, SNAKE);
+    let cx = &opened.cx;
+    assert_eq!(cx.interactivity("arcade-ten").role, Some(Role::Table));
+    assert_eq!(cx.interactivity("arcade-rank-0").role, Some(Role::Row));
+    assert_eq!(read_as(cx, "arcade-rank-0"), "1, ada, 420");
+    assert_eq!(read_as(cx, "arcade-rank-1"), "2, account 2, 300");
+    assert_eq!(read_as(cx, "arcade-rank-2"), "3, reader, 120, you");
 }
 
 #[test]
-fn outside_the_ten_the_readers_best_shows_under_you_with_no_rank() {
+fn outside_the_ten_the_readers_name_and_best_show_under_you_with_no_rank() {
     let mut opened = phone(outside_the_ten(), Some(READER));
     open_board(&mut opened.cx, SNAKE);
-    assert!(opened.cx.find("arcade-rank-9").is_some());
-    assert!(opened.cx.find("arcade-rank-you").is_some());
-    shows(
-        &opened.cx,
-        &[words::NOT_IN_TOP_TEN, words::NOT_KNOWN, "120"],
+    let cx = &opened.cx;
+    assert!(cx.find("arcade-rank-9").is_some());
+    for shown in [
+        "reader",
+        words::YOU,
+        words::NOT_IN_TOP_TEN,
+        words::NOT_KNOWN,
+        "120",
+    ] {
+        assert!(shows_in(cx, "arcade-rank-you", shown), "{shown}");
+    }
+    assert_eq!(
+        read_as(cx, "arcade-rank-you"),
+        "Not in the top ten, reader, 120, you"
     );
 }
 
@@ -201,6 +246,10 @@ fn refused_bests_leave_the_rows_bare_and_retry_reads_them_again() {
     opened.cx.run_until_parked();
     assert!(opened.cx.find("arcade-bests-refused").is_some());
     assert!(!opened.cx.has_text("Your best 120"));
+    assert!(
+        !opened.cx.has_text(words::NOT_KNOWN),
+        "a refused best is not one to come"
+    );
     answer_reads(&opened.cx, &opened.world);
     opened.cx.simulate_click("arcade-bests-retry");
     opened.cx.run_until_parked();
