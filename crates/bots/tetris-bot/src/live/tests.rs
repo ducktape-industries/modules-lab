@@ -1,6 +1,6 @@
 //! The client against a fake node on the other end of an in-process
 //! websocket: the node's half of the handshake checks the proof as the
-//! node does (`KeyScheme::verify`), then speaks the room and a match.
+//! node does (`keyscheme::KeyScheme::verify`), then speaks the room and a match.
 use arcade_view::tetris::Attack;
 use arcade_view::versus::{Said, Word, ask_track};
 use commonware_codec::DecodeExt as _;
@@ -67,14 +67,14 @@ async fn welcome(node: &mut Socket) {
     let Control::Hello(hello) = control(node).await else {
         panic!("a hello first");
     };
-    assert_eq!((hello.chain, hello.scheme), (CHAIN, KeyScheme::Ed25519));
+    assert_eq!((hello.chain, hello.scheme), (CHAIN, Scheme::Ed25519));
     let nonce = [9; 32];
     tell(node, Control::Challenge(Challenge { nonce })).await;
     let Control::Proof(proof) = control(node).await else {
         panic!("a proof");
     };
     let preimage = live_wire::proof_preimage(&CHAIN, &NODE, &nonce, &hello.key);
-    assert!(KeyScheme::Ed25519.verify(
+    assert!(keyscheme::KeyScheme::Ed25519.verify(
         &hello.key,
         live_wire::NAMESPACE,
         &preimage,

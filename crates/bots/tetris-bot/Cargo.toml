@@ -15,13 +15,12 @@ arcade.workspace = true
 # the chain's id, as the app names a track's chain
 ducklink.workspace = true
 borsh.workspace = true
-# the live wire and the key scheme of core `dev` 18477333b, the rev
-# programs 18f6cd00 pins
-live-wire = { git = "https://github.com/ducktape-industries/ducktape", rev = "18477333b668df1bd36699eef05ecc131522aa1a" }
-keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "18477333b668df1bd36699eef05ecc131522aa1a" }
+# the live wire of core `dev` 8a0151a41, the rev programs 742d4f70 pins:
+# a hello names its key's scheme, and verifying is the node's
+live-wire = { git = "https://github.com/ducktape-industries/ducktape", rev = "8a0151a411c3558453c34bb8272b93dfc428cb74" }
 # `/v1/status` decodes into the node's own types (the workspace patches
 # core's abi to the programs copy, so it is that one)
-core-abi = { package = "abi", git = "https://github.com/ducktape-industries/ducktape", rev = "18477333b668df1bd36699eef05ecc131522aa1a" }
+core-abi = { package = "abi", git = "https://github.com/ducktape-industries/ducktape", rev = "8a0151a411c3558453c34bb8272b93dfc428cb74" }
 # the device key, signed with as the app signs
 commonware-cryptography = "2026.9.0"
 commonware-codec = "2026.9.0"
@@ -32,6 +31,7 @@ tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 
 [dev-dependencies]
 # the node's own `Status`, which the copy in `live.rs` must decode
-noded = { git = "https://github.com/ducktape-industries/ducktape", rev = "18477333b668df1bd36699eef05ecc131522aa1a" }
-keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "18477333b668df1bd36699eef05ecc131522aa1a", features = ["testkit"] }
+noded = { git = "https://github.com/ducktape-industries/ducktape", rev = "8a0151a411c3558453c34bb8272b93dfc428cb74" }
+# the node's check of the handshake's proof, which the fake node runs
+keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "8a0151a411c3558453c34bb8272b93dfc428cb74", features = ["testkit"] }
 tokio = { version = "1", features = ["test-util"] }
