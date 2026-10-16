@@ -4,12 +4,12 @@
 //! can see: a price off the market's tick, an amount off the lot, an order
 //! the free funds do not cover. A reader with no account, or no link,
 //! reads the ticket and places nothing.
-use ducktape_view_guest::accesskit::Invalid;
-use ducktape_view_guest::design::Orientation;
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Div, FontWeight, Stateful, wire};
 use serde::{Deserialize, Serialize};
 use trade::{ASSETS, LOT, Level, Op, Side, UNIT};
+use view::accesskit::Invalid;
+use view::design::{Ladder, Orientation};
+use view::prelude::*;
+use view::{Div, FontWeight, Stateful, wire};
 
 use crate::chart::sided;
 use crate::{Trade, format, tabs};
@@ -205,7 +205,12 @@ impl Trade {
         self.submit(op, cx);
     }
 
-    pub(crate) fn ticket(&self, cx: &mut Context<Self>, theme: &Theme) -> impl IntoElement + use<> {
+    pub(crate) fn ticket(
+        &self,
+        cx: &mut Context<Self>,
+        ladder: &Ladder,
+        theme: &Theme,
+    ) -> impl IntoElement + use<> {
         let theme = *theme;
         let ticket = &self.ticket;
         let (base, quote) = self.assets();
@@ -253,6 +258,7 @@ impl Trade {
         let kinds = tabs(
             "trade-kind",
             "Order type",
+            ladder,
             &theme,
             usize::from(ticket.market),
             [

@@ -17,14 +17,12 @@ mod ticket;
 
 use std::rc::Rc;
 
-use ducktape_view_guest::design::Orientation;
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{
-    Anchor, AnchoredPositionMode, Div, Edges, FontWeight, Paged, Point, Stateful,
-};
 use gpui::relative;
 use serde::{Deserialize, Serialize};
 use trade::{ASSETS, Balance, Book, Fill, MARKETS, Order, SPANS, Stats, Traded};
+use view::design::{Ladder, Orientation};
+use view::prelude::*;
+use view::{Anchor, AnchoredPositionMode, Div, Edges, FontWeight, Paged, Point, Stateful};
 
 use chart::Chart;
 use ticket::Ticket;
@@ -149,8 +147,8 @@ impl View for Trade {
         "Spot markets for practice funds: the chart, the book, your orders and balances.";
     const ICON: &'static str = "icons/chart-candlestick.svg";
     const CAPABILITIES: &'static [Capability] =
-        &[Capability::Module, Capability::Op, Capability::Host];
-    const TARGETS: &'static [&'static str] = &[trade::MODULE];
+        &[Capability::Program, Capability::Op, Capability::Host];
+    const TARGETS: &'static [&'static str] = &[trade::PROGRAM];
     // The pane layout's 256 px column, and beside it the 480 px a chart
     // needs for its tools and the panel for an order's columns.
     const MIN_WINDOW_WIDTH: u32 = 736;
@@ -271,6 +269,7 @@ impl Trade {
 impl Render for Trade {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.global::<Theme>();
+        let ladder = &design::ladder(window.touch());
         // the pane's size, as the host lays the frame out: the layout is
         // chosen from it before the frame that shows it
         let size = window.viewport_size();
@@ -290,9 +289,9 @@ impl Render for Trade {
             .min_w_0()
             .flex()
             .flex_col()
-            .child(self.tools(wide, cx, &theme))
+            .child(self.tools(wide, cx, ladder, &theme))
             .child(self.chart(cx, &theme))
-            .child(self.panel(wide, cx, &theme));
+            .child(self.panel(wide, cx, ladder, &theme));
         let columns = div().flex_1().min_h_0().flex().child(charted);
         let bar = self.bar(wide, cx, &theme);
         let columns = match wide {
@@ -305,10 +304,10 @@ impl Render for Trade {
                 .child(
                     column()
                         .w(TICKET_W)
-                        .child(self.ticket(cx, &theme))
+                        .child(self.ticket(cx, ladder, &theme))
                         .child(self.tape(true, &theme)),
                 ),
-            false => columns.child(column().w(COLUMN_W).child(self.column(cx, &theme))),
+            false => columns.child(column().w(COLUMN_W).child(self.column(cx, ladder, &theme))),
         };
         div()
             .id("trade")
@@ -530,10 +529,17 @@ impl Trade {
 
     /// The tools over the chart: the candle span, and what the chart
     /// draws. The pane folds the second into one menu.
-    fn tools(&self, wide: bool, cx: &mut Context<Self>, theme: &Theme) -> impl IntoElement + use<> {
+    fn tools(
+        &self,
+        wide: bool,
+        cx: &mut Context<Self>,
+        ladder: &Ladder,
+        theme: &Theme,
+    ) -> impl IntoElement + use<> {
         let spans = design::segmented(
             "trade-spans",
             "Candle span",
+            ladder,
             theme,
             Some(self.chart.span),
             SPANS
@@ -571,6 +577,7 @@ impl Trade {
         let style = design::segmented(
             "trade-style",
             "Chart style",
+            ladder,
             theme,
             Some(usize::from(chart.line)),
             [
@@ -619,7 +626,12 @@ impl Trade {
     }
 
     /// The pane layout's column: the ticket, the book or the tape, by tab.
-    fn column(&self, cx: &mut Context<Self>, theme: &Theme) -> impl IntoElement + use<> {
+    fn column(
+        &self,
+        cx: &mut Context<Self>,
+        ladder: &Ladder,
+        theme: &Theme,
+    ) -> impl IntoElement + use<> {
         const TABS: [(Column, &str, &str); 3] = [
             (Column::Order, "trade-tab-order", "Order"),
             (Column::Book, "trade-tab-book", "Book"),
@@ -629,6 +641,7 @@ impl Trade {
         let bar = tabs(
             "trade-column-tabs",
             "Order, book or trades",
+            ladder,
             theme,
             picked.unwrap_or_default(),
             TABS.map(|(_, id, name)| (id.into(), name.into(), None)),
@@ -646,7 +659,7 @@ impl Trade {
             .border_color(theme.border)
             .child(bar);
         let body = match self.column {
-            Column::Order => self.ticket(cx, theme).into_any_element(),
+            Column::Order => self.ticket(cx, ladder, theme).into_any_element(),
             Column::Book => {
                 let height = self.viewport.1 - f32::from(BAR_PANE_H + TABS_H);
                 self.book(height, cx, theme).into_any_element()
@@ -821,6 +834,7 @@ fn hung(frame: impl IntoElement, right: bool, drop: Pixels) -> AnyElement {
 pub(crate) fn tabs(
     id: &'static str,
     label: &'static str,
+    ladder: &Ladder,
     theme: &Theme,
     picked: usize,
     names: impl IntoIterator<Item = (ElementId, SharedString, Option<usize>)>,
@@ -837,7 +851,7 @@ pub(crate) fn tabs(
             let pick = on_pick.clone();
             let click =
                 move |_: &ClickEvent, window: &mut Window, app: &mut App| pick(index, window, app);
-            let tab = design::tab(id, name, index == picked, theme, click)
+            let tab = design::tab(id, name, index == picked, ladder, theme, click)
                 .h_full()
                 .px_0()
                 .gap(px(5.))

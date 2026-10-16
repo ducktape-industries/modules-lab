@@ -4,13 +4,13 @@
 //! sign the env of their op.
 use std::collections::BTreeMap;
 
-use guest::{Env, Error, MockHost, Module, QueryCtx, code};
+use ::program::{Env, Error, MockHost, Program, QueryCtx, code};
 use store::PageRequest;
 
 use crate::state::{BALANCES, BOOK, Funds, OPEN, ORDERS, newest_first, rank};
 use crate::{
     ASSETS, Balance, Bar, Book, Candle, Fill, History, LOT, Level, MARKETS, MAX_BARS, MAX_CANCELS,
-    MAX_FILLS, MAX_ROWS, MODULE, Op, Order, OrderState, Query, Reply, SPANS, Side, Stats, Trade,
+    MAX_FILLS, MAX_ROWS, Op, Order, OrderState, PROGRAM, Query, Reply, SPANS, Side, Stats, Trade,
     Traded, UNIT, describe,
 };
 
@@ -81,7 +81,7 @@ impl Desk {
         Env {
             height: self.height,
             time: self.time,
-            ..MockHost::env(MODULE)
+            ..MockHost::env(PROGRAM)
         }
     }
 
@@ -332,7 +332,7 @@ fn a_crossing_limit_order_trades_at_the_makers_price() {
         (bought.state, bought.filled, bought.quote),
         (OrderState::Open, lots(5_000), usd(50))
     );
-    assert_eq!(desk.open(ADA), []);
+    assert_eq!(desk.open(ADA), Vec::<u64>::new());
     assert_eq!(desk.open(BO), [bid]);
     let book = Book {
         bids: vec![level(usd(110), lots(3_000))],
@@ -422,7 +422,7 @@ fn a_market_buy_spends_only_what_the_account_has() {
     );
     assert_eq!(desk.funds(ADA, USD), (usd(2), 0));
     assert_eq!(desk.funds(ADA, BTC), (lots(26_666), 0));
-    assert_eq!(desk.open(ADA), []);
+    assert_eq!(desk.open(ADA), Vec::<u64>::new());
     assert_eq!(desk.book().asks, [level(usd(30_000), lots(3_334))]);
 
     // with two dollars she buys nothing at 30,000, and is told so
@@ -556,7 +556,7 @@ fn an_order_stops_at_max_fills_makers_and_never_leaves_the_book_crossed() {
         asks: vec![level(usd(100), lots(2))],
     };
     assert_eq!(desk.book(), book);
-    assert_eq!(desk.open(BO), []);
+    assert_eq!(desk.open(BO), Vec::<u64>::new());
     assert_eq!(desk.funds(BO, BTC), (UNIT + lots(makers), 0));
     assert_eq!(desk.funds(BO, USD).1, 0, "nothing of it is held");
     assert_eq!(desk.tape().len(), MAX_FILLS);
@@ -676,7 +676,7 @@ fn cancel_all_cancels_the_senders_open_orders_max_cancels_an_op() {
     desk.place(ADA, eth);
     let other = desk.place(BO, limit(Side::Buy, lots(100), usd(91)));
     desk.ok(ADA, Op::CancelAll);
-    assert_eq!(desk.open(ADA), []);
+    assert_eq!(desk.open(ADA), Vec::<u64>::new());
     assert_eq!(desk.open(BO), [other]);
     for (asset, granted) in (0u8..).zip(&ASSETS) {
         assert_eq!(
@@ -1008,7 +1008,10 @@ fn orders_page_newest_first_all_of_them_or_the_open_ones() {
     let (ids, last) = desk.orders(ADA, true, PageRequest::resume(open, 2));
     assert_eq!((ids, last), (vec![2, 1], None));
     assert_eq!(desk.orders(BO, false, PageRequest::default()).0, [6]);
-    assert_eq!(desk.orders(CY, true, PageRequest::default()).0, []);
+    assert_eq!(
+        desk.orders(CY, true, PageRequest::default()).0,
+        Vec::<u64>::new()
+    );
 
     // a cursor resumes the listing it came from, no other
     let question = Query::Orders {

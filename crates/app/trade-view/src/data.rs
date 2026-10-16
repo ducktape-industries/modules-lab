@@ -4,11 +4,12 @@
 //! declares them.
 use std::rc::Rc;
 
-use ducktape_view_guest::Paged;
-use ducktape_view_guest::host::Page;
-use ducktape_view_guest::prelude::*;
 use store::PageRequest;
 use trade::{MAX_ROWS, Op, Order, ask};
+use view::Paged;
+use view::host::Page;
+use view::methods::Submitted;
+use view::prelude::*;
 
 use crate::Trade;
 use crate::chart::Candles;
@@ -279,8 +280,16 @@ impl Trade {
                 view.ticket.placing = false;
             }
             match result {
-                Ok(_) => view.refresh(cx),
-                Err(refused) => *refusal(view) = refused.message,
+                Ok(Submitted::Applied { .. }) => view.refresh(cx),
+                Ok(Submitted::Refused {
+                    refusal: refused, ..
+                })
+                | Err(refused) => *refusal(view) = refused.message,
+                // a doubt reads as a refusal the person may retry: the
+                // changes the op wrote, if it landed, refresh the panel
+                Ok(Submitted::InDoubt { .. }) => {
+                    *refusal(view) = "No answer came back: it may have gone through.".into()
+                }
             }
         })
         .detach();

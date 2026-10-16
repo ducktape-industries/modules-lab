@@ -1,19 +1,20 @@
-//! The `arcade` module: the shared high scores of six classic games. The
+//! The `arcade` program: the shared high scores of six classic games. The
 //! games themselves run in the view and never touch the chain; an account
 //! posts the score a game ended on, and the program keeps each account's
 //! best of each game and ranks them. Nothing checks a score: the client
-//! says it, so a board is practice, not proof. The layout, in reading
-//! order:
+//! says it, so a board is practice, not proof. Tetris versus is played
+//! over the node's live tracks, off the chain: the program only opens its
+//! room ([`Op::OpenVersus`]). The layout, in reading order:
 //!
 //! - `lib.rs` (here): the games, the types on the wire, all borsh, and
 //!   [`describe()`]
 //! - `state.rs`: the tables
 //! - `program.rs`: [`Arcade`], the program (its name and types, which a view
-//!   names it by) and the module: one match over every op and one over
+//!   names it by) and its dispatch: one match over every op and one over
 //!   every query
 //! - `rules.rs`: what the op checks and writes
 //! - `queries.rs`: one function per question
-//! - `tests.rs`: the module natively over `guest::MockHost`
+//! - `tests.rs`: the program natively over `::program::MockHost`
 mod program;
 mod queries;
 mod rules;
@@ -25,7 +26,7 @@ pub use program::Arcade;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-pub const MODULE: &str = "arcade";
+pub const PROGRAM: &str = "arcade";
 
 /// A game is named on the wire by its place here.
 pub const GAMES: [&str; 6] = [
@@ -37,8 +38,23 @@ pub const GAMES: [&str; 6] = [
     "Invaders",
 ];
 
-/// The most rows one [`Query::Top`] answers.
-pub const MAX_TOP: u32 = 50;
+/// The live room Tetris versus is played in: the view's tracks there pass
+/// through the node, never the chain.
+pub const VERSUS: &str = "versus";
+
+/// The [`VERSUS`] room's one row, every account's ([`Op::OpenVersus`]):
+/// anyone may subscribe to any track, and publish only the tracks named by
+/// its own number, so no one plays as another.
+pub fn versus_room() -> ::program::live::Grant {
+    ::program::live::Grant {
+        publish: vec![
+            "wait/{account}".into(),
+            "ask/{account}/*".into(),
+            "board/{account}/*".into(),
+        ],
+        subscribe: vec!["*".into()],
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum Op {
@@ -46,6 +62,11 @@ pub enum Op {
     /// best of that game when it is higher; a score at or under the best
     /// changes nothing.
     Score { game: u8, score: u64 },
+    /// Opens the [`VERSUS`] room to every account on the chain: anyone may
+    /// subscribe to any track in it and publish the tracks named by its own
+    /// number. The row it writes is the same each time, so sending it again
+    /// changes nothing.
+    OpenVersus,
 }
 
 /// A read. Each variant names the reply that answers it, so a view asks it
@@ -55,8 +76,7 @@ pub enum Op {
 #[ask(Arcade)]
 pub enum Query {
     /// A game's best scores, highest first, one an account; at one score
-    /// the smaller account first. At least one row is asked for and at
-    /// most [`MAX_TOP`].
+    /// the smaller account first: `limit` rows, one at least.
     #[ask(Reply::Top(Vec<Entry>))]
     #[reads(state::BOARD)]
     Top { game: u8, limit: u32 },
@@ -98,6 +118,7 @@ pub fn describe(op: &Op) -> describe::Description {
                 ],
             )
         }
+        Op::OpenVersus => ("Open Tetris versus to everyone".to_owned(), Vec::new()),
     };
     describe::Description { title, fields }
 }
@@ -108,5 +129,5 @@ describe::export!(Op, describe);
 /// enum only grows at its end. Append a new variant here; never reorder.
 #[test]
 fn op_variants_only_append() {
-    assert_eq!(describe::variants::<Op>(), ["Score"]);
+    assert_eq!(describe::variants::<Op>(), ["Score", "OpenVersus"]);
 }

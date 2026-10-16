@@ -5,9 +5,10 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{Div, Paged, Stateful};
 use trade::{ASSETS, Balance, Fill, MARKETS, Op, Order, OrderState, Side, UNIT};
+use view::design::Ladder;
+use view::prelude::*;
+use view::{Div, Paged, Stateful};
 
 use crate::chart::sided;
 use crate::{Panel, TABS_H, Trade, format, nothing, tabs};
@@ -80,6 +81,7 @@ impl Trade {
         &self,
         wide: bool,
         cx: &mut Context<Self>,
+        ladder: &Ladder,
         theme: &Theme,
     ) -> impl IntoElement + use<> {
         const TABS: [Panel; 4] = [Panel::Open, Panel::History, Panel::Fills, Panel::Balances];
@@ -89,6 +91,7 @@ impl Trade {
         let bar = tabs(
             "trade-panel-tabs",
             "Orders, fills and balances",
+            ladder,
             theme,
             picked.unwrap_or_default(),
             [

@@ -20,10 +20,11 @@
 //! box, the inactive ones invisible, so switching tabs never reloads one. A
 //! piece is keyed by its tab's id, never its place, so closing a tab
 //! leaves the others' pages where they are.
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::wire::{ElementIdWire, WidgetCommand};
-use ducktape_view_guest::{Div, FontWeight, Stateful, Svg};
 use serde::{Deserialize, Serialize};
+use view::design::Ladder;
+use view::prelude::*;
+use view::wire::{ElementIdWire, WidgetCommand};
+use view::{Div, FontWeight, Stateful, Svg};
 
 /// What the new-tab button opens.
 pub const HOME: &str = "https://www.wikipedia.org/";
@@ -281,21 +282,55 @@ fn glyph(path: &'static str, size: Pixels) -> Svg {
     svg().path(path).size(size).flex_none()
 }
 
-/// A glyph button of the toolbar, `design::icon_button` at the control's
-/// size, in ink, with a soft fill on hover; one that cannot act is faint,
-/// says so, and answers nothing.
+/// A glyph pressed for what `name` says: muted, in ink under the pointer,
+/// at least [`Ladder::hit`](design::Ladder) each way. The browser's own,
+/// not `design::icon_button`, whose builder lets a caller only style it:
+/// the field's reload and a tab's close sit over controls that take
+/// presses too, so each consumes its own, and an unchosen tab's leaves the Tab
+/// order, which needs the element itself.
+fn icon_button(
+    id: impl Into<ElementId>,
+    glyph: impl IntoElement,
+    name: &'static str,
+    ladder: &Ladder,
+    theme: &Theme,
+    click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Stateful<Div> {
+    let theme = *theme;
+    div()
+        .id(id)
+        .min_w(ladder.hit)
+        .min_h(ladder.hit)
+        .flex()
+        .items_center()
+        .justify_center()
+        .px_1()
+        .text_color(theme.muted)
+        .cursor_pointer()
+        .hover(move |style| style.text_color(theme.foreground))
+        .role(Role::Button)
+        .aria_label(name)
+        .focusable()
+        .on_click(click)
+        .child(glyph)
+}
+
+/// A glyph button of the toolbar, [`icon_button`] at the control's size,
+/// in ink, with a soft fill on hover; one that cannot act is faint, says
+/// so, and answers nothing.
 fn glyph_button(
     id: &'static str,
     icon: &'static str,
     name: &'static str,
     enabled: bool,
+    ladder: &Ladder,
     theme: &Theme,
     click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
     let theme = *theme;
     let icon = glyph(icon, px(16.));
     let button = match enabled {
-        true => design::icon_button(id, icon, name, &theme, click)
+        true => icon_button(id, icon, name, ladder, &theme, click)
             .text_color(theme.foreground)
             .hover(move |style| style.text_color(theme.foreground).bg(theme.surface_raised)),
         false => div()
@@ -313,8 +348,9 @@ fn glyph_button(
 }
 
 impl Render for Browser {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.global::<Theme>();
+        let ladder = &design::ladder(window.touch());
         div()
             .id("browser")
             .size_full()
@@ -323,9 +359,9 @@ impl Render for Browser {
             .bg(theme.background)
             .text_color(theme.foreground)
             .text_size(design::text::BODY)
-            .child(self.toolbar(cx, &theme))
+            .child(self.toolbar(cx, ladder, &theme))
             .when(self.tabs.len() > 1, |browser| {
-                browser.child(self.tab_bar(cx, &theme))
+                browser.child(self.tab_bar(cx, ladder, &theme))
             })
             .child(self.pages(cx, &theme))
     }
@@ -335,7 +371,7 @@ impl Browser {
     /// Back and forward, the address field centred, new tab, on the
     /// window's ground with a hairline under it (the tab bar's, when it
     /// shows).
-    fn toolbar(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
+    fn toolbar(&self, cx: &mut Context<Self>, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
         let can = |pick: fn(&WebState) -> bool| self.tab().is_some_and(|tab| pick(&tab.state));
         // the field is centred in the bar: the two sides grow alike from
         // one width, two buttons' (back and forward)
@@ -363,6 +399,7 @@ impl Browser {
                         "icons/chevron-left.svg",
                         "Back",
                         can(|state| state.can_go_back),
+                        ladder,
                         theme,
                         cx.listener(|view: &mut Browser, _: &ClickEvent, _, cx| {
                             view.navigate(WebHandle::back, cx)
@@ -373,13 +410,14 @@ impl Browser {
                         "icons/chevron-right.svg",
                         "Forward",
                         can(|state| state.can_go_forward),
+                        ladder,
                         theme,
                         cx.listener(|view: &mut Browser, _: &ClickEvent, _, cx| {
                             view.navigate(WebHandle::forward, cx)
                         }),
                     )),
             )
-            .child(self.field(cx, theme))
+            .child(self.field(cx, ladder, theme))
             .child(
                 side().justify_end().child(
                     glyph_button(
@@ -387,6 +425,7 @@ impl Browser {
                         "icons/plus.svg",
                         "New tab",
                         true,
+                        ladder,
                         theme,
                         // typing replaces the home page's address at once
                         cx.listener(|view: &mut Browser, _: &ClickEvent, window, cx| {
@@ -402,7 +441,7 @@ impl Browser {
     /// The address field: at rest the host, centred, with reload or stop
     /// at its right end; typing, the whole address on the window's ground,
     /// in the host's ink focus ring.
-    fn field(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
+    fn field(&self, cx: &mut Context<Self>, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
         let theme = *theme;
         let field = div()
             .id("browser-field")
@@ -507,10 +546,11 @@ impl Browser {
             .bg(theme.surface_raised)
             .child(shown)
             .child(
-                design::icon_button(
+                icon_button(
                     id,
                     glyph(icon, size),
                     name,
+                    ladder,
                     &theme,
                     cx.listener(move |view: &mut Browser, _: &ClickEvent, _, cx| {
                         view.navigate(reload, cx)
@@ -541,7 +581,7 @@ impl Browser {
     /// left, shown on hover and on the chosen one. The chosen tab is the
     /// window's ground and runs into the page; the others sit on the bar
     /// over its hairline.
-    fn tab_bar(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
+    fn tab_bar(&self, cx: &mut Context<Self>, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
         let theme = *theme;
         // a hovered tab: one step lighter than the bar
         let lighter = Hsla {
@@ -600,10 +640,11 @@ impl Browser {
                 .when(index > 0, |slot| slot.border_l_1())
                 .child(design::item(title, Role::Tab, active))
                 .child(
-                    design::icon_button(
+                    icon_button(
                         format!("browser-close-tab-{}", tab.id),
                         glyph("icons/x.svg", px(11.)),
                         "Close tab",
+                        ladder,
                         &theme,
                         cx.listener(move |view: &mut Browser, _: &ClickEvent, _, cx| {
                             view.close(index, cx)

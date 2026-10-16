@@ -1,9 +1,10 @@
-//! What [`Op::Score`](crate::Op) checks and writes: it reads first, then
+//! What each [`Op`](crate::Op) checks and writes: it reads first, then
 //! writes, so a refused op leaves the store as it found it.
-use guest::{Error, ExecCtx, not_found};
+use ::program::live::grant;
+use ::program::{Error, ExecCtx, not_found};
 
-use crate::GAMES;
 use crate::state::{BEST, BOARD, highest_first};
+use crate::{GAMES, VERSUS, versus_room};
 
 /// The game a number names on the wire.
 pub(crate) fn game(id: u8) -> Result<u8, Error> {
@@ -26,5 +27,15 @@ pub(crate) fn score(ctx: &ExecCtx, account: u64, game_id: u8, posted: u64) -> Re
     }
     BOARD.insert(ctx, &(game, highest_first(posted), account));
     BEST.put(ctx, &(game, account), &posted);
+    Ok(())
+}
+
+/// The versus room's grant row: every account that acts on the chain may
+/// subscribe to every track in it and publish its own, under its number
+/// (`{account}`), so no one waits, asks or plays as another. The node
+/// reads the row; the view sends this op when the node tells it
+/// `Waiting`, and its asks wait for the row.
+pub(crate) fn open_versus(ctx: &ExecCtx) -> Result<(), Error> {
+    grant(ctx, VERSUS, None, versus_room());
     Ok(())
 }

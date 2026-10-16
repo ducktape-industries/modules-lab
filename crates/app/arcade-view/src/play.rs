@@ -1,25 +1,29 @@
 //! A game on screen: a bar with the way back and the pause, the board, and
 //! beside it the panel, its score, the reader's best and the game's own
 //! facts. Paused or over, an overlay lies on the board and the panel shows
-//! the game's top ten.
+//! the game's top ten. Tetris has no panel: its screen is the Guideline's
+//! ([`tetris::stage`]), and its overlay holds the top ten.
 //!
 //! The board takes the keys: it is focused as the game starts, and every
-//! key the games read stops there.
-use ducktape_view_guest::prelude::*;
-use ducktape_view_guest::{AnyElement, Div, FontWeight, Stateful};
+//! key the games read stops there. It hears Shift too, which gpui tells as
+//! a change of the modifiers, not as a key.
+use view::design::Ladder;
+use view::prelude::*;
+use view::{AnyElement, Div, FontWeight, Stateful};
 
 use crate::data::Row;
 use crate::games::{Game, seed};
+use crate::tetris::Tetris;
 use crate::{Arcade, Play, Post, breakout, invaders, merge, mines, snake, tetris};
 
 /// The bar over the board, the panel's width and the room around a board.
-const BAR_H: Pixels = px(44.);
+pub(crate) const BAR_H: Pixels = px(44.);
 const PANEL_W: f32 = 216.;
 const GUTTER: f32 = 16.;
 
 /// Every key a game or the screen reads: the board keeps them from the
 /// panes around it.
-const KEYS: [&str; 16] = [
+pub(crate) const KEYS: [&str; 16] = [
     "up", "down", "left", "right", "space", "enter", "escape", "p", "w", "a", "s", "d", "x", "z",
     "f", "c",
 ];
@@ -50,6 +54,7 @@ impl Arcade {
             paused: false,
             post: Post::Playing,
             field: None,
+            shift: false,
         });
         self.board = Loadable::Idle;
         self.read_board(cx);
@@ -129,6 +134,11 @@ impl Arcade {
         )
     }
 
+    /// What the bar leaves Tetris's screen.
+    pub(crate) fn stage_room(&self) -> (f32, f32) {
+        (self.viewport.0, self.viewport.1 - f32::from(BAR_H))
+    }
+
     /// A press on Minesweeper's field: the left button shows the cell under
     /// it, the right flags it.
     fn press(&mut self, event: &MouseDownEvent, right: bool, cx: &mut Context<Self>) {
@@ -150,6 +160,32 @@ impl Arcade {
         self.settle(cx);
     }
 
+    /// Shift alone is no key to gpui, only a change of the modifiers: it
+    /// going down is a press of the key "shift", and up its release. A
+    /// change that leaves it as it was, another modifier's, is neither.
+    fn modifiers_changed(&mut self, event: &ModifiersChangedEvent, cx: &mut Context<Self>) {
+        let Some(play) = &mut self.play else {
+            return;
+        };
+        let shift = event.modifiers.shift;
+        if std::mem::replace(&mut play.shift, shift) == shift {
+            return;
+        }
+        let Some(game) = play.game.ready_mut() else {
+            return;
+        };
+        if !shift {
+            return game.key_up("shift");
+        }
+        if play.paused || game.over() {
+            return;
+        }
+        if game.key_down("shift", false) {
+            cx.notify();
+        }
+        self.settle(cx);
+    }
+
     fn key_up(&mut self, event: &KeyUpEvent) {
         if let Some(game) = self.play.as_mut().and_then(|play| play.game.ready_mut()) {
             game.key_up(event.keystroke.key.as_str());
@@ -159,6 +195,7 @@ impl Arcade {
     pub(crate) fn play_screen(
         &mut self,
         cx: &mut Context<Self>,
+        ladder: &Ladder,
         theme: &Theme,
     ) -> impl IntoElement + use<> {
         let theme = *theme;
@@ -169,6 +206,7 @@ impl Arcade {
             design::button(
                 "arcade-pause",
                 if play.paused { "Resume" } else { "Pause" },
+                ladder,
                 &theme,
                 cx.listener(|view, _: &ClickEvent, _, cx| view.pause(cx)),
             )
@@ -187,6 +225,7 @@ impl Arcade {
                 design::button(
                     "arcade-back",
                     "Games",
+                    ladder,
                     &theme,
                     cx.listener(|view, _: &ClickEvent, window, cx| view.back(window, cx)),
                 )
@@ -200,30 +239,63 @@ impl Arcade {
             )
             .child(div().flex_1())
             .children(pause);
-        div().flex_1().min_h_0().flex().flex_col().child(bar).child(
-            div()
+        let body = match play.game.ready() {
+            Some(Game::Tetris(tetris)) => {
+                self.tetris(tetris, cx, ladder, &theme).into_any_element()
+            }
+            _ => div()
                 .flex_1()
                 .min_h_0()
                 .flex()
-                .child(self.stage(cx, &theme))
-                .child(self.panel(&theme)),
+                .child(self.stage(cx, ladder, &theme))
+                .child(self.panel(&theme))
+                .into_any_element(),
+        };
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(bar)
+            .child(body)
+    }
+
+    /// Tetris's screen: its score, lines, level and the reader's best
+    /// under hold, and on the well the overlay, with the top ten, once the
+    /// well's end has flashed.
+    fn tetris(
+        &self,
+        tetris: &Tetris,
+        cx: &mut Context<Self>,
+        ladder: &Ladder,
+        theme: &Theme,
+    ) -> Stateful<Div> {
+        let play = self.play.as_ref().expect("a game is on screen");
+        let mut stats = vec![("Score", design::grouped(tetris.score()))];
+        stats.extend(tetris.facts());
+        stats.push(("Your best", self.best_shown(play.which, tetris.score())));
+        tetris::stage(
+            self.stage_room(),
+            tetris,
+            self.board(cx, theme),
+            self.overlay(cx, ladder, theme, true)
+                .filter(|_| !tetris.ending()),
+            stats,
+            None,
+            theme,
         )
+        .id("arcade-stage")
     }
 
     /// The board, centred in what the bar and the panel leave, with the
     /// overlay over it while the game is paused or over.
-    fn stage(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
+    fn stage(&self, cx: &mut Context<Self>, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
         let play = self.play.as_ref().expect("a game is on screen");
         let room = self.room();
-        let label = match play.game.ready() {
-            Some(game) => label(game, play),
-            None => format!("{} board", arcade::GAMES[play.which]),
-        };
-        // Minesweeper's field tells where the host laid it, so a press's
-        // place in the window is a cell
-        let mines = matches!(play.game.ready(), Some(Game::Mines(_)));
         let drawn = match play.game.ready() {
             Some(Game::Mines(field)) => {
+                // Minesweeper's field tells where the host laid it, so a
+                // press's place in the window is a cell
                 let measured = cx.listener(|view: &mut Arcade, bounds: &Bounds<Pixels>, _, _| {
                     if let Some(play) = &mut view.play {
                         play.field = Some((bounds.origin.x.into(), bounds.origin.y.into()));
@@ -236,7 +308,29 @@ impl Arcade {
             Some(game) => draw(game, room, theme),
             None => div().into_any_element(),
         };
-        let board = div()
+        div()
+            .id("arcade-stage")
+            .relative()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(theme.background)
+            .child(self.board(cx, theme).child(drawn))
+            .children(self.overlay(cx, ladder, theme, false))
+    }
+
+    /// The board's frame, which takes the keys, and on Minesweeper's field
+    /// the presses.
+    fn board(&self, cx: &mut Context<Self>, theme: &Theme) -> Stateful<Div> {
+        let play = self.play.as_ref().expect("a game is on screen");
+        let label = match play.game.ready() {
+            Some(game) => label(game, play),
+            None => format!("{} board", arcade::GAMES[play.which]),
+        };
+        let mines = matches!(play.game.ready(), Some(Game::Mines(_)));
+        div()
             .id("arcade-board")
             .relative()
             .flex_none()
@@ -250,6 +344,9 @@ impl Arcade {
                 view.key_down(event, window, cx)
             }))
             .on_key_up(cx.listener(|view, event: &KeyUpEvent, _, _| view.key_up(event)))
+            .on_modifiers_changed(cx.listener(|view, event: &ModifiersChangedEvent, _, cx| {
+                view.modifiers_changed(event, cx)
+            }))
             .when(mines, |board| {
                 board
                     .cursor_pointer()
@@ -266,27 +363,23 @@ impl Arcade {
                         }),
                     )
             })
-            .child(drawn);
-        div()
-            .id("arcade-stage")
-            .relative()
-            .flex_1()
-            .min_w_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(theme.background)
-            .child(board)
-            .children(self.overlay(cx, theme))
     }
 
-    /// What lies on the board: why there is no game, the pause, or the end.
-    fn overlay(&self, cx: &mut Context<Self>, theme: &Theme) -> Option<Div> {
+    /// What lies on the board: why there is no game, the pause, or the
+    /// end; with `top`, the top ten under it.
+    fn overlay(
+        &self,
+        cx: &mut Context<Self>,
+        ladder: &Ladder,
+        theme: &Theme,
+        top: bool,
+    ) -> Option<Div> {
         let theme = *theme;
         let play = self.play.as_ref()?;
         let back = design::button(
             "arcade-leave",
             "Back to games",
+            ladder,
             &theme,
             cx.listener(|view, _: &ClickEvent, window, cx| view.back(window, cx)),
         )
@@ -305,6 +398,7 @@ impl Arcade {
                     design::button(
                         "arcade-again",
                         "Play again",
+                        ladder,
                         &theme,
                         cx.listener(move |view, _: &ClickEvent, window, cx| {
                             view.open(which, window, cx)
@@ -321,6 +415,7 @@ impl Arcade {
                     design::button(
                         "arcade-resume",
                         "Resume",
+                        ladder,
                         &theme,
                         cx.listener(|view, _: &ClickEvent, _, cx| view.pause(cx)),
                     )
@@ -335,6 +430,7 @@ impl Arcade {
             .ready()
             .filter(|game| game.over())
             .map(|game| design::mono(design::grouped(game.score())).text_size(px(28.)));
+        let top = top.then(|| self.top(&theme).w_full());
         Some(
             div()
                 .absolute()
@@ -375,7 +471,8 @@ impl Arcade {
                                 .gap(design::space::SM)
                                 .children(first)
                                 .child(back),
-                        ),
+                        )
+                        .children(top),
                 ),
         )
     }
@@ -404,10 +501,7 @@ impl Arcade {
                 )
         };
         let score = game.map_or(0, Game::score);
-        let best = match (self.session.account, self.best(play.which)) {
-            (None, _) => "—".to_owned(),
-            (Some(_), best) => design::grouped(best.unwrap_or(0).max(score)),
-        };
+        let best = self.best_shown(play.which, score);
         let facts = game
             .map(Game::facts)
             .unwrap_or_default()
@@ -442,33 +536,17 @@ impl Arcade {
             )
             .child(fact("Your best", best))
             .children(facts)
-            .children(match game {
-                Some(Game::Tetris(tetris)) => {
-                    let boxed = |label: &'static str, drawn| {
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(design::space::XS)
-                            .child(
-                                div()
-                                    .text_size(design::text::CAPTION)
-                                    .text_color(theme.muted)
-                                    .child(label),
-                            )
-                            .child(drawn)
-                    };
-                    Some(
-                        div()
-                            .flex()
-                            .gap(design::space::LG)
-                            .child(boxed("Hold", tetris.draw_hold(16., &theme)))
-                            .child(boxed("Next", tetris.draw_next(16., &theme))),
-                    )
-                }
-                _ => None,
-            })
             .children(game.map(|game| design::quiet(game.keys(), &theme)))
             .when(still, |panel| panel.child(self.top(&theme)))
+    }
+
+    /// The reader's best of game `which` with `score` played: none without
+    /// an account.
+    fn best_shown(&self, which: usize, score: u64) -> String {
+        match (self.session.account, self.best(which)) {
+            (None, _) => "—".to_owned(),
+            (Some(_), best) => design::grouped(best.unwrap_or(0).max(score)),
+        }
     }
 
     /// The game's top ten, or what stands in for them.
@@ -548,9 +626,7 @@ fn posted(post: &Post) -> String {
 /// The game's board, as large as `room` holds it.
 fn draw(game: &Game, room: (f32, f32), theme: &Theme) -> AnyElement {
     match game {
-        Game::Tetris(tetris) => tetris
-            .draw(cell(room, (tetris::COLS, tetris::ROWS)), theme)
-            .into_any_element(),
+        Game::Tetris(_) => unreachable!("Tetris lays out its own screen"),
         Game::Snake(snake) => snake
             .draw(cell(room, (snake::COLS, snake::ROWS)), theme)
             .into_any_element(),

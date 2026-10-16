@@ -1,6 +1,7 @@
 //! Arcade: six classic games, Tetris, Snake, 2048, Minesweeper, Breakout
 //! and Space Invaders, and a board of the best scores the `arcade` program
-//! keeps for everyone on the network.
+//! keeps for everyone on the network; and Tetris versus, two people's
+//! wells over the node's live tracks (`versus.rs`).
 //!
 //! The hub (`hub.rs`) lists the games; a game (`play.rs`) is its board,
 //! a panel of its score, the reader's best and the game's own facts, and,
@@ -25,14 +26,16 @@ mod merge;
 mod mines;
 mod play;
 mod snake;
-mod tetris;
+pub mod tetris;
+pub mod versus;
 
-use ducktape_view_guest::prelude::*;
 use gpui::relative;
 use serde::{Deserialize, Serialize};
+use view::prelude::*;
 
 use data::Row;
 use games::Game;
+use versus::Versus;
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Arcade {
@@ -58,6 +61,10 @@ pub struct Arcade {
     /// The pane's size, read from the window each render.
     #[serde(skip)]
     pub(crate) viewport: (f32, f32),
+    /// Tetris versus on screen: its lobby or its match. Never saved: its
+    /// tracks are live, and a snapshot comes back to the hub.
+    #[serde(skip)]
+    pub(crate) versus: Option<Versus>,
 }
 
 /// A game on screen, from the moment its card is pressed.
@@ -73,6 +80,8 @@ pub(crate) struct Play {
     /// Where the host laid Minesweeper's field out, in the window's
     /// pixels: what a press is measured from.
     pub(crate) field: Option<(f32, f32)>,
+    /// Shift is down, as the board last heard the modifiers.
+    pub(crate) shift: bool,
 }
 
 /// What became of an ended game's score.
@@ -89,20 +98,16 @@ pub(crate) enum Post {
 
 impl View for Arcade {
     const NAME: &'static str = "Arcade";
-    const DESCRIPTION: &'static str = "Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, with a board of everyone's best scores.";
+    const DESCRIPTION: &'static str = "Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, with a board of everyone's best scores, and Tetris versus.";
     const ICON: &'static str = "icons/gamepad-2.svg";
     const CAPABILITIES: &'static [Capability] = &[
-        Capability::Module,
+        Capability::Program,
         Capability::Op,
         Capability::Host,
         Capability::Clock,
+        Capability::Live,
     ];
-    const TARGETS: &'static [&'static str] = &[
-        arcade::MODULE,
-        <program::role::Identity as ducktape_view_guest::methods::Program>::NAME,
-    ];
-    // a board beside the 216 px panel
-    const MIN_WINDOW_WIDTH: u32 = 560;
+    const TARGETS: &'static [&'static str] = &[arcade::PROGRAM, ::identity::PROGRAM];
 
     fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         self.watch(cx);
@@ -112,11 +117,15 @@ impl View for Arcade {
 impl Render for Arcade {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.global::<Theme>();
+        let ladder = &design::ladder(window.touch());
         let size = window.viewport_size();
         self.viewport = (size.width.into(), size.height.into());
-        let screen = match self.play.is_some() {
-            true => self.play_screen(cx, &theme).into_any_element(),
-            false => self.hub(cx, &theme).into_any_element(),
+        let screen = match (self.versus.is_some(), self.play.is_some()) {
+            (true, _) => self
+                .versus_screen(window, cx, ladder, &theme)
+                .into_any_element(),
+            (false, true) => self.play_screen(cx, ladder, &theme).into_any_element(),
+            (false, false) => self.hub(cx, &theme).into_any_element(),
         };
         div()
             .id("arcade")

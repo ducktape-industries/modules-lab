@@ -5,15 +5,15 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use ducktape_view_guest::host::Error;
-use ducktape_view_guest::methods::{HostSession, Query as Ask, Session, Submit};
-use ducktape_view_guest::testing::TestAppContext;
-use ducktape_view_guest::{Entity, MouseMoveEvent, Point, View, px};
 use store::{PageRequest, PageResponse};
 use trade::{
     Balance, Book, Candle, Fill, LOT, Level, Order, OrderState, Query, Reply, Side, Stats, Traded,
     UNIT,
 };
+use view::host::Error;
+use view::methods::{HostSession, Query as Ask, Session, Submit, Submitted};
+use view::testing::TestAppContext;
+use view::{Entity, MouseMoveEvent, Point, View, px};
 
 /// 2026-10-07 14:00 UTC, the hour the boards' newest candle opens at.
 pub const NOW: u64 = 1_791_381_600_000;
@@ -110,8 +110,13 @@ pub fn serve(cx: &TestAppContext, world: World) -> Shared {
     let told = world.clone();
     cx.host()
         .handle::<Submit<trade::Trade>>(move |_| match &told.borrow().refusal {
-            Some(message) => Err(Error::new("refused", message.clone())),
-            None => Ok(Vec::new()),
+            // the program's refusal, as the node predicts it
+            Some(message) => Ok(Submitted::Refused {
+                frame: [0; 32],
+                until: 0,
+                refusal: Error::new("refused", message.clone()),
+            }),
+            None => Ok(view::testing::applied(Vec::new())),
         });
     world
 }
