@@ -173,6 +173,20 @@ fn sweep() {
         cx.simulate_click("huddle-mic");
         cx.simulate_click("huddle-camera");
         cx.simulate_click("huddle-mic");
+        // the camera in trouble in the room: its card over the tile
+        for status in [MediaStatus::Denied, MediaStatus::NoDevice] {
+            let (camera, ..) = camera_piece(cx).expect("a camera piece");
+            cx.simulate_media_state(
+                &camera,
+                MediaState {
+                    status,
+                    opens_settings: true,
+                    ..Default::default()
+                },
+            );
+            cx.simulate_click("huddle-camera-retry");
+            cx.run_until_parked();
+        }
         let mic = mic_key(cx);
         cx.simulate_media_state(
             &mic,
@@ -397,6 +411,29 @@ fn the_routes_keep_their_places_when_the_route_playing_moves() {
     cx.run_until_parked();
     assert_eq!(toggled(&cx, "huddle-sound-0"), Some(false), "the speaker");
     assert_eq!(toggled(&cx, "huddle-sound-1"), Some(true), "the AirPods");
+}
+
+/// The live loop never runs through the loudspeaker, picked or not: a
+/// list read again whose route playing moved from the AirPods to the
+/// loudspeaker (they were taken off) stops the loop at once, though the
+/// switch was on and nothing was picked.
+#[test]
+fn the_live_loop_stops_when_the_route_playing_moves_to_the_speaker() {
+    let (mut cx, _ticks) = opened_on_phone(phone_routes(vec![speaker(false), airpods(true)]));
+    live_pieces(&mut cx);
+    cx.simulate_click("huddle-monitor");
+    assert!(mic_piece(&cx).unwrap().3, "looping through the AirPods");
+    cx.host().handle::<MicrophoneDevices>(|()| {
+        Ok(AudioDevices {
+            inputs: vec![audio("mic", "Phone microphone", true, AudioKind::Other)],
+            outputs: vec![speaker(true), airpods(false)],
+        })
+    });
+    // opening the sheet reads the lists again
+    cx.simulate_click("huddle-sound");
+    cx.run_until_parked();
+    cx.simulate_back();
+    assert!(!mic_piece(&cx).unwrap().3, "never through the loudspeaker");
 }
 
 /// The loudspeaker route, `playing` or not.
