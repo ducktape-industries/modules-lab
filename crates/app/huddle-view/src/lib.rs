@@ -183,7 +183,7 @@ impl View for Huddle {
 
     fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         self.list(cx);
-        cx.host().notify::<HostTitle>("Huddle".into());
+        cx.host().notify::<HostTitle>(words::HUDDLE.into());
         cx.follow::<ClockTicks>(1000, |view, tick, cx| match tick {
             Ok(()) => view.tick(cx),
             Err(refusal) => cx.log_refused("the clock", &refusal),
@@ -332,6 +332,46 @@ impl Huddle {
         !self.muted && self.mic_state.status == MediaStatus::Live
     }
 
+    /// The camera on and still opening two seconds on (a system asking
+    /// for permission, a slow driver): said, so it is not taken for a dead
+    /// one.
+    pub(crate) fn camera_slow(&self) -> bool {
+        !self.camera_off
+            && self.camera_state.status == MediaStatus::Starting
+            && self.ticks.saturating_sub(self.camera_since) >= 2
+    }
+
+    /// Whether Record can act: on a live microphone with no speaker test
+    /// sounding, or to stop what is under way.
+    pub(crate) fn can_record(&self) -> bool {
+        (self.mic_live() && !self.chiming) || self.mic_state.playback != Playback::Idle
+    }
+
+    /// Whether the speaker test can sound: not over another, nor over a
+    /// recording's playback. It works muted, and with the microphone in
+    /// trouble: an output, apart from the microphone.
+    pub(crate) fn can_test(&self) -> bool {
+        self.mic_state.playback == Playback::Idle && !self.chiming
+    }
+
+    /// The seconds a recording under way has left, at least one: the
+    /// host's playback takes over at the end.
+    pub(crate) fn seconds_left(&self) -> u64 {
+        let since = self.recording_since.unwrap_or(self.ticks);
+        u64::from(RECORD_SECONDS)
+            .saturating_sub(self.ticks.saturating_sub(since))
+            .max(1)
+    }
+
+    /// The time in the room, `MM:SS`, `H:MM:SS` past an hour.
+    pub(crate) fn clock(&self) -> String {
+        let elapsed = self.ticks.saturating_sub(self.entered);
+        match elapsed / 3600 {
+            0 => format!("{:02}:{:02}", elapsed / 60, elapsed % 60),
+            hours => format!("{hours}:{:02}:{:02}", elapsed / 60 % 60, elapsed % 60),
+        }
+    }
+
     fn tick(&mut self, cx: &mut Context<Self>) {
         self.ticks += 1;
         // drawn again only while something counts seconds: the room (its
@@ -360,36 +400,46 @@ impl Huddle {
         cx.notify();
     }
 
-    /// Into the room, floated in the same press where the host floats: the
-    /// call stays in sight above other windows while the person works
-    /// elsewhere.
-    pub(crate) fn join(&mut self, cx: &mut Context<Self>) {
+    /// Into the room where the view is: the room's clock starts, the live
+    /// loop ends. The phone's Join: a phone keeps one window.
+    pub(crate) fn enter_room(&mut self, cx: &mut Context<Self>) {
         self.screen = Screen::Room;
         self.entered = self.ticks;
         self.monitor = false;
         self.menu = None;
         // the room's own clock; the pieces open again in their new place
         self.camera_since = self.ticks;
-        cx.host()
-            .notify::<HostTitle>("Huddle \u{b7} just you".into());
+        cx.host().notify::<HostTitle>(words::IN_THE_ROOM.into());
+        cx.notify();
+    }
+
+    /// Into the room, floated in the same press where the host floats: the
+    /// call stays in sight above other windows while the person works
+    /// elsewhere.
+    pub(crate) fn join(&mut self, cx: &mut Context<Self>) {
+        self.enter_room(cx);
         if !self.no_float {
             self.float(true, cx);
         }
+    }
+
+    /// Back to the check where the view is. The phone's Leave.
+    pub(crate) fn leave_room(&mut self, cx: &mut Context<Self>) {
+        self.screen = Screen::Check;
+        self.menu = None;
+        self.camera_since = self.ticks;
+        self.no_keep_on_top_line = false;
+        cx.host().notify::<HostTitle>(words::HUDDLE.into());
         cx.notify();
     }
 
     /// Out of the room, the pane back on the desk (asked whether or not
     /// the host has said it floats yet: nothing happens where it does not).
     pub(crate) fn leave(&mut self, cx: &mut Context<Self>) {
-        self.screen = Screen::Check;
-        self.menu = None;
-        self.camera_since = self.ticks;
-        self.no_keep_on_top_line = false;
-        cx.host().notify::<HostTitle>("Huddle".into());
+        self.leave_room(cx);
         if !self.no_float {
             cx.host().notify::<HostUnfloat>(());
         }
-        cx.notify();
     }
 
     /// The pane in a window of its own (or, floating already, kept on top
@@ -603,23 +653,28 @@ fn rows<D: Listed>(kind: Kind, devices: &[D], picked: Option<&str>, nothing: &st
             picked: false,
         }];
     }
-    let picked = devices
-        .iter()
-        .position(|device| Some(device.id()) == picked)
-        .or_else(|| devices.iter().position(|device| device.default()));
-    let mut ordered: Vec<(usize, &D)> = devices.iter().enumerate().collect();
+    let in_use = in_use(devices, picked).map(Listed::id);
+    let mut ordered: Vec<&D> = devices.iter().collect();
     // the system's default first, the rest as the host listed them
-    ordered.sort_by_key(|(_, device)| !device.default());
+    ordered.sort_by_key(|device| !device.default());
     ordered
         .into_iter()
-        .map(|(at, device)| Row {
+        .map(|device| Row {
             kind,
             id: Some(device.id().to_owned()),
             name: device.name().to_owned(),
             twin: twin(devices, device),
-            picked: picked == Some(at),
+            picked: in_use == Some(device.id()),
         })
         .collect()
+}
+
+/// The device `pick` names, else the system's default.
+fn in_use<'a, D: Listed>(devices: &'a [D], pick: Option<&str>) -> Option<&'a D> {
+    devices
+        .iter()
+        .find(|device| Some(device.id()) == pick)
+        .or_else(|| devices.iter().find(|device| device.default()))
 }
 
 /// Whether `devices` lists the device `pick` names (no pick, the system's

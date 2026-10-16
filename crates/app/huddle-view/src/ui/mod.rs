@@ -244,7 +244,7 @@ fn preview(
         preview = preview.child(camera_piece(view, ObjectFit::Contain, cx).size_full());
     }
     if off {
-        preview = preview.child(camera_off(72., Some("Your camera is off"), theme));
+        preview = preview.child(camera_off(72., Some(words::CAMERA_IS_OFF), theme));
     }
     let mirrored = !view.unmirrored;
     preview
@@ -364,7 +364,7 @@ fn mirror_toggle(mirrored: bool, enabled: bool, cx: &mut Context<Huddle>) -> Sta
             false => toggle.bg(glass()).text_color(white()),
         })
         .role(Role::Button)
-        .aria_label("Mirror my picture")
+        .aria_label(words::MIRROR)
         .aria_toggled(mirrored.into())
         .child(design::icon(MIRROR, px(14.)));
     match enabled {
@@ -381,9 +381,7 @@ fn mirror_toggle(mirrored: bool, enabled: bool, cx: &mut Context<Huddle>) -> Sta
 /// "You" in the picture's corner, "· mirrored" while it is; the camera's
 /// opening said here once it takes a while.
 fn chip(view: &Huddle, off: bool, theme: &Theme) -> Div {
-    let opening = !off
-        && view.camera_state.status == MediaStatus::Starting
-        && view.ticks.saturating_sub(view.camera_since) >= 2;
+    let opening = view.camera_slow();
     let mirrored = !view.unmirrored && !off && !trouble(&view.camera_state);
     div()
         .absolute()
@@ -405,15 +403,15 @@ fn chip(view: &Huddle, off: bool, theme: &Theme) -> Div {
             false => chip.bg(glass()).text_color(white()),
         })
         .child(match opening {
-            true => "Opening the camera\u{2026}",
-            false => "You",
+            true => words::OPENING_CAMERA,
+            false => words::YOU,
         })
         .when(mirrored && !opening, |chip| {
             chip.child(
                 div()
                     .font_family(design::fonts::FAMILY_MONO)
                     .opacity(0.7)
-                    .child("\u{b7} mirrored"),
+                    .child(words::MIRRORED),
             )
         })
 }
@@ -490,7 +488,7 @@ fn settings(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<
                     .id("huddle-speaker-fault")
                     .text_size(design::text::CAPTION)
                     .text_color(theme.muted)
-                    .child(format!("Test failed: {why}."))
+                    .child(words::test_failed(why))
             })),
         )
         .child(div().h(px(1.)).flex_none().bg(theme.border))
@@ -600,7 +598,7 @@ fn meter(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> AnyElement {
         .w_full()
         .bg(theme.surface_raised)
         .role(Role::Meter)
-        .aria_label("Microphone level")
+        .aria_label(words::MICROPHONE_LEVEL)
         .when(view.mic_placed(), |meter| {
             meter.child(
                 mic_piece(view, cx)
@@ -643,31 +641,28 @@ fn mic_trouble(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Statef
 /// microphone in trouble too (an output, apart from the microphone), not
 /// over a recording's playback.
 fn speaker_test(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> impl IntoElement {
-    let enabled = view.mic_state.playback == Playback::Idle && !view.chiming;
     let label = match view.chiming {
-        true => "Playing\u{2026}",
-        false => "Test",
+        true => words::PLAYING,
+        false => words::TEST,
     };
     let chime = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.chime(cx));
     design::button("huddle-speaker-test", label, &design::POINTER, theme, chime)
         .kind(design::Kind::Outline)
-        .enabled(enabled)
+        .enabled(view.can_test())
 }
 
 /// Record five seconds and hear them back, and the line under it.
 fn record(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
     let playback = view.mic_state.playback.clone();
     let under_way = playback != Playback::Idle;
-    let (icon, label) = match (&playback, under_way) {
-        (Playback::Recording, true) => (STOP, "Stop".to_owned()),
-        (Playback::Playing, true) => (STOP, "Stop playback".to_owned()),
-        _ => (PLAY, format!("Record {RECORD_SECONDS} s and play back")),
+    let icon = match under_way {
+        true => STOP,
+        false => PLAY,
     };
-    let enabled = (view.mic_live() && !view.chiming) || under_way;
     let button = record_button(
         icon,
-        label,
-        enabled,
+        words::record(&playback),
+        view.can_record(),
         theme,
         cx.listener(move |view: &mut Huddle, _: &ClickEvent, _, cx| {
             match under_way {
@@ -680,18 +675,15 @@ fn record(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
     .w_full()
     .justify_start();
     let line: AnyElement = match (&playback, under_way) {
-        _ if view.muted => caption("Unmute to test your microphone.", theme),
+        _ if view.muted => caption(words::record_line(true, &playback), theme),
         (Playback::Recording, true) => {
-            let since = view.recording_since.unwrap_or(view.ticks);
-            let left = u64::from(RECORD_SECONDS)
-                .saturating_sub(view.ticks.saturating_sub(since))
-                .max(1);
+            let left = view.seconds_left();
             div()
                 .id("huddle-record-line")
                 .flex()
                 .text_size(design::text::CAPTION)
                 .text_color(theme.muted)
-                .child("Recording\u{2026} say something \u{b7}\u{a0}")
+                .child(words::RECORDING)
                 .child(
                     div()
                         .font_family(design::fonts::FAMILY_MONO)
@@ -699,8 +691,7 @@ fn record(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
                 )
                 .into_any_element()
         }
-        (Playback::Playing, true) => caption("Playing it back\u{2026}", theme),
-        _ => caption("Hear how you sound to others.", theme),
+        _ => caption(words::record_line(false, &playback), theme),
     };
     div()
         .flex()
@@ -735,11 +726,11 @@ fn monitor(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
                     div()
                         .text_size(design::text::SECONDARY)
                         .font_weight(FontWeight::MEDIUM)
-                        .child("Hear myself live"),
+                        .child(words::HEAR_MYSELF),
                 )
                 .child(design::switch(
                     "huddle-monitor",
-                    "Hear myself live",
+                    words::HEAR_MYSELF,
                     view.monitor,
                     view.mic_live(),
                     // the desktop's sizes: a phone gets a tree of its own
@@ -788,7 +779,7 @@ fn join_button(cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
             .on_click(
                 cx.listener(|view: &mut Huddle, _: &ClickEvent, window, cx| join(view, window, cx)),
             )
-            .child("Join huddle"),
+            .child(words::JOIN),
         theme,
     )
 }
@@ -931,7 +922,7 @@ fn actions(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Them
         .when(settings, |row| {
             let open = design::button(
                 id("settings"),
-                "Open Settings",
+                words::OPEN_SETTINGS,
                 pointer,
                 theme,
                 open_settings,
@@ -939,15 +930,17 @@ fn actions(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Them
             row.child(open.kind(design::Kind::Outline))
         })
         .child(
-            design::button(id("retry"), "Try again", pointer, theme, try_again)
+            design::button(id("retry"), words::TRY_AGAIN, pointer, theme, try_again)
                 .kind(design::Kind::Outline),
         )
         .when(missing, |row| {
-            let label = match camera {
-                true => "Join without camera",
-                false => "Join without a microphone",
-            };
-            let join = design::button(id("without"), label, pointer, theme, without);
+            let join = design::button(
+                id("without"),
+                words::join_without(device),
+                pointer,
+                theme,
+                without,
+            );
             row.child(join.kind(design::Kind::Quiet))
         })
 }
@@ -963,7 +956,7 @@ fn room(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div>
         .flex_col()
         // M mutes, V turns the camera off: from anywhere in the room
         .role(Role::Group)
-        .aria_label("Huddle")
+        .aria_label(words::HUDDLE)
         .focusable()
         .focus_visible(|style| style)
         .consumes_keys(["m", "v"])
@@ -1022,7 +1015,7 @@ fn tile(
         .size_full()
         .overflow_hidden()
         .role(Role::Group)
-        .aria_label("You")
+        .aria_label(words::YOU)
         .bg(match off || troubled {
             true => theme.surface_raised,
             false => black(),
@@ -1087,7 +1080,7 @@ fn tile(
                         .bg(glass())
                         .text_color(white())
                         .text_size(design::text::CAPTION)
-                        .child("Only you are here. Calls with others are not connected yet."),
+                        .child(words::SOLO),
                 )
                 .child(div().flex_1()),
         )
@@ -1102,8 +1095,8 @@ fn mic_off(view: &Huddle) -> bool {
 /// The muted or the speaking mark a chip carries, named for a reader.
 fn mark(view: &Huddle, speaking: bool) -> Option<Stateful<Div>> {
     let (icon, name, color) = match (view.muted, speaking) {
-        (true, _) => (MIC_OFF, "Muted", muted_mark()),
-        (false, true) => (SPEAKING, "Speaking", white()),
+        (true, _) => (MIC_OFF, words::MUTED, muted_mark()),
+        (false, true) => (SPEAKING, words::SPEAKING, white()),
         (false, false) => return None,
     };
     Some(
@@ -1132,13 +1125,13 @@ fn room_chip(view: &Huddle, speaking: bool) -> Div {
         .text_color(white())
         .text_size(design::text::CAPTION)
         .children(mark(view, speaking))
-        .child("You")
+        .child(words::YOU)
         .when(view.camera_placed() && !view.unmirrored, |chip| {
             chip.child(
                 div()
                     .font_family(design::fonts::FAMILY_MONO)
                     .opacity(0.7)
-                    .child("\u{b7} mirrored"),
+                    .child(words::MIRRORED),
             )
         })
 }
@@ -1146,11 +1139,6 @@ fn room_chip(view: &Huddle, speaking: bool) -> Div {
 /// The room's bar: its name and clock, the microphone and camera with
 /// their menus, Leave, and who is here.
 fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
-    let elapsed = view.ticks.saturating_sub(view.entered);
-    let clock = match elapsed / 3600 {
-        0 => format!("{:02}:{:02}", elapsed / 60, elapsed % 60),
-        hours => format!("{hours}:{:02}:{:02}", elapsed / 60 % 60, elapsed % 60),
-    };
     div()
         .id("huddle-bar")
         .h(BAR)
@@ -1175,7 +1163,7 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                         .text_size(design::text::BODY)
                         .font_weight(FontWeight::MEDIUM)
                         .truncate()
-                        .child("Huddle"),
+                        .child(words::HUDDLE),
                 )
                 .child(
                     div()
@@ -1184,7 +1172,7 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                         .text_size(design::text::CAPTION)
                         .text_color(theme.muted)
                         .truncate()
-                        .child(format!("{clock} \u{b7} only you")),
+                        .child(words::alone(&view.clock())),
                 ),
         )
         .child(split(view, Device::Microphone, cx, theme).ml_auto())
@@ -1214,7 +1202,7 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                     }),
                 )
                 .child(design::icon(LEAVE, px(14.)))
-                .child("Leave"),
+                .child(words::LEAVE),
         )
         .child(
             div()
@@ -1347,7 +1335,7 @@ fn float_strip(
         .text_color(white())
         .text_size(design::text::CAPTION)
         .children(mark(view, speaking))
-        .child(div().min_w(px(0.)).truncate().child("You"));
+        .child(div().min_w(px(0.)).truncate().child(words::YOU));
     let controls = div()
         .flex()
         .flex_none()
@@ -1379,7 +1367,7 @@ fn float_strip(
         )
         .child(small(
             ("huddle-leave", LEAVE),
-            "Leave",
+            words::LEAVE,
             true,
             true,
             &theme_,
@@ -1453,7 +1441,8 @@ fn retry(device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> impl IntoEl
         Device::Microphone => "huddle-microphone-retry",
     };
     let try_again = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx));
-    design::button(id, "Try again", &design::POINTER, theme, try_again).kind(design::Kind::Quiet)
+    design::button(id, words::TRY_AGAIN, &design::POINTER, theme, try_again)
+        .kind(design::Kind::Quiet)
 }
 
 /// What the float says once where the host keeps no window on top
@@ -1833,9 +1822,8 @@ fn unsupported(theme: &Theme) -> Stateful<Div> {
             design::empty_state(
                 "huddle-unsupported",
                 VIDEO_OFF,
-                "No camera or microphone in this build",
-                "This copy of Ducktape was built without camera and microphone support, so a \
-                 huddle has nothing to carry. Install a full build.",
+                words::UNSUPPORTED,
+                words::UNSUPPORTED_DETAIL,
                 &design::POINTER,
                 theme,
             )
