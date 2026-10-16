@@ -172,15 +172,13 @@ impl View for Huddle {
     const ICON: &'static str = "icons/video.svg";
     // `camera` and `microphone`: the pieces and their device lists; `clock`:
     // the room's clock and the recording's countdown; `host`: the window's
-    // title, the float and where the pane is, and the log a refusal nothing
-    // waits on goes to; `link`: the settings page a refused device opens
-    // (macOS)
+    // title, the float and where the pane is, the system's page a refused
+    // device opens, and the log a refusal nothing waits on goes to
     const CAPABILITIES: &'static [Capability] = &[
         Capability::Camera,
         Capability::Microphone,
         Capability::Clock,
         Capability::Host,
-        Capability::Link,
     ];
     /// The check's two columns: the picture and the 272 px settings.
     const MIN_WINDOW_WIDTH: u32 = 560;

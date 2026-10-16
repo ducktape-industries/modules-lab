@@ -5,8 +5,8 @@
 use view::Entity;
 use view::methods::{
     AudioDevice, AudioDevices, AudioKind, CameraDevice, CameraDevices, ClockTicks, Facing, Float,
-    HostFloat, HostPlacement, HostTitle, HostUnfloat, LinkOpen, MicrophoneChime, MicrophoneDevices,
-    Placement,
+    HostFloat, HostPlacement, HostShow, HostTitle, HostUnfloat, MicrophoneChime, MicrophoneDevices,
+    Place, Placement,
 };
 use view::testing::{StreamSender, TestAppContext};
 use view::wire::{ImageObjectFit, MediaState, MediaStatus, MicCommand, Node, Playback};
@@ -436,10 +436,7 @@ fn a_refusal_opens_the_settings_where_the_host_can() {
          → Camera, turn Ducktape on, then try again."
     ));
     cx.simulate_click("huddle-camera-settings");
-    assert_eq!(
-        cx.host().requests::<LinkOpen>(),
-        [view::wire::media::SETTINGS_CAMERA.to_owned()]
-    );
+    assert_eq!(cx.host().requests::<HostShow>(), [Place::CameraSettings]);
 }
 
 /// Join enters the room with every pick kept, the tile covering its box;

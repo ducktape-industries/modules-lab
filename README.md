@@ -251,8 +251,8 @@ runs it in the real app over a fake node; the app must be built with its
 A view alone, no program: a person checks themselves, then joins a huddle.
 Its manifest declares `camera` and `microphone` (each gates its piece and
 its device list; the system asks for each apart), `clock` for the room's
-clock and the recording's countdown, `host` for the title and the log, and
-`link` for the settings page a refused device opens (macOS).
+clock and the recording's countdown, and `host` for the title, the float,
+the system's page a refused device opens (`host.show`) and the log.
 
 The device check is a big picture of yourself (the SDK's `camera` piece,
 the host's picture, mirrored unless turned off) with the mirror, mute and

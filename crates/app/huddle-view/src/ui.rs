@@ -879,9 +879,9 @@ fn actions(device: Device, state: &MediaState, cx: &mut Context<Huddle>, theme: 
     };
     let settings = state.status == MediaStatus::Denied && state.opens_settings;
     let missing = state.status == MediaStatus::NoDevice;
-    let link = match camera {
-        true => view::wire::media::SETTINGS_CAMERA,
-        false => view::wire::media::SETTINGS_MICROPHONE,
+    let page = match camera {
+        true => Place::CameraSettings,
+        false => Place::MicrophoneSettings,
     };
     div()
         .flex()
@@ -899,7 +899,9 @@ fn actions(device: Device, state: &MediaState, cx: &mut Context<Huddle>, theme: 
                 "Open Settings",
                 true,
                 theme,
-                cx.listener(move |_: &mut Huddle, _: &ClickEvent, _, cx| cx.host().open_link(link)),
+                cx.listener(move |_: &mut Huddle, _: &ClickEvent, _, cx| {
+                    cx.host().notify::<HostShow>(page)
+                }),
             ))
         })
         .child(outline(
@@ -1791,9 +1793,11 @@ fn unsupported(theme: &Theme) -> Stateful<Div> {
         .child(
             design::empty_state(
                 "huddle-unsupported",
+                VIDEO_OFF,
                 "No camera or microphone in this build",
                 "This copy of Ducktape was built without camera and microphone support, so a \
                  huddle has nothing to carry. Install a full build.",
+                &design::POINTER,
                 theme,
             )
             .items_center()
