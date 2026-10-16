@@ -721,7 +721,8 @@ impl Huddle {
     }
 
     /// The microphone piece told its state: a recording's start starts the
-    /// countdown.
+    /// countdown; a live loop the host stopped (its sound fell to a
+    /// loudspeaker) turns its switch off, which lets the host's hold go.
     pub(crate) fn heard_mic(&mut self, state: &MediaState) {
         match state.playback {
             Playback::Recording if self.recording_since.is_none() => {
@@ -729,6 +730,9 @@ impl Huddle {
             }
             Playback::Recording => {}
             _ => self.recording_since = None,
+        }
+        if state.monitor_stopped {
+            self.monitor = false;
         }
         self.mic_state = state.clone();
     }

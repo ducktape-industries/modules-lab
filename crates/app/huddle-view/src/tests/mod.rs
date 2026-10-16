@@ -368,6 +368,27 @@ fn picking_a_microphone_or_speaker_ends_the_live_loop() {
     }
 }
 
+/// The host stopped the live loop under the view (its sound fell to the
+/// speakers): the switch turns off, and on again it asks anew.
+#[test]
+fn a_live_loop_the_host_stopped_turns_its_switch_off() {
+    let (mut cx, ..) = opened();
+    let key = mic_key(&cx);
+    cx.simulate_media_state(&key, live("Built-in Microphone"));
+    cx.simulate_click("huddle-monitor");
+    assert!(mic_piece(&cx).unwrap().3, "looping");
+    let stopped = MediaState {
+        monitor_stopped: true,
+        ..live("Built-in Microphone")
+    };
+    cx.simulate_media_state(&key, stopped);
+    assert!(!mic_piece(&cx).unwrap().3, "the loop ends");
+    assert_eq!(toggled(&cx, "huddle-monitor"), Some(false));
+    cx.simulate_media_state(&key, live("Built-in Microphone"));
+    cx.simulate_click("huddle-monitor");
+    assert!(mic_piece(&cx).unwrap().3, "on again");
+}
+
 /// The menu by keys: ↓ on a picker opens it on the picked row, ↓ moves,
 /// Enter picks and closes; Escape closes without a pick and gives the keys
 /// back to the picker.
