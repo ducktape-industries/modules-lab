@@ -39,3 +39,45 @@ pub(crate) const READING_BOARD: &str = "Reading the board\u{2026}";
 pub(crate) fn unnamed(account: u64) -> String {
     format!("account {account}")
 }
+
+/// Under the phone's first page's title.
+pub(crate) const HUB_CAPTION: &str = "Boards of everyone's best scores";
+
+/// The phone's honest line: it reads the boards, it plays nothing.
+pub(crate) const PHONE_ONLY_READS: &str =
+    "The games are played on a computer with a keyboard. On the phone you can read the boards.";
+
+/// The head over the phone's list of games.
+pub(crate) const GAMES: &str = "Games";
+
+/// A game's row, as a screen reader names it: what it opens.
+pub(crate) fn board_of(name: &str) -> String {
+    format!("{name} board")
+}
+
+/// The head over a board's rows, and the start of its page's caption.
+pub(crate) const TOP_TEN: &str = "Top ten";
+
+/// Under a board's title: the ten, and what the game is.
+pub(crate) fn board_caption(blurb: &str) -> String {
+    format!("{TOP_TEN} \u{b7} {blurb}")
+}
+
+/// The reader's own row, marked, and the head over it outside the ten.
+pub(crate) const YOU: &str = "You";
+
+/// The reader's best outside the ten: the program gives no rank.
+pub(crate) const NOT_IN_TOP_TEN: &str = "Not in the top ten";
+
+/// A figure not known: a best not read yet, a rank the program does not
+/// give.
+pub(crate) const NOT_KNOWN: &str = "\u{2014}";
+
+/// A board read with no account seated.
+pub(crate) const OWN_BEST_NEEDS_AN_ACCOUNT: &str = "Your own best shows from an account.";
+
+/// A board no one has posted to, and what fills it.
+pub(crate) const NO_SCORES: &str = "No scores yet";
+pub(crate) fn first_score(name: &str) -> String {
+    format!("The first game of {name} played on a computer puts a score here.")
+}
