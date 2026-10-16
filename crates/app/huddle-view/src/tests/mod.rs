@@ -1,7 +1,9 @@
 //! The view on a fake host: each test drives the frame the way a person
 //! would and reads what the host would get. Every frame it sends is held
 //! to the host's sanitizer and accessibility audit, and to the view's
-//! capabilities (a piece the manifest leaves out fails the test).
+//! capabilities (a piece the manifest leaves out fails the test). The
+//! desktop's tree is driven here, under a pointer; the phone's, under a
+//! finger, in `phone.rs`.
 use view::Entity;
 use view::methods::{
     AudioDevice, AudioDevices, AudioKind, CameraDevice, CameraDevices, ClockTicks, Facing, Float,
@@ -13,6 +15,8 @@ use view::wire::list::UniformListScrollStrategy;
 use view::wire::{ImageObjectFit, MediaState, MediaStatus, MicCommand, Node, Playback};
 
 use crate::{FLOAT, Huddle, RECORD_SECONDS};
+
+mod phone;
 
 fn camera(id: &str, name: &str, default: bool, facing: Facing) -> CameraDevice {
     CameraDevice {

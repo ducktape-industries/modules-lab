@@ -24,9 +24,16 @@
 //! `microphone.devices` answer, read again whenever a menu opens (no host
 //! tells the view of a device plugged in).
 //!
+//! A phone keeps one full-screen window and cannot float a pane: under a
+//! finger the view draws the phone's own screens (`ui::phone`), picked once
+//! at the root, where Join keeps the view where it is, one Sound route
+//! stands for the microphone and the speaker, and a flip turns to the
+//! camera on the other side.
+//!
 //! This file is the model: what the person picked and switched, what the
 //! host listed and the pieces told, and what each press changes. What is
-//! drawn is `ui` (the desktop's tree), in the words of `words`.
+//! drawn is `ui` (the desktop's tree) or `ui::phone` (the phone's), in the
+//! words of `words`.
 use serde::{Deserialize, Serialize};
 use view::prelude::*;
 
@@ -369,6 +376,66 @@ impl Huddle {
         match elapsed / 3600 {
             0 => format!("{:02}:{:02}", elapsed / 60, elapsed % 60),
             hours => format!("{hours}:{:02}:{:02}", elapsed / 60 % 60, elapsed % 60),
+        }
+    }
+
+    /// The camera the pieces open: the pick, else the system's default;
+    /// `None` before the list lands, or with none in it.
+    pub(crate) fn camera_in_use(&self) -> Option<&CameraDevice> {
+        in_use(self.cameras.ready()?, self.camera.as_deref())
+    }
+
+    /// The speaker the microphone piece plays through (on a phone, the
+    /// route the microphone follows): the pick, else the system's default.
+    pub(crate) fn speaker_in_use(&self) -> Option<&AudioDevice> {
+        in_use(&self.audio.ready()?.outputs, self.speaker.as_deref())
+    }
+
+    /// The listed speaker `id` names.
+    pub(crate) fn speaker(&self, id: &str) -> Option<&AudioDevice> {
+        let outputs = &self.audio.ready()?.outputs;
+        outputs.iter().find(|output| output.id == id)
+    }
+
+    /// Whether the sound plays where the microphone hears it: through a
+    /// loudspeaker, or a speaker not listed yet. A phone refuses the live
+    /// loop then, its speaker a hand's width from its microphone.
+    pub(crate) fn loops_back(&self) -> bool {
+        self.speaker_in_use()
+            .is_none_or(|speaker| speaker.kind == AudioKind::Speaker)
+    }
+
+    /// Whether the camera in use faces away from the person: a phone's
+    /// back camera.
+    pub(crate) fn facing_away(&self) -> bool {
+        self.camera_in_use()
+            .is_some_and(|camera| camera.facing == Facing::Back)
+    }
+
+    /// Whether the picture is mirrored: as the person set it, and never
+    /// from a camera facing away (text in it would read backwards).
+    pub(crate) fn mirrored(&self) -> bool {
+        !self.unmirrored && !self.facing_away()
+    }
+
+    /// The camera on the other side from the one in use, where the host
+    /// lists a front and a back one: what the phone's flip turns to.
+    pub(crate) fn other_camera(&self) -> Option<&CameraDevice> {
+        let cameras = self.cameras.ready()?;
+        let facing = |facing| cameras.iter().find(|camera| camera.facing == facing);
+        let (front, back) = (facing(Facing::Front)?, facing(Facing::Back)?);
+        match self.camera_in_use()?.facing {
+            Facing::Back => Some(front),
+            Facing::Front | Facing::External => Some(back),
+        }
+    }
+
+    /// The camera on the other side picked: its piece opens again on it.
+    pub(crate) fn flip(&mut self, cx: &mut Context<Self>) {
+        if let Some(other) = self.other_camera() {
+            let id = other.id.clone();
+            self.set_pick(Kind::Camera, Some(id));
+            cx.notify();
         }
     }
 
@@ -720,7 +787,13 @@ impl Render for Huddle {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let size = window.viewport_size();
         self.viewport = (size.width.into(), size.height.into());
-        ui::render(self, cx)
+        // one wasm, two designs, the model shared: a finger gets the
+        // phone's screens, a pointer the desktop's
+        if window.touch() {
+            ui::phone::render(self, cx)
+        } else {
+            ui::render(self, cx)
+        }
     }
 }
 

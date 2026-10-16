@@ -1,7 +1,7 @@
-//! What the view says, once: the trouble a piece reports, the names of the
-//! toggles, what a device list and a picker say, and the words of the
-//! check and the room a second design would say too. A sentence only the
-//! desktop's tree says stays in it.
+//! What the view says, once: every sentence the phone's tree shows, and
+//! each one the desktop's tree shows too (the trouble a piece reports, the
+//! names of the toggles, what a device list and a picker say, the room's
+//! words). A sentence only the desktop says stays in its tree.
 use view::prelude::*;
 
 use crate::{Kind, RECORD_SECONDS, Which};
@@ -159,6 +159,55 @@ pub(crate) fn join_without(device: Device) -> &'static str {
     }
 }
 
+// ---------- the phone's own ----------
+
+/// The check's title row, under the view's name.
+pub(crate) const CHECK_CAPTION: &str = "Check your camera and microphone";
+
+/// The check's sections.
+pub(crate) const SOUND: &str = "Sound";
+pub(crate) const PICTURE: &str = "Picture";
+
+/// The sound sheet's head, and its foot.
+pub(crate) const PLAY_THROUGH: &str = "Play sound through";
+pub(crate) const MICROPHONE_FOLLOWS: &str =
+    "The microphone follows: AirPods or a headset bring their own.";
+
+/// The room's sound control, named with the route.
+pub(crate) fn sound(route: &str) -> String {
+    format!("{SOUND}: {route}")
+}
+
+/// Under "Hear myself live", by where the sound goes: through a
+/// loudspeaker (or a route not listed yet) the phone refuses the loop and
+/// says why.
+pub(crate) fn hear_myself_line(route: Option<AudioKind>) -> &'static str {
+    match route {
+        Some(AudioKind::Headphones) => {
+            "Headphones connected: hear your own microphone as you speak."
+        }
+        Some(AudioKind::Earpiece | AudioKind::Other) => "Hear your own microphone as you speak.",
+        Some(AudioKind::Speaker) | None => {
+            "Through the speaker your voice loops back into the microphone and howls. Connect \
+             headphones to hear yourself."
+        }
+    }
+}
+
+/// Under "Mirror my picture".
+pub(crate) const MIRROR_LINE: &str = "Front camera only; the back camera is never mirrored.";
+
+/// The flip, by the camera it switches to.
+pub(crate) fn flip(to: Facing) -> &'static str {
+    match to {
+        Facing::Back => "Switch to the back camera",
+        _ => "Switch to the front camera",
+    }
+}
+
+/// While the system asks whether the camera may be used.
+pub(crate) const ALLOW_CAMERA: &str = "Allow the camera when your phone asks.";
+
 // ---------- troubles ----------
 
 /// What a trouble is called where both designs call it the same: a
@@ -243,5 +292,58 @@ pub(crate) fn trouble(device: Device, state: &MediaState) -> (&'static str, Stri
             (called(device, &state.status), detail_or(state, ""))
         }
         MediaStatus::Starting | MediaStatus::Live => ("", String::new()),
+    }
+}
+
+/// The title and the line under it for a device's trouble on a phone,
+/// where a call or another app takes a device over and Settings is the
+/// one way back to a refused one: a camera's card says both; a
+/// microphone's trouble is one line, [`phone_line`].
+pub(crate) fn phone_trouble(device: Device, state: &MediaState) -> (&'static str, String) {
+    let camera = device == Device::Camera;
+    let either = |of_camera: &'static str, of_microphone: &'static str| match camera {
+        true => of_camera,
+        false => of_microphone,
+    };
+    match state.status {
+        MediaStatus::Denied => (
+            called(device, &state.status),
+            either(
+                "Ducktape is not allowed to use the camera. Allow it in Settings, then try again.",
+                "Allow it in Settings, then try again.",
+            )
+            .into(),
+        ),
+        MediaStatus::Busy => (
+            called(device, &state.status),
+            either("Close it, then try again.", "").into(),
+        ),
+        MediaStatus::Gone => (
+            either("The camera stopped", "The microphone stopped"),
+            detail_or(
+                state,
+                either(
+                    "A phone call or another app took it over. When that is done, try again.",
+                    "",
+                ),
+            ),
+        ),
+        MediaStatus::NoDevice => (
+            either("No camera on this device", "No microphone on this device"),
+            either("Join with your microphone only.", "").into(),
+        ),
+        MediaStatus::Failed | MediaStatus::Unsupported => {
+            (called(device, &state.status), detail_or(state, ""))
+        }
+        MediaStatus::Starting | MediaStatus::Live => ("", String::new()),
+    }
+}
+
+/// A device's trouble on a phone as one line: its title and what follows,
+/// each a sentence.
+pub(crate) fn phone_line(device: Device, state: &MediaState) -> String {
+    match phone_trouble(device, state) {
+        (title, text) if text.is_empty() => format!("{title}."),
+        (title, text) => format!("{title}. {text}"),
     }
 }

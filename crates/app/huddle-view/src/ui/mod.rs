@@ -20,6 +20,10 @@ use view::{
 use crate::words::{self, Device};
 use crate::{Huddle, Kind, Menu, RECORD_SECONDS, Row, Screen, Which, trouble};
 
+/// The phone's tree, which the view's root picks under a finger. It reads
+/// nothing of this one.
+pub(crate) mod phone;
+
 /// The check's settings column, and the menus' width.
 const COLUMN: f32 = 272.;
 
