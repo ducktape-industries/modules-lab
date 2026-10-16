@@ -136,11 +136,21 @@ fn sweep() {
             cx.simulate_click("huddle-camera-retry");
             cx.run_until_parked();
         }
-        // board 21: the microphone refused
-        let mic = mic_key(cx);
-        cx.simulate_media_state(&mic, status(MediaStatus::Denied));
-        cx.simulate_click("huddle-microphone-retry");
-        cx.run_until_parked();
+        // board 21: the microphone refused (Open Settings and Try again
+        // under the route), then missing (Try again, join without it)
+        for status in [MediaStatus::Denied, MediaStatus::NoDevice] {
+            let mic = mic_key(cx);
+            cx.simulate_media_state(
+                &mic,
+                MediaState {
+                    status,
+                    opens_settings: true,
+                    ..Default::default()
+                },
+            );
+            cx.simulate_click("huddle-microphone-retry");
+            cx.run_until_parked();
+        }
         // board 30: the room, speaking, muted with the camera off, the
         // microphone in trouble, the sheet over it
         live_pieces(cx);
@@ -158,7 +168,14 @@ fn sweep() {
         cx.simulate_click("huddle-camera");
         cx.simulate_click("huddle-mic");
         let mic = mic_key(cx);
-        cx.simulate_media_state(&mic, status(MediaStatus::Gone));
+        cx.simulate_media_state(
+            &mic,
+            MediaState {
+                status: MediaStatus::Denied,
+                opens_settings: true,
+                ..Default::default()
+            },
+        );
         cx.simulate_click("huddle-microphone-retry");
         cx.simulate_click("huddle-sound");
         cx.simulate_back();
@@ -628,16 +645,22 @@ fn a_missing_camera_in_the_room_offers_no_join() {
     assert!(!cx.has_text("Join with your microphone only."));
 }
 
-/// A microphone in trouble on the check is the Sound row's one line, with
-/// Try again opening a new piece; Record and the live loop wait.
+/// A microphone in trouble on the check is the Sound row's one line, told
+/// to assistive technology on the route too, with Try again under it
+/// opening a new piece; the speaker test still sounds, Record and the
+/// live loop wait.
 #[test]
 fn a_microphone_in_trouble_is_one_line_with_try_again() {
     let (mut cx, _ticks) = phone();
     let key = mic_key(&cx);
     cx.simulate_media_state(&key, status(MediaStatus::Denied));
     assert!(cx.has_text("Microphone access is off. Allow it in Settings, then try again."));
+    assert_eq!(
+        cx.interactivity("huddle-sound").aria.description.as_deref(),
+        Some("Microphone access is off")
+    );
     assert!(cx.find("huddle-meter").is_none());
-    assert!(cx.find("huddle-sound-test").is_none());
+    assert!(!disabled(&cx, "huddle-sound-test"), "the speaker sounds");
     for control in ["huddle-record", "huddle-monitor"] {
         assert!(disabled(&cx, control), "{control} waits");
     }
@@ -656,15 +679,54 @@ fn a_microphone_in_trouble_is_one_line_with_try_again() {
     assert!(cx.has_text("The microphone stopped. A phone call took the microphone."));
 }
 
-/// A microphone in trouble in the room is said over the stage, with a
-/// retry, and its bar button is slashed on the danger fill.
+/// A refused microphone offers Open Settings where the host says its
+/// settings can help, and opens exactly the microphone's page; Try again
+/// stays beside it (a grant there does not reopen the piece). On the
+/// check under the Sound row, in the room over the stage.
+#[test]
+fn a_refused_microphone_offers_settings_where_the_host_can() {
+    let (mut cx, _ticks) = phone();
+    let key = mic_key(&cx);
+    cx.simulate_media_state(&key, status(MediaStatus::Denied));
+    assert!(cx.find("huddle-microphone-settings").is_none());
+    cx.simulate_click("huddle-microphone-retry");
+    cx.run_until_parked();
+    let key = mic_key(&cx);
+    cx.simulate_media_state(
+        &key,
+        MediaState {
+            status: MediaStatus::Denied,
+            opens_settings: true,
+            ..Default::default()
+        },
+    );
+    assert!(cx.find("huddle-microphone-retry").is_some());
+    cx.simulate_click("huddle-microphone-settings");
+    assert_eq!(
+        cx.host().requests::<HostShow>(),
+        [Place::MicrophoneSettings]
+    );
+
+    // still refused in the room: said over the stage, with the same fixes
+    cx.simulate_click("huddle-join");
+    assert!(cx.find("huddle-microphone-retry").is_some());
+    cx.simulate_click("huddle-microphone-settings");
+    assert_eq!(
+        cx.host().requests::<HostShow>(),
+        [Place::MicrophoneSettings, Place::MicrophoneSettings]
+    );
+}
+
+/// A microphone in trouble in the room is said over the stage, with Try
+/// again in the check's word, and its bar button is slashed on the danger
+/// fill.
 #[test]
 fn a_microphone_in_trouble_in_the_room_says_so() {
     let (mut cx, _ticks) = phone();
     cx.simulate_click("huddle-join");
     let key = mic_key(&cx);
     cx.simulate_media_state(&key, status(MediaStatus::Busy));
-    assert!(cx.has_text("Another app is using the microphone."));
+    has_all(&cx, &["Another app is using the microphone.", "Try again"]);
     assert_eq!(
         cx.interactivity("huddle-mic").aria.description.as_deref(),
         Some("Another app is using the microphone")

@@ -336,6 +336,14 @@ impl Huddle {
         }
     }
 
+    /// What `device`'s piece last told.
+    pub(crate) fn state(&self, device: Device) -> &MediaState {
+        match device {
+            Device::Camera => &self.camera_state,
+            Device::Microphone => &self.mic_state,
+        }
+    }
+
     pub(crate) fn mic_live(&self) -> bool {
         !self.muted && self.mic_state.status == MediaStatus::Live
     }

@@ -49,18 +49,12 @@ pub(super) fn screen(
     .child(bar(view, cx, ladder, theme))
 }
 
-/// The stage: a microphone in trouble said over it with Try again (the
-/// room has no Sound row to say it in), and your tile.
+/// The stage: a microphone in trouble said over it with what fixes it
+/// (the room has no Sound row to say it in), and your tile.
 fn stage(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
-    let mic_trouble = view.troubled(Device::Microphone).then(|| {
-        design::refused(
-            "huddle-microphone",
-            words::phone_line(Device::Microphone, &view.mic_state),
-            ladder,
-            theme,
-            cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx)),
-        )
-    });
+    let mic_trouble = view
+        .troubled(Device::Microphone)
+        .then(|| mic_trouble(view, cx, ladder, theme));
     div()
         .id("huddle-stage")
         .flex_1()
@@ -69,6 +63,34 @@ fn stage(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme
         .flex_col()
         .children(mic_trouble)
         .child(tile(view, cx, ladder, theme))
+}
+
+/// The microphone's trouble, in the danger tone over the stage: its line
+/// (the check's Sound row's), and what fixes it under the line.
+fn mic_trouble(
+    view: &Huddle,
+    cx: &mut Context<Huddle>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> Stateful<Div> {
+    div()
+        .id("huddle-mic-trouble")
+        .flex_none()
+        .flex()
+        .flex_col()
+        .gap(design::space::SM)
+        .px(design::space::BLOCK)
+        .py(design::space::LG)
+        .bg(theme.danger_soft)
+        .border_b_1()
+        .border_color(theme.danger)
+        .child(
+            div()
+                .text_type(ladder.secondary)
+                .text_color(theme.danger)
+                .child(words::phone_line(Device::Microphone, &view.mic_state)),
+        )
+        .child(parts::fixes(view, Device::Microphone, cx, ladder, theme))
 }
 
 /// Your tile: the picture covering it, mirrored as the model says (or

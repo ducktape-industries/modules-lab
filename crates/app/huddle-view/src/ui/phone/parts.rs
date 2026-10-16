@@ -170,64 +170,66 @@ pub(super) fn state_card(
         });
     Some(match opening {
         true => card,
-        false => card.child(fixes(view, cx, ladder, theme)),
+        false => card.child(
+            fixes(view, Device::Camera, cx, ladder, theme)
+                .mt(design::space::SM)
+                .justify_center(),
+        ),
     })
 }
 
-/// What fixes the camera's trouble: Open Settings where the host can open
-/// them, Try again, and on the check, for a phone with no camera, joining
-/// without it.
-fn fixes(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme) -> Div {
-    let state = &view.camera_state;
+/// What fixes `device`'s trouble, in a row that wraps: Open Settings where
+/// the host says its settings can (a refused device), Try again (a grant in
+/// Settings does not reopen a piece let go), and on the check, for a phone
+/// without the device, joining without it. The caller places the row.
+pub(super) fn fixes(
+    view: &Huddle,
+    device: Device,
+    cx: &mut Context<Huddle>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> Div {
+    let state = view.state(device);
     let settings = state.status == MediaStatus::Denied && state.opens_settings;
     let missing = state.status == MediaStatus::NoDevice && view.screen == Screen::Check;
-    let open_settings = cx.listener(|_: &mut Huddle, _: &ClickEvent, _, cx| {
-        cx.host().notify::<HostShow>(Place::CameraSettings)
-    });
+    let (prefix, page) = match device {
+        Device::Camera => ("huddle-camera", Place::CameraSettings),
+        Device::Microphone => ("huddle-microphone", Place::MicrophoneSettings),
+    };
+    let id = |what: &str| format!("{prefix}-{what}");
+    let open_settings = cx
+        .listener(move |_: &mut Huddle, _: &ClickEvent, _, cx| cx.host().notify::<HostShow>(page));
     let try_again = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx));
-    let without = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
-        view.camera_off = true;
+    let without = cx.listener(move |view: &mut Huddle, _: &ClickEvent, _, cx| {
+        match device {
+            Device::Camera => view.camera_off = true,
+            Device::Microphone => view.muted = true,
+        }
         view.enter_room(cx)
     });
     div()
-        .mt(design::space::SM)
         .flex()
         .flex_wrap()
-        .justify_center()
         .gap(design::space::SM)
         .when(settings, |row| {
-            row.child(
-                design::button(
-                    "huddle-camera-settings",
-                    words::OPEN_SETTINGS,
-                    ladder,
-                    theme,
-                    open_settings,
-                )
-                .small(),
-            )
-        })
-        .child(
-            design::button(
-                "huddle-camera-retry",
-                words::TRY_AGAIN,
+            let open = design::button(
+                id("settings"),
+                words::OPEN_SETTINGS,
                 ladder,
                 theme,
-                try_again,
-            )
-            .small(),
-        )
+                open_settings,
+            );
+            row.child(open.small())
+        })
+        .child(design::button(id("retry"), words::TRY_AGAIN, ladder, theme, try_again).small())
         .when(missing, |row| {
-            row.child(
-                design::button(
-                    "huddle-camera-without",
-                    words::join_without(Device::Camera),
-                    ladder,
-                    theme,
-                    without,
-                )
-                .small()
-                .kind(ButtonKind::Quiet),
-            )
+            let join = design::button(
+                id("without"),
+                words::join_without(device),
+                ladder,
+                theme,
+                without,
+            );
+            row.child(join.small().kind(ButtonKind::Quiet))
         })
 }

@@ -785,7 +785,7 @@ fn state_card(
     cx: &mut Context<Huddle>,
     theme: &Theme,
 ) -> Stateful<Div> {
-    let state = state(view, device);
+    let state = view.state(device);
     let (title, text) = words::trouble(device, state);
     div()
         .id("huddle-camera-trouble")
@@ -818,19 +818,11 @@ fn state_card(
         .child(actions(view, device, cx, theme))
 }
 
-/// What a device's piece last told.
-fn state(view: &Huddle, device: Device) -> &MediaState {
-    match device {
-        Device::Camera => &view.camera_state,
-        Device::Microphone => &view.mic_state,
-    }
-}
-
 /// What fixes a device's trouble: Open Settings where the host can open
 /// them, Try again, and on the check, for a missing device, joining
 /// without it.
 fn actions(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
-    let state = state(view, device);
+    let state = view.state(device);
     let camera = device == Device::Camera;
     let prefix = if camera {
         "huddle-camera"
@@ -1359,7 +1351,7 @@ fn trouble_rows(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Optio
 
 /// A device's trouble as one row: its glyph, its title and Try again.
 fn trouble_row(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
-    let state = state(view, device);
+    let state = view.state(device);
     let (title, _) = words::trouble(device, state);
     div()
         .flex()

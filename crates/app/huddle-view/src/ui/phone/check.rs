@@ -230,24 +230,29 @@ fn flip(
 
 /// The Sound route (SPEC §1.2): its name over the microphone's level, or
 /// over the microphone's trouble; a press opens the sound sheet. Then the
-/// speaker test, or Try again for the microphone in trouble.
+/// speaker test, which sounds with the microphone in trouble too (an
+/// output, apart from it). A microphone in trouble has what fixes it on a
+/// line of its own under its words: two buttons do not fit beside the
+/// test at 360.
 fn sound(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
     let route = view.shown_device(Kind::Speaker);
-    let troubled = view.troubled(Device::Microphone);
-    let under: AnyElement = match troubled {
-        true => div()
+    let trouble = view
+        .troubled(Device::Microphone)
+        .then(|| words::phone_trouble(Device::Microphone, &view.mic_state).0);
+    let under: AnyElement = match trouble {
+        Some(_) => div()
             .id("huddle-mic-trouble")
             .text_type(ladder.caption)
             .text_color(theme.danger)
             .child(words::phone_line(Device::Microphone, &view.mic_state))
             .into_any_element(),
-        false => meter(view, cx, theme).into_any_element(),
+        None => meter(view, cx, theme).into_any_element(),
     };
     let open = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| {
         view.open_menu(SOUND, "huddle-sound", cx)
     });
     // the route's words and the chevron are the press; the test beside them
-    // is a press of its own, never inside it
+    // and the fixes under them are presses of their own, never inside it
     let press = div()
         .id("huddle-sound")
         .flex_1()
@@ -257,6 +262,7 @@ fn sound(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme
         .gap(design::space::LG)
         .role(Role::Button)
         .aria_label(words::sound(&route))
+        .when_some(trouble, |press, trouble| press.aria_description(trouble))
         .focusable()
         .on_click(open)
         .child(design::lead(
@@ -272,35 +278,34 @@ fn sound(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme
                 ),
         )
         .child(design::chevron(ladder, theme));
-    let tail = match troubled {
-        true => design::button(
-            "huddle-microphone-retry",
-            words::TRY_AGAIN,
-            ladder,
-            theme,
-            cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx)),
-        )
-        .small()
-        .into_any_element(),
-        false => design::button(
-            "huddle-sound-test",
-            if view.chiming {
-                words::PLAYING
-            } else {
-                words::TEST
-            },
-            ladder,
-            theme,
-            cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.chime(cx)),
-        )
-        .small()
-        .enabled(view.can_test())
-        .into_any_element(),
-    };
+    let test = design::button(
+        "huddle-sound-test",
+        if view.chiming {
+            words::PLAYING
+        } else {
+            words::TEST
+        },
+        ladder,
+        theme,
+        cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.chime(cx)),
+    )
+    .small()
+    .enabled(view.can_test());
+    // the fixes' line, under the words: an empty lead keeps them in line
+    let fixes = trouble.is_some().then(|| {
+        div()
+            .w_full()
+            .flex()
+            .gap(design::space::LG)
+            .child(design::lead(div()))
+            .child(parts::fixes(view, Device::Microphone, cx, ladder, theme))
+    });
     design::row("huddle-sound-row", ladder, theme)
         .min_h(ladder.row_tall)
+        .flex_wrap()
         .child(design::pressed(press, ladder))
-        .child(tail)
+        .child(test)
+        .children(fixes)
 }
 
 // SDK gap: the meter, swap when feat/phone-kit lands
