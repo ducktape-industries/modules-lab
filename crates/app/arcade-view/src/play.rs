@@ -14,7 +14,7 @@ use view::{AnyElement, Div, FontWeight, Stateful};
 use crate::data::Row;
 use crate::games::{Game, seed};
 use crate::tetris::Tetris;
-use crate::{Arcade, Play, Post, breakout, invaders, merge, mines, snake, tetris};
+use crate::{Arcade, Play, Post, breakout, invaders, merge, mines, snake, tetris, words};
 
 /// The bar over the board, the panel's width and the room around a board.
 pub(crate) const BAR_H: Pixels = px(44.);
@@ -56,8 +56,7 @@ impl Arcade {
             field: None,
             shift: false,
         });
-        self.board = Loadable::Idle;
-        self.read_board(cx);
+        self.open_board(which, cx);
         window.focus("arcade-board");
         self.settle(cx);
         cx.notify();
@@ -68,7 +67,7 @@ impl Arcade {
         let Some(play) = self.play.take() else {
             return;
         };
-        self.board = Loadable::Idle;
+        self.close_board(cx);
         window.focus(format!("arcade-card-{}", play.which));
         self.settle(cx);
         cx.notify();
@@ -552,7 +551,7 @@ impl Arcade {
     /// The game's top ten, or what stands in for them.
     fn top(&self, theme: &Theme) -> Div {
         let theme = *theme;
-        let rows: AnyElement = match &self.board {
+        let rows: AnyElement = match &self.board.rows {
             Loadable::Failed(refused) => {
                 design::quiet(refused.message.clone(), &theme).into_any_element()
             }
@@ -572,7 +571,7 @@ impl Arcade {
                     .into_any_element()
             }
             Loadable::Idle | Loadable::Loading(_) => {
-                design::quiet("Reading the board…", &theme).into_any_element()
+                design::quiet(words::READING_BOARD, &theme).into_any_element()
             }
         };
         div()

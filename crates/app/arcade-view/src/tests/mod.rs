@@ -23,6 +23,7 @@ use crate::{Arcade, Post};
 mod breakout;
 mod games;
 mod invaders;
+mod phone;
 mod snake;
 mod versus;
 
@@ -58,6 +59,42 @@ impl Default for World {
 
 pub(crate) type Shared = Rc<RefCell<World>>;
 
+/// The program answers the view's reads from `world`, as the node would.
+pub(crate) fn answer_reads(cx: &TestAppContext, world: &Shared) {
+    let asked = world.clone();
+    cx.host().handle::<Ask<arcade::Arcade>>(move |query| {
+        let world = asked.borrow();
+        Ok(match query {
+            Query::Top { game, limit } => Reply::Top(
+                world.boards[usize::from(game)]
+                    .iter()
+                    .take(limit as usize)
+                    .copied()
+                    .collect(),
+            ),
+            Query::Bests { .. } => Reply::Bests(world.bests.clone()),
+        })
+    });
+}
+
+/// Identity answers the view's asks for names from `world`, as it would.
+pub(crate) fn answer_names(cx: &TestAppContext, world: &Shared) {
+    let named = world.clone();
+    cx.host().handle::<Ask<Identity>>(move |query| {
+        let ::identity::Query::Profile { number } = query else {
+            panic!("the view asks identity for a profile alone");
+        };
+        let name = named.borrow().names.get(&number).cloned();
+        Ok(::identity::Reply::Profile(name.map(|name| {
+            identity::Profile {
+                number,
+                name,
+                kind: identity::Kind::User,
+            }
+        })))
+    });
+}
+
 /// The view open on the fake host, the session said, and the feeds a test
 /// speaks for the host through.
 pub(crate) struct Opened {
@@ -84,34 +121,8 @@ pub(crate) fn session(account: Option<u64>) -> Session {
 pub(crate) fn opened(world: World, account: Option<u64>) -> Opened {
     let mut cx = TestAppContext::new();
     let world = Rc::new(RefCell::new(world));
-    let asked = world.clone();
-    cx.host().handle::<Ask<arcade::Arcade>>(move |query| {
-        let world = asked.borrow();
-        Ok(match query {
-            Query::Top { game, limit } => Reply::Top(
-                world.boards[usize::from(game)]
-                    .iter()
-                    .take(limit as usize)
-                    .copied()
-                    .collect(),
-            ),
-            Query::Bests { .. } => Reply::Bests(world.bests.clone()),
-        })
-    });
-    let named = world.clone();
-    cx.host().handle::<Ask<Identity>>(move |query| {
-        let ::identity::Query::Profile { number } = query else {
-            panic!("the view asks identity for a profile alone");
-        };
-        let name = named.borrow().names.get(&number).cloned();
-        Ok(::identity::Reply::Profile(name.map(|name| {
-            identity::Profile {
-                number,
-                name,
-                kind: identity::Kind::User,
-            }
-        })))
-    });
+    answer_reads(&cx, &world);
+    answer_names(&cx, &world);
     cx.host()
         .handle::<HostId>(|prefix| Ok(format!("{prefix}-18f2c0a1b2c3d4e5-1")));
     let told = world.clone();
