@@ -10,7 +10,7 @@
 //! opens no device again.
 use view::prelude::*;
 use view::{
-    Anchor, AnchoredPositionMode, AnyElement, Bounds, Div, Edges, FontWeight, Point, Stateful, Svg,
+    Anchor, AnchoredPositionMode, AnyElement, Bounds, Div, Edges, FontWeight, Point, Stateful,
 };
 
 use crate::{Huddle, MENU_POPUP, Menu, RECORD_SECONDS, Row, Screen, Which, trouble};
@@ -18,34 +18,31 @@ use crate::{Huddle, MENU_POPUP, Menu, RECORD_SECONDS, Row, Screen, Which, troubl
 /// The check's settings column, and the menus' width.
 const COLUMN: f32 = 272.;
 
-const MIC: &str = "icons/mic.svg";
-const MIC_OFF: &str = "icons/mic-off.svg";
-const VIDEO: &str = "icons/video.svg";
-const VIDEO_OFF: &str = "icons/video-off.svg";
-const SPEAKER: &str = "icons/volume-2.svg";
-const HEADPHONES: &str = "icons/headphones.svg";
-const LEAVE: &str = "icons/phone-off.svg";
-const CARET: &str = "icons/chevron-down.svg";
-const MIRROR: &str = "icons/flip-horizontal-2.svg";
-const ALERT: &str = "icons/circle-alert.svg";
-const CAMERA_OFF: &str = "icons/camera-off.svg";
-const PLAY: &str = "icons/play.svg";
-const STOP: &str = "icons/square.svg";
-const CHECK: &str = "icons/check.svg";
-const PEOPLE: &str = "icons/users.svg";
-const SPEAKING: &str = "icons/audio-lines.svg";
-const PERSON: &str = "icons/user-round.svg";
-const PIN: &str = "icons/pin.svg";
-const PIN_OFF: &str = "icons/pin-off.svg";
-const BACK: &str = "icons/picture-in-picture-2.svg";
-const CLOSE: &str = "icons/x.svg";
+// the glyphs, by the Lucide names `design::icon` draws
+const MIC: &str = "mic";
+const MIC_OFF: &str = "mic-off";
+const VIDEO: &str = "video";
+const VIDEO_OFF: &str = "video-off";
+const SPEAKER: &str = "volume-2";
+const HEADPHONES: &str = "headphones";
+const LEAVE: &str = "phone-off";
+const CARET: &str = "chevron-down";
+const MIRROR: &str = "flip-horizontal-2";
+const ALERT: &str = "circle-alert";
+const CAMERA_OFF: &str = "camera-off";
+const PLAY: &str = "play";
+const STOP: &str = "square";
+const CHECK: &str = "check";
+const PEOPLE: &str = "users";
+const SPEAKING: &str = "audio-lines";
+const PERSON: &str = "user-round";
+const PIN: &str = "pin";
+const PIN_OFF: &str = "pin-off";
+const BACK: &str = "picture-in-picture-2";
+const CLOSE: &str = "x";
 
 fn f(pixels: Pixels) -> f32 {
     pixels.into()
-}
-
-fn glyph(path: &'static str, size: f32) -> Svg {
-    svg().path(path).size(px(size)).flex_none()
 }
 
 /// Over the camera's picture the picture is the ground: controls and chips
@@ -65,7 +62,7 @@ fn black() -> Hsla {
 /// The muted mark on the glass: the dark theme's danger, legible on black
 /// in either theme.
 fn muted_mark() -> Hsla {
-    rgb(0xF97066).into()
+    Theme::dark().danger
 }
 
 pub(crate) fn render(view: &mut Huddle, cx: &mut Context<Huddle>) -> AnyElement {
@@ -230,7 +227,7 @@ fn glass_toggle(
         .aria_toggled(off.into())
         .focusable()
         .on_click(click)
-        .child(glyph(icon, 16.))
+        .child(design::icon(icon, px(16.)))
 }
 
 fn mic_toggle(muted: bool, danger: Hsla, cx: &mut Context<Huddle>) -> Stateful<Div> {
@@ -282,7 +279,7 @@ fn mirror_toggle(mirrored: bool, enabled: bool, cx: &mut Context<Huddle>) -> Sta
         .role(Role::Button)
         .aria_label("Mirror my picture")
         .aria_toggled(mirrored.into())
-        .child(glyph(MIRROR, 14.));
+        .child(design::icon(MIRROR, px(14.)));
     match enabled {
         true => toggle.cursor_pointer().focusable().on_click(cx.listener(
             |view: &mut Huddle, _: &ClickEvent, _, cx| {
@@ -348,7 +345,7 @@ fn camera_off(size: f32, line: Option<&'static str>, theme: &Theme) -> Div {
         .border_1()
         .border_color(theme.border)
         .text_color(theme.muted)
-        .child(glyph(PERSON, (size * 0.4).round()));
+        .child(design::icon(PERSON, px((size * 0.4).round())));
     div()
         .absolute()
         .inset_0()
@@ -472,9 +469,9 @@ fn picker(
                 }
             }),
         )
-        .child(glyph(icon, 14.))
+        .child(design::icon(icon, px(14.)))
         .child(div().flex_1().min_w(px(0.)).truncate().child(name))
-        .child(glyph(CARET, 12.).text_color(theme.muted));
+        .child(design::icon(CARET, px(12.)).text_color(theme.muted));
     anchor(which, button, cx).w_full()
 }
 
@@ -535,7 +532,7 @@ fn mic_trouble(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Statef
                 .gap(design::space::XS)
                 .text_size(design::text::CAPTION)
                 .text_color(theme.muted)
-                .child(glyph(ALERT, 12.).mt(px(1.)))
+                .child(design::icon(ALERT, px(12.)).mt(px(1.)))
                 .child(div().flex_1().min_w(px(0.)).child(line)),
         )
         .child(actions(Device::Microphone, state, cx, theme))
@@ -666,7 +663,7 @@ fn monitor(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
                 .gap(design::space::XS)
                 .text_size(design::text::CAPTION)
                 .text_color(theme.warning)
-                .child(glyph(HEADPHONES, 13.).mt(px(1.)))
+                .child(design::icon(HEADPHONES, px(13.)).mt(px(1.)))
                 .child(div().flex_1().min_w(px(0.)).child(
                     "Wear headphones: through speakers your voice loops back into the \
                      microphone and howls.",
@@ -723,7 +720,7 @@ fn outline(
         .text_size(design::text::SECONDARY)
         .whitespace_nowrap()
         .role(Role::Button)
-        .children(icon.map(|icon| glyph(icon, 14.)))
+        .children(icon.map(|icon| design::icon(icon, px(14.))))
         .child(label.into());
     match enabled {
         true => button
@@ -851,7 +848,7 @@ fn state_card(
         .gap(design::space::SM)
         .p(design::space::BLOCK)
         .text_center()
-        .child(glyph(icon, 20.).text_color(theme.muted))
+        .child(design::icon(icon, px(20.)).text_color(theme.muted))
         .child(
             div()
                 .text_size(design::text::BODY)
@@ -1108,7 +1105,7 @@ fn mark(view: &Huddle, speaking: bool) -> Option<Stateful<Div>> {
             .flex()
             .role(Role::Image)
             .aria_label(name)
-            .child(glyph(icon, 12.).text_color(color)),
+            .child(design::icon(icon, px(12.)).text_color(color)),
     )
 }
 
@@ -1233,7 +1230,7 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                         view.leave(window, cx)
                     }),
                 )
-                .child(glyph(LEAVE, 14.))
+                .child(design::icon(LEAVE, px(14.)))
                 .child("Leave"),
         )
         .child(
@@ -1252,7 +1249,7 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                         .text_color(theme.muted)
                         .role(Role::Group)
                         .aria_label("1 in the huddle")
-                        .child(glyph(PEOPLE, 14.))
+                        .child(design::icon(PEOPLE, px(14.)))
                         .child(
                             div()
                                 .font_family(design::fonts::FAMILY_MONO)
@@ -1339,7 +1336,7 @@ fn small(
         .aria_label(name)
         .focusable()
         .on_click(click)
-        .child(glyph(icon, 14.))
+        .child(design::icon(icon, px(14.)))
 }
 
 // ---------- the compact room ----------
@@ -1443,7 +1440,7 @@ fn trouble_row(state: &MediaState, cx: &mut Context<Huddle>, theme: &Theme) -> D
         .items_center()
         .justify_center()
         .gap(design::space::SM)
-        .child(glyph(icon, 16.).text_color(theme.muted))
+        .child(design::icon(icon, px(16.)).text_color(theme.muted))
         .child(
             div()
                 .text_size(design::text::BODY)
@@ -1483,7 +1480,7 @@ fn no_keep_on_top_line(cx: &mut Context<Huddle>) -> Div {
         .bg(glass())
         .text_color(white())
         .text_size(design::text::CAPTION)
-        .child(glyph(PIN_OFF, 12.))
+        .child(design::icon(PIN_OFF, px(12.)))
         .child(
             div()
                 .id("huddle-no-keep-on-top")
@@ -1508,7 +1505,7 @@ fn no_keep_on_top_line(cx: &mut Context<Huddle>) -> Div {
                     view.no_keep_on_top_line = false;
                     cx.notify();
                 }))
-                .child(glyph(CLOSE, 12.)),
+                .child(design::icon(CLOSE, px(12.))),
         )
 }
 
@@ -1554,7 +1551,7 @@ fn split(
                 view.open_menu(which, window, cx)
             }),
         )
-        .child(glyph(CARET, 12.));
+        .child(design::icon(CARET, px(12.)));
     div()
         .flex()
         .flex_none()
@@ -1581,7 +1578,7 @@ fn split(
                 .aria_toggled(off.into())
                 .focusable()
                 .on_click(click)
-                .child(glyph(icon, 16.)),
+                .child(design::icon(icon, px(16.))),
         )
         .child(anchor(which, caret, cx).h_full())
 }
@@ -1756,7 +1753,7 @@ fn menu_row(
                 ),
         })
         .child(match row.picked {
-            true => glyph(CHECK, 14.)
+            true => design::icon(CHECK, px(14.))
                 .text_color(theme.foreground)
                 .into_any_element(),
             false => div().size(px(14.)).flex_none().into_any_element(),
@@ -1790,7 +1787,7 @@ fn unsupported(theme: &Theme) -> Stateful<Div> {
         .justify_center()
         .gap(design::space::SM)
         .text_center()
-        .child(glyph(VIDEO_OFF, 20.).text_color(theme.foreground))
+        .child(design::icon(VIDEO_OFF, px(20.)).text_color(theme.foreground))
         .child(
             design::empty_state(
                 "huddle-unsupported",
