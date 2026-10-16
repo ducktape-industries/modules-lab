@@ -7,17 +7,20 @@
 //! A phone keeps one full-screen window: Join keeps the view where it is
 //! and nothing here floats it. The phone's route sets its microphone and
 //! speaker together, so one Sound row and its sheet stand for both menus;
-//! its front and back cameras make a flip, not a menu.
+//! its front and back cameras make a flip, not a menu. A call ringing you
+//! takes the whole screen.
 //!
 //! It reads the model (`lib.rs`) and the words both designs show
 //! (`words.rs`), and writes only through the model's verbs; it never
 //! reaches into the desktop's `ui/` files. One file per screen:
 //! - `check.rs`: the device check;
+//! - `incoming.rs`: a call ringing you;
 //! - `room.rs`: the room;
-//! - `parts.rs`: what both draw.
+//! - `parts.rs`: what the check and the room both draw.
 //!
-//! This file draws the screen up, the sound sheet over it, and the screen
-//! of a build without camera and microphone.
+//! This file draws the screen up, the sheet over it (the sound routes, or
+//! the people to invite), and the screen of a build without camera and
+//! microphone.
 use view::design::{Ladder, Nav};
 use view::prelude::*;
 use view::{AnyElement, Div, Stateful};
@@ -27,6 +30,7 @@ use crate::words;
 use crate::{Huddle, Row, Screen, Which};
 
 mod check;
+mod incoming;
 mod parts;
 mod room;
 
@@ -34,21 +38,26 @@ mod room;
 /// the route, which the microphone follows.
 const SOUND: Which = Which::Routes;
 
-/// The screen, and the sound sheet over it. Back closes that sheet, and is
-/// there exactly while one is drawn: on the check the way out is the
-/// host's capsule, and the room ends by Leave alone.
+/// A person in the invite sheet, by the Lucide name `design::icon` draws.
+const PERSON: &str = "user-round";
+
+/// The screen, and the sheet over it. Back closes that sheet, and is there
+/// exactly while one is drawn: on the check the way out is the host's
+/// capsule, and the room ends by Leave alone.
 pub(crate) fn render(view: &Huddle, cx: &mut Context<Huddle>) -> AnyElement {
     let theme = *cx.global::<Theme>();
     let ladder = &design::TOUCH;
     let supported = !view.no_support();
     // what is drawn, decided once: the screen and the sheet over it
-    let sheet = supported
-        .then(|| sound_sheet(view, cx, ladder, &theme))
-        .flatten();
-    let screen = match (supported, view.screen) {
-        (false, _) => unsupported(ladder, &theme).into_any_element(),
-        (true, Screen::Check) => check::screen(view, cx, ladder, &theme).into_any_element(),
-        (true, Screen::Room) => room::screen(view, cx, ladder, &theme).into_any_element(),
+    let sheet = supported.then(|| sheet(view, cx, ladder, &theme)).flatten();
+    let ring = view.rings().first().map(|ring| (*ring).clone());
+    let screen = match (supported, view.screen, ring) {
+        (false, ..) => unsupported(ladder, &theme).into_any_element(),
+        (true, Screen::Check, Some(ring)) => {
+            incoming::screen(view, &ring, cx, ladder, &theme).into_any_element()
+        }
+        (true, Screen::Check, None) => check::screen(view, cx, ladder, &theme).into_any_element(),
+        (true, Screen::Room, _) => room::screen(view, cx, ladder, &theme).into_any_element(),
     };
     div()
         .id("huddle")
@@ -68,54 +77,92 @@ pub(crate) fn render(view: &Huddle, cx: &mut Context<Huddle>) -> AnyElement {
         .into_any_element()
 }
 
-/// The sound sheet (SPEC §1.2), while it is open: the routes the host
-/// lists, the one in use checked; a pick plays through it and closes.
-fn sound_sheet(
+/// The sheet open, if one is: the sound sheet (SPEC §1.2), the routes the
+/// host lists, the one in use checked, a pick playing through it; or the
+/// people to invite, a pick ringing them. A pick closes it.
+fn sheet(
     view: &Huddle,
     cx: &mut Context<Huddle>,
     ladder: &Ladder,
     theme: &Theme,
 ) -> Option<AnyElement> {
-    let menu = view.menu.filter(|menu| menu.which == SOUND)?;
+    let menu = view.menu?;
+    let (id, foot) = match menu.which {
+        SOUND => ("huddle-sound", Some(words::MICROPHONE_FOLLOWS)),
+        Which::Invite => ("huddle-invite", None),
+        _ => return None,
+    };
     let close = cx.listener(|view: &mut Huddle, _: &(), _, cx| {
         view.close_menu(cx);
     });
-    let routes = view
+    let rows = view
         .rows(menu.which)
         .into_iter()
         .enumerate()
-        .map(|(index, row)| route(view, index, row, cx, ladder, theme))
+        .map(|(index, row)| match menu.which {
+            SOUND => route(view, index, row, cx, ladder, theme),
+            _ => person(index, row, cx, ladder, theme),
+        })
         .collect::<Vec<_>>();
+    let name = words::menu(menu.which);
     let sheet = div()
         .flex()
         .flex_col()
         .child(design::sheet_title(
-            "huddle-sound-sheet-head",
-            words::menu(SOUND),
+            format!("{id}-sheet-head"),
+            name,
             ladder,
             theme,
         ))
         .child(
             div()
-                .id("huddle-sound-routes")
+                .id(SharedString::from(format!("{id}-rows")))
                 .role(Role::Menu)
-                .aria_label(words::menu(SOUND))
-                .children(routes),
+                .aria_label(name)
+                .children(rows),
         )
-        .child(
+        .children(foot.map(|foot| {
             div()
                 .px(design::SHEET_INSET)
                 .py(design::space::LG)
                 .text_type(ladder.secondary)
                 .text_color(theme.muted)
-                .child(words::MICROPHONE_FOLLOWS),
-        );
+                .child(foot)
+        }));
     Some(
-        design::sheet("huddle-sound-sheet", words::menu(SOUND), ladder, theme)
+        design::sheet(format!("{id}-sheet"), name, ladder, theme)
             .on_dismiss(close)
             .child(sheet)
             .into_any_element(),
     )
+}
+
+/// Row `index` of the invite sheet: a person, rung on a press; or, with
+/// no one listed, why.
+fn person(
+    index: usize,
+    row: Row,
+    cx: &mut Context<Huddle>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> AnyElement {
+    if row.id.is_none() {
+        return nothing(row.name, ladder, theme).into_any_element();
+    }
+    let ring = cx.listener(move |view: &mut Huddle, _: &ClickEvent, _, cx| {
+        view.pick(index, cx);
+    });
+    design::sheet_row(
+        format!("huddle-invite-{index}"),
+        row.name,
+        ladder,
+        theme,
+        ring,
+    )
+    .icon(PERSON)
+    .into_element()
+    .role(Role::MenuItem)
+    .into_any_element()
 }
 
 /// Row `index` of the sound sheet: the route's glyph by what it is, its
@@ -158,11 +205,11 @@ fn route(
     .into_any_element()
 }
 
-/// The sheet's one line where the host lists no route: still asking, its
-/// refusal, or none found.
+/// A sheet's one line where the host lists no route, or identity no one:
+/// still asking, its refusal, or none found.
 fn nothing(why: String, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
     div()
-        .id("huddle-sound-none")
+        .id("huddle-sheet-none")
         .h(ladder.sheet_row)
         .px(design::SHEET_INSET)
         .flex()

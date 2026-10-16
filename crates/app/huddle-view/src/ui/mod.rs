@@ -879,7 +879,7 @@ fn actions(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Them
 
 fn room(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
     let compact = compact(view);
-    let network = call::network(view);
+    let network = view.network();
     div()
         .id(ROOM)
         .size_full()

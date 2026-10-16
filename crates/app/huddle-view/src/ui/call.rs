@@ -30,20 +30,6 @@ pub(super) fn shown(others: usize) -> usize {
     others.min(STAGE - 1)
 }
 
-/// What the network row says, if anything: reconnecting, or the camera
-/// sending less picture (the host's words).
-pub(super) fn network(view: &Huddle) -> Option<String> {
-    if view.reconnecting() {
-        return Some(words::RECONNECTING.into());
-    }
-    let camera = &view.camera_state;
-    (view.call.is_some()
-        && view.camera_placed()
-        && camera.status == MediaStatus::Live
-        && !camera.detail.is_empty())
-    .then(|| camera.detail.clone())
-}
-
 /// The network row under the stage: one line, no numbers.
 pub(super) fn network_row(line: String, theme: &Theme) -> Stateful<Div> {
     div()
@@ -58,6 +44,7 @@ pub(super) fn network_row(line: String, theme: &Theme) -> Stateful<Div> {
         .text_size(design::text::CAPTION)
         .text_color(theme.warning)
         .role(Role::Status)
+        .aria_live(view::accesskit::Live::Polite)
         .child(design::icon(NETWORK, px(12.)))
         .child(div().min_w(px(0.)).truncate().child(line))
 }
@@ -79,6 +66,7 @@ pub(super) fn network_glass(line: String) -> Stateful<Div> {
         .text_color(white())
         .text_size(design::text::CAPTION)
         .role(Role::Status)
+        .aria_live(view::accesskit::Live::Polite)
         .child(design::icon(NETWORK, px(12.)))
         .child(div().min_w(px(0.)).truncate().child(line))
 }
@@ -157,6 +145,7 @@ pub(super) fn rings(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> O
             .border_color(theme.border_strong)
             .bg(theme.surface)
             .role(Role::Alert)
+            .aria_live(view::accesskit::Live::Assertive)
             .child(
                 div()
                     .flex()

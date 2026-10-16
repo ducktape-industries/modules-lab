@@ -216,7 +216,15 @@ impl Huddle {
             return;
         };
         let mine = cx.host().query(huddle::ask::Mine { account });
-        cx.load(self, mine, |view| &mut view.calls);
+        cx.land(mine, |view, mine, cx| {
+            if let Ok(calls) = &mine {
+                let callers = calls.iter().map(|listed| listed.call.caller).collect();
+                view.ask_names(callers, cx);
+            }
+            view.calls = mine.into();
+            cx.notify();
+        })
+        .detach();
     }
 
     /// The calls ringing you, by the program's list: asked in, not in the
@@ -479,20 +487,21 @@ impl Huddle {
             Piece::Voice => person.voice = state.clone(),
             Piece::Picture => person.picture = state.clone(),
         }
-        let starting = [&person.voice, &person.picture]
-            .iter()
-            .any(|state| state.status == MediaStatus::Starting);
+        // a picture is drawn only while their camera is up
+        let starting = person.voice.status == MediaStatus::Starting
+            || (person.camera && person.picture.status == MediaStatus::Starting);
         person.starting_since = match (starting, person.starting_since) {
             (true, None) => Some(now),
             (true, since) => since,
             (false, _) => None,
         };
-        if piece == Piece::Voice && was_speaking && !state.speaking {
-            if let Some((holder, quiet)) = &mut call.speaker
-                && *holder == who
-            {
-                *quiet = Some(now);
-            }
+        if piece == Piece::Voice
+            && was_speaking
+            && !state.speaking
+            && let Some((holder, quiet)) = &mut call.speaker
+            && *holder == who
+        {
+            *quiet = Some(now);
         }
         call.hand_on(now);
         cx.notify();
@@ -508,6 +517,20 @@ impl Huddle {
         down(&self.mic_state)
             || (self.camera_placed() && down(&self.camera_state))
             || call.slow(self.ticks)
+    }
+
+    /// What the network row says, if anything: reconnecting, or the
+    /// camera sending less picture (the host's words).
+    pub(crate) fn network(&self) -> Option<String> {
+        if self.reconnecting() {
+            return Some(words::RECONNECTING.into());
+        }
+        let camera = &self.camera_state;
+        (self.call.is_some()
+            && self.camera_placed()
+            && camera.status == MediaStatus::Live
+            && !camera.detail.is_empty())
+        .then(|| camera.detail.clone())
     }
 
     /// Who is in the room, you among them.

@@ -16,6 +16,7 @@ use view::{Entity, Role};
 
 use crate::{FLOAT, Huddle, RECORD_SECONDS};
 
+mod call;
 mod phone;
 
 fn camera(id: &str, name: &str, default: bool, facing: Facing) -> CameraDevice {
