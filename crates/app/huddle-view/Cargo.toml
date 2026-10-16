@@ -4,16 +4,30 @@ edition.workspace = true
 version.workspace = true
 publish = false
 
-# A view-only module: no program. Exported as a dynamically loaded wasm
-# module by `export_view!`; the rlib is what its native tests link.
+# The `huddle` program's view. Exported as a dynamically loaded wasm module
+# by `export_view!`; the rlib is what its native tests link.
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[features]
+# Builds huddle's notifier alone (`notifier.rs`, `export_notifier!`) in
+# place of the view: what a founding packs as the program's
+# `ducktape.notify` section. Never on in the view's build.
+notifier = []
 
 [dependencies]
 view.workspace = true
 # `relative` for the view's line height, which the SDK does not re-export
 gpui.workspace = true
 serde.workspace = true
+# the program's types, linked with `program` off
+huddle.workspace = true
+# `Reads`: which tables a query reads, asked of each block's change
+program.workspace = true
+# the identity program the names are asked of: its types, its exports off
+identity.workspace = true
+# a ring's link (`duck://<chain>/huddle/call/<id>`)
+ducklink.workspace = true
 
 [dev-dependencies]
 # `examples/live.rs`: the view in the real app over the fake node

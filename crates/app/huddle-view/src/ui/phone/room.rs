@@ -45,7 +45,7 @@ pub(super) fn screen(
         ladder,
         theme,
     )
-    .caption(words::alone(&view.clock()))
+    .caption(words::in_room(&view.clock(), view.people_here()))
     .child(stage(view, cx, ladder, theme))
     .child(bar(view, cx, ladder, theme))
 }

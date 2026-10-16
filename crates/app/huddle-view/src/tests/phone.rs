@@ -541,7 +541,7 @@ fn join_and_leave_keep_the_view_where_it_is() {
         &cx,
         &[
             "00:00 \u{b7} only you",
-            "Only you are here. Calls with others are not connected yet.",
+            "Only you are here. Invite someone to call them.",
             "Leave",
         ],
     );

@@ -33,9 +33,12 @@ pub(super) fn camera_piece(view: &Huddle, cx: &mut Context<Huddle>) -> view::Cam
         .mirror(view.mirrored())
         .object_fit(ObjectFit::Cover)
         .on_state(cx.listener(|view: &mut Huddle, state: &MediaState, _, cx| {
-            view.camera_state = state.clone();
+            view.heard_camera(state, cx);
             cx.notify();
         }))
+        .when_some(view.own_track(Device::Camera), |piece, track| {
+            piece.publish(track)
+        })
         .when_some(view.camera.clone(), |piece, id| piece.device(id))
 }
 
@@ -48,8 +51,12 @@ pub(super) fn mic_piece(view: &Huddle, cx: &mut Context<Huddle>) -> view::Microp
         .track(&view.recorder)
         .on_state(cx.listener(|view: &mut Huddle, state: &MediaState, _, cx| {
             view.heard_mic(state);
+            view.heard_own_track(&state.track, cx);
             cx.notify();
         }))
+        .when_some(view.own_track(Device::Microphone), |piece, track| {
+            piece.publish(track).muted(view.muted)
+        })
         .when_some(view.speaker.clone(), |piece, id| piece.output(id))
 }
 

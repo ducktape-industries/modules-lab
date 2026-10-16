@@ -1,13 +1,15 @@
 //! The desktop's tree: what Huddle draws under a pointer. The device check
-//! (the picture with its toggles, the settings column), the room (the
-//! stage and its bar, or below 480 by 320 one tile with its controls over
-//! it), the device menu, the state cards a refused or missing device shows,
-//! and the screen of a build without camera and microphone. Pieces sit
-//! first in their parent, so the cards and chips after them draw over the
-//! picture. The host keys a piece's device by its path: the root always
+//! (the picture with its toggles, the settings column, a call ringing you
+//! over it), the room (the stage of the people in it and its bar, or below
+//! 480 by 320 one tile with its controls over it), the menus, the state
+//! cards a refused or missing device shows, and the screen of a build
+//! without camera and microphone. The call's own parts are `call.rs`'s.
+//! Pieces sit first in their parent, so the cards and chips after them draw
+//! over the picture. The host keys a piece by its path: the root always
 //! goes through the one menu overlay, and both room layouts hold the pieces
-//! under the same room, stage and tile, so a menu or a float moving between
-//! layouts opens no device again.
+//! under the same room, stage and tile (a person's tile by their number),
+//! so a menu, a float or a new speaker moving tiles opens no device and
+//! subscribes to no track again.
 use std::ops::Range;
 use std::rc::Rc;
 
@@ -21,9 +23,11 @@ use crate::look::{
     self, ALERT, CHECK, HEADPHONES, LEAVE, MIC, MIC_OFF, PLAY, SPEAKER, SPEAKING, STOP, VIDEO,
     VIDEO_OFF, black, glass, muted_mark, trouble_glyph, white,
 };
+use crate::people::{self, PEOPLE};
 use crate::words::{self, Device};
 use crate::{Huddle, Kind, Menu, RECORD_SECONDS, Row, Screen, Which, trouble};
 
+mod call;
 /// The phone's tree, which the view's root picks under a finger. It reads
 /// nothing of this one.
 pub(crate) mod phone;
@@ -123,7 +127,6 @@ fn closed(menu: Option<Menu>, window: &mut Window) {
 // ones the phone draws too are `look`'s)
 const CARET: &str = "chevron-down";
 const MIRROR: &str = "flip-horizontal-2";
-const PEOPLE: &str = "users";
 const PIN: &str = "pin";
 const PIN_OFF: &str = "pin-off";
 const BACK: &str = "picture-in-picture-2";
@@ -247,9 +250,13 @@ fn camera_piece(view: &Huddle, fit: ObjectFit, cx: &mut Context<Huddle>) -> view
         .mirror(!view.unmirrored)
         .object_fit(fit)
         .on_state(cx.listener(|view: &mut Huddle, state: &MediaState, _, cx| {
-            view.camera_state = state.clone();
+            view.heard_camera(state, cx);
             cx.notify();
         }));
+    let piece = match view.own_track(Device::Camera) {
+        Some(track) => piece.publish(track),
+        None => piece,
+    };
     match &view.camera {
         Some(id) => piece.device(id.clone()),
         None => piece,
@@ -262,8 +269,13 @@ fn mic_piece(view: &Huddle, cx: &mut Context<Huddle>) -> view::Microphone {
         .track(&view.recorder)
         .on_state(cx.listener(|view: &mut Huddle, state: &MediaState, _, cx| {
             view.heard_mic(state);
+            view.heard_own_track(&state.track, cx);
             cx.notify();
         }));
+    let piece = match view.own_track(Device::Microphone) {
+        Some(track) => piece.publish(track).muted(view.muted),
+        None => piece,
+    };
     let piece = match &view.microphone {
         Some(id) => piece.device(id.clone()),
         None => piece,
@@ -403,6 +415,7 @@ fn settings(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<
         .flex()
         .flex_col()
         .gap(px(14.))
+        .children(call::rings(view, cx, &theme))
         .child(field(
             words::kind(Kind::Camera),
             picker(view, Kind::Camera, VIDEO, cx, &theme),
@@ -476,6 +489,7 @@ fn picker(
         Kind::Camera => "huddle-pick-camera",
         Kind::Microphone => "huddle-pick-microphone",
         Kind::Speaker => "huddle-pick-speaker",
+        Kind::Person => "huddle-pick-person",
     };
     let expanded = view.menu.is_some_and(|menu| menu.which == which);
     let name = view.shown_device(kind);
@@ -865,6 +879,7 @@ fn actions(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Them
 
 fn room(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
     let compact = compact(view);
+    let network = call::network(view);
     div()
         .id(ROOM)
         .size_full()
@@ -888,54 +903,138 @@ fn room(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div>
                 }
             }),
         )
-        .child(stage(view, compact, cx, theme))
-        .when(!compact, |room| room.child(bar(view, cx, theme)))
+        .children(people::voices(view, cx))
+        .child(stage(view, compact, network.clone(), cx, theme))
+        .when(!compact, |room| {
+            room.children(network.map(|line| call::network_row(line, theme)))
+                .child(bar(view, cx, theme))
+        })
 }
 
-/// The stage: one tile per person in a grid. Today only you: your tile
-/// fills it, edge to edge in the compact room.
-fn stage(view: &Huddle, compact: bool, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
-    let (width, _) = view.viewport;
-    let tile_width = match compact {
-        true => width,
-        false => width - 2. * f(design::space::LG),
-    };
-    div()
+/// The stage: you alone fill it; with others, a grid of them and you, the
+/// one speaking first, the rest past six a "+N" chip; in the compact room
+/// the one speaking fills it, you a thumbnail over them.
+fn stage(
+    view: &Huddle,
+    compact: bool,
+    network: Option<String>,
+    cx: &mut Context<Huddle>,
+    theme: &Theme,
+) -> Stateful<Div> {
+    let (width, height) = view.viewport;
+    let others = view
+        .call
+        .as_ref()
+        .map(|call| call.order())
+        .unwrap_or_default();
+    let stage = div()
         .id("huddle-stage")
+        .relative()
         .flex_1()
         .min_h(px(0.))
         .flex()
         .map(|stage| match compact {
             true => stage.bg(black()),
             false => stage.p(design::space::LG).bg(theme.surface),
-        })
-        .child(tile(view, tile_width, compact, cx, theme))
+        });
+    if compact {
+        // the strip first: Try again and the lines' close come after its
+        // controls in the keys' order
+        let main = others.first().copied();
+        let stage = match main {
+            None => stage.child(tile(view, Shown::Alone, width, cx, theme)),
+            Some(main) => stage
+                .child(people::tile(view, main, width, cx, &design::POINTER, theme).size_full())
+                .child(call::thumbnail(
+                    tile(view, Shown::Thumbnail, width / 3., cx, theme),
+                    width / 3.,
+                ))
+                .children((others.len() > 1).then(|| {
+                    people::more(others.len() - 1, &design::POINTER)
+                        .absolute()
+                        .left(design::space::SM)
+                        .top(design::space::SM)
+                })),
+        };
+        return stage
+            .child(float_strip(view, main, cx, theme))
+            .children(trouble_rows(view, cx, theme))
+            .children(network.map(call::network_glass))
+            .when(view.no_keep_on_top_line, |stage| {
+                stage.child(no_keep_on_top_line(cx))
+            });
+    }
+    let inner = (
+        width - 2. * f(design::space::LG),
+        height - f(BAR) - 2. * f(design::space::LG),
+    );
+    if others.is_empty() {
+        return stage.child(tile(view, Shown::Alone, inner.0, cx, theme));
+    }
+    let shown = call::shown(others.len());
+    let (cols, rows) = call::grid(shown + 1, inner.0, inner.1);
+    let tile_width = call::cell(inner.0, cols);
+    let tile_height = call::cell(inner.1, rows);
+    let mut tiles: Vec<Stateful<Div>> = others[..shown]
+        .iter()
+        .map(|who| people::tile(view, *who, tile_width, cx, &design::POINTER, theme))
+        .collect();
+    tiles.push(tile(view, Shown::Grid, tile_width, cx, theme));
+    let mut tiles = tiles.into_iter();
+    let grid = div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .gap(design::space::SM)
+        .children((0..rows).map(|_| {
+            div().flex().gap(design::space::SM).children(
+                tiles
+                    .by_ref()
+                    .take(cols)
+                    .map(|tile| tile.w(px(tile_width)).h(px(tile_height))),
+            )
+        }));
+    stage.child(grid).children((others.len() > shown).then(|| {
+        people::more(others.len() - shown, &design::POINTER)
+            .absolute()
+            .right(design::space::LG + design::space::SM)
+            .bottom(design::space::LG + design::space::SM)
+    }))
+}
+
+/// Where your tile is drawn: alone on the stage, one of a grid, or a
+/// thumbnail over the one speaking.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Shown {
+    Alone,
+    Grid,
+    Thumbnail,
 }
 
 /// Your tile: the picture covering it (mirrored as you set), a ring while
-/// you speak, and the chip with your marks; in the room the line that says
-/// you are alone, in the compact room the strip of controls instead.
+/// you speak; alone, the chip with your marks and the line that says no one
+/// else is here; in a grid, the chip; as a thumbnail, the muted badge.
 fn tile(
     view: &Huddle,
+    shown: Shown,
     width: f32,
-    compact: bool,
     cx: &mut Context<Huddle>,
     theme: &Theme,
 ) -> Stateful<Div> {
     let off = view.camera_off;
     let troubled = view.troubled(Device::Camera);
-    let speaking = view.mic_placed() && view.mic_state.speaking;
+    let speaking = view.speaking();
     let mut tile = div()
         .id("huddle-tile-you")
         .relative()
-        .size_full()
         .overflow_hidden()
         .role(Role::Group)
         .aria_label(words::YOU)
         .bg(match off || troubled {
             true => theme.surface_raised,
             false => black(),
-        });
+        })
+        .when(shown == Shown::Alone, |tile| tile.size_full());
     if view.camera_placed() {
         tile = tile.child(camera_piece(view, ObjectFit::Cover, cx).size_full());
     }
@@ -945,32 +1044,50 @@ fn tile(
         tile = tile.child(mic_piece(view, cx).absolute().size(px(0.)));
     }
     if off {
-        let size = match width {
-            _ if compact => 48.,
-            w if w >= 300. => 72.,
-            w if w >= 180. => 48.,
+        let size = match (shown, width) {
+            (Shown::Thumbnail, _) => 24.,
+            (_, _) if compact(view) => 48.,
+            (_, w) if w >= 300. => 72.,
+            (_, w) if w >= 180. => 48.,
             _ => 32.,
         };
         tile = tile.child(look::face(px(size), theme));
     }
-    let tile = tile.when(speaking, |tile| {
-        tile.child(
-            div()
-                .absolute()
-                .inset_0()
-                .border_2()
-                .border_color(theme.success),
-        )
-    });
-    if compact {
-        // the strip first: Try again and the line's close come after its
-        // controls in the keys' order
-        return tile
-            .child(float_strip(view, speaking, cx, theme))
-            .children(trouble_rows(view, cx, theme))
-            .when(view.no_keep_on_top_line, |tile| {
-                tile.child(no_keep_on_top_line(cx))
+    let tile = tile.when(speaking, |tile| tile.child(people::ring(theme)));
+    match shown {
+        Shown::Thumbnail => {
+            return tile.when(view.muted, |tile| {
+                tile.child(
+                    div()
+                        .id("huddle-thumbnail-muted")
+                        .absolute()
+                        .left_0()
+                        .bottom_0()
+                        .size(px(16.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(theme.danger)
+                        .text_color(white())
+                        .role(Role::Image)
+                        .aria_label(words::MUTED)
+                        .child(design::icon(MIC_OFF, px(10.))),
+                )
             });
+        }
+        Shown::Grid => {
+            return tile
+                .children(troubled.then(|| state_card(view, Device::Camera, cx, theme)))
+                .child(
+                    div()
+                        .absolute()
+                        .left(design::space::SM)
+                        .bottom(design::space::SM)
+                        .child(room_chip(view, speaking)),
+                );
+        }
+        Shown::Alone if compact(view) => return tile,
+        Shown::Alone => {}
     }
     // the chip and the line share the tile's foot: the line centred
     // between two equal sides, the chip's never narrower than the chip,
@@ -1008,24 +1125,30 @@ fn mic_off(view: &Huddle) -> bool {
     view.muted || view.troubled(Device::Microphone)
 }
 
-/// The muted or the speaking mark a chip carries, named for a reader.
+/// The muted or the speaking mark your chip carries, named for a reader.
 fn mark(view: &Huddle, speaking: bool) -> Option<Stateful<Div>> {
-    let (icon, name, color) = match (view.muted, speaking) {
-        (true, _) => (MIC_OFF, words::MUTED, muted_mark()),
-        (false, true) => (SPEAKING, words::SPEAKING, white()),
-        (false, false) => return None,
-    };
-    Some(
-        div()
-            .id(SharedString::from(format!(
-                "huddle-mark-{}",
-                name.to_lowercase()
-            )))
-            .flex()
-            .role(Role::Image)
-            .aria_label(name)
-            .child(design::icon(icon, px(12.)).text_color(color)),
-    )
+    match (view.muted, speaking) {
+        (true, _) => Some(
+            div()
+                .id("huddle-mark-muted")
+                .flex()
+                .role(Role::Image)
+                .aria_label(words::MUTED)
+                .child(design::icon(MIC_OFF, px(12.)).text_color(muted_mark())),
+        ),
+        (false, true) => Some(speaking_mark(white())),
+        (false, false) => None,
+    }
+}
+
+/// The speaking mark, named for a reader.
+fn speaking_mark(color: Hsla) -> Stateful<Div> {
+    div()
+        .id("huddle-mark-speaking")
+        .flex()
+        .role(Role::Image)
+        .aria_label(words::SPEAKING)
+        .child(design::icon(SPEAKING, px(12.)).text_color(color))
 }
 
 /// The tile's chip: the muted or speaking mark, the name, "· mirrored".
@@ -1053,7 +1176,7 @@ fn room_chip(view: &Huddle, speaking: bool) -> Div {
 }
 
 /// The room's bar: its name and clock, the microphone and camera with
-/// their menus, Leave, and who is here.
+/// their menus, Invite, Leave, and who is here.
 fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
     div()
         .id("huddle-bar")
@@ -1088,7 +1211,7 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                         .text_size(design::text::CAPTION)
                         .text_color(theme.muted)
                         .truncate()
-                        .child(words::alone(&view.clock())),
+                        .child(words::in_room(&view.clock(), view.people_here())),
                 ),
         )
         .child(split(view, Device::Microphone, cx, theme).ml_auto())
@@ -1097,6 +1220,7 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                 .then(|| retry(Device::Microphone, cx, theme)),
         )
         .child(split(view, Device::Camera, cx, theme))
+        .child(call::invite(view, cx, theme))
         .child(
             div()
                 .id("huddle-leave")
@@ -1135,13 +1259,13 @@ fn bar(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> 
                         .gap(design::space::XXS)
                         .text_color(theme.muted)
                         .role(Role::Group)
-                        .aria_label("1 in the huddle")
+                        .aria_label(words::in_the_huddle(view.people_here()))
                         .child(design::icon(PEOPLE, px(14.)))
                         .child(
                             div()
                                 .font_family(design::fonts::FAMILY_MONO)
                                 .text_size(design::text::CAPTION)
-                                .child("1"),
+                                .child(view.people_here().to_string()),
                         ),
                 )
                 .children(pin_back(view, false, cx, theme)),
@@ -1228,17 +1352,28 @@ fn small(
 
 // ---------- the compact room ----------
 
-/// The compact room's one row over the tile's foot: your chip, the
-/// microphone, the camera and Leave, then the pin and back. Always shown:
-/// a small window whose controls hide is a guessing game, and a keyboard
-/// or a screen reader never hovers.
+/// The compact room's one row over the stage's foot: the chip of whoever
+/// fills it (`main`, else you), the microphone, the camera and Leave, then
+/// the pin and back. Always shown: a small window whose controls hide is a
+/// guessing game, and a keyboard or a screen reader never hovers.
 fn float_strip(
     view: &Huddle,
-    speaking: bool,
+    main: Option<u64>,
     cx: &mut Context<Huddle>,
     theme: &Theme,
 ) -> Stateful<Div> {
     let theme_ = *theme;
+    let (name, mark) = match main {
+        None => (words::YOU.to_owned(), mark(view, view.speaking())),
+        Some(who) => {
+            let speaking = view
+                .call
+                .as_ref()
+                .and_then(|call| call.people.get(&who))
+                .is_some_and(|person| person.voice.speaking);
+            (view.name(who), speaking.then(|| speaking_mark(white())))
+        }
+    };
     let chip = div()
         .h(design::size::CONTROL)
         .min_w(px(0.))
@@ -1250,8 +1385,8 @@ fn float_strip(
         .bg(glass())
         .text_color(white())
         .text_size(design::text::CAPTION)
-        .children(mark(view, speaking))
-        .child(div().min_w(px(0.)).truncate().child(words::YOU));
+        .children(mark)
+        .child(div().min_w(px(0.)).truncate().child(name));
     let controls = div()
         .flex()
         .flex_none()

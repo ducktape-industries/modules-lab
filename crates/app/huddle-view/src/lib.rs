@@ -1,11 +1,19 @@
-//! Huddle: check your camera and microphone, then huddle. The device check
-//! is a big picture of yourself (mirrored, as a mirror shows you, unless
-//! you turn that off) with the microphone and camera toggles over it, and
-//! a column of the devices, the microphone's level, a speaker test, "record
-//! five seconds and play them back", "hear myself live" with its warning,
-//! and Join. The room is your tile on a stage and a bar of the same
-//! toggles, each with its device menu, and Leave. Calls with other people
-//! are not connected yet: the room says so.
+//! Huddle: check your camera and microphone, then huddle, and call people.
+//! The device check is a big picture of yourself (mirrored, as a mirror
+//! shows you, unless you turn that off) with the microphone and camera
+//! toggles over it, and a column of the devices, the microphone's level, a
+//! speaker test, "record five seconds and play them back", "hear myself
+//! live" with its warning, and Join; a call ringing you is a card over it,
+//! with Answer and Decline. The room is a stage of the people in it, the one
+//! speaking first, and a bar of the same toggles, each with its device menu,
+//! Invite, and Leave.
+//!
+//! A call is a room of the `huddle` program (`call.rs`): Invite in a room
+//! with no call starts one, ringing whoever was picked, and in a call rings
+//! them into it. Your camera and microphone publish into your own tracks
+//! of its room; each other person is heard through a voice the view places
+//! for them, and seen through a picture on the stage. Answer, or a link to
+//! the call (`call/<id>`), joins at once.
 //!
 //! Join floats the room in the same press (`host.float`): the pane leaves
 //! the desk into a small window of its own, kept above other apps' windows,
@@ -34,14 +42,26 @@
 //! host listed and the pieces told, and what each press changes. What is
 //! drawn is `ui` (the desktop's tree) or `ui::phone` (the phone's), in the
 //! words of `words`, with what both draw alike in `look`.
+#![cfg_attr(feature = "notifier", allow(dead_code))]
+use std::collections::BTreeMap;
+
+use identity::Profile;
 use serde::{Deserialize, Serialize};
 use view::prelude::*;
 
+use crate::call::Call;
 use crate::words::Device;
 
+mod call;
 mod look;
+mod notifier;
+mod people;
 mod ui;
 mod words;
+
+pub use notifier::HuddleNotices;
+#[cfg(feature = "notifier")]
+view::export_notifier!(HuddleNotices);
 
 /// How long "Record and play back" records, in seconds.
 pub const RECORD_SECONDS: u8 = 5;
@@ -64,16 +84,19 @@ pub(crate) enum Screen {
     Room,
 }
 
-/// What a pick picks: a camera, a microphone or a speaker.
+/// What a pick picks: a camera, a microphone or a speaker, or a person to
+/// ring.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
     Camera,
     Microphone,
     Speaker,
+    Person,
 }
 
-/// Which device menu: one kind's, the room's sound menu, which lists the
-/// microphones and then the speakers, or a phone's routes.
+/// Which menu: one kind's, the room's sound menu, which lists the
+/// microphones and then the speakers, a phone's routes, or the people to
+/// invite.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Which {
     Kind(Kind),
@@ -81,6 +104,8 @@ pub(crate) enum Which {
     /// A phone's sound sheet: the speakers, which on a phone are the
     /// routes the microphone follows.
     Routes,
+    /// The people Invite rings.
+    Invite,
 }
 
 /// How a menu orders its devices.
@@ -103,13 +128,14 @@ impl Which {
             Which::Kind(kind) => std::slice::from_ref(kind),
             Which::Sound => &[Kind::Microphone, Kind::Speaker],
             Which::Routes => &[Kind::Speaker],
+            Which::Invite => &[Kind::Person],
         }
     }
 
     fn order(&self) -> Order {
         match self {
             Which::Kind(_) | Which::Sound => Order::DefaultFirst,
-            Which::Routes => Order::Listed,
+            Which::Routes | Which::Invite => Order::Listed,
         }
     }
 }
@@ -166,6 +192,28 @@ pub struct Huddle {
     /// What the desktop's tree keeps between frames.
     #[serde(skip)]
     pub(crate) desk: ui::Desk,
+    /// The pointer is a finger: the phone's tree draws, which never floats.
+    #[serde(skip)]
+    pub(crate) touch: bool,
+    /// Who reads, on which network.
+    #[serde(skip)]
+    pub(crate) session: Session,
+    /// The call the room is in.
+    #[serde(skip)]
+    pub(crate) call: Option<Call>,
+    /// The calls you are in or asked into, as the program lists them: the
+    /// rings shown on the check.
+    #[serde(skip)]
+    pub(crate) calls: Loadable<Vec<huddle::Listed>>,
+    /// What identity calls each account the view has shown.
+    #[serde(skip)]
+    pub(crate) names: BTreeMap<u64, String>,
+    /// The people Invite lists: identity's people, you aside.
+    #[serde(skip)]
+    pub(crate) invitable: Loadable<Vec<Profile>>,
+    /// Why the last call did not go on, said until the next.
+    #[serde(skip)]
+    pub(crate) call_note: Option<String>,
     /// Seconds on the view's clock, and when the room was entered, a
     /// recording started and the camera was last placed, by it.
     #[serde(skip)]
@@ -197,23 +245,33 @@ pub struct Huddle {
 }
 
 impl View for Huddle {
-    const NAME: &'static str = "Huddle";
-    const DESCRIPTION: &'static str = "Check your camera and microphone, then huddle.";
+    const NAME: &'static str = words::HUDDLE;
+    const DESCRIPTION: &'static str = "Check your camera and microphone, then call people.";
     const ICON: &'static str = "icons/video.svg";
     // `camera` and `microphone`: the pieces and their device lists; `clock`:
-    // the room's clock and the recording's countdown; `host`: the window's
-    // title, the float and where the pane is, the system's page a refused
-    // device opens, and the log a refusal nothing waits on goes to
+    // the room's clock, the recording's countdown and a ring's check;
+    // `host`: who reads, the window's title, the float and where the pane
+    // is, a call's id, the links opened into the view, the system's page a
+    // refused device opens, and the log a refusal nothing waits on goes
+    // to; `program` and `op`: the calls, and the ops that start, join and
+    // leave them; `live`: the call's tracks, and the pieces that publish
+    // and play them
     const CAPABILITIES: &'static [Capability] = &[
         Capability::Camera,
         Capability::Microphone,
         Capability::Clock,
         Capability::Host,
+        Capability::Program,
+        Capability::Op,
+        Capability::Live,
     ];
+    /// The calls, and the names of the people in them.
+    const TARGETS: &'static [&'static str] = &[huddle::PROGRAM, identity::PROGRAM];
     /// The check's two columns: the picture and the 272 px settings.
     const MIN_WINDOW_WIDTH: u32 = 560;
 
     fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        self.watch_calls(cx);
         self.list(cx);
         cx.host().notify::<HostTitle>(words::HUDDLE.into());
         cx.follow::<ClockTicks>(1000, |view, tick, cx| match tick {
@@ -347,8 +405,29 @@ impl Huddle {
     }
 
     /// Whether the microphone piece is placed: unmuted, and not in trouble.
+    /// In a call always: its track is your presence, kept up muted (the
+    /// piece releases the device) and in trouble (nothing is sent).
     pub(crate) fn mic_placed(&self) -> bool {
-        !self.muted && !trouble(&self.mic_state)
+        self.call.is_some() || (!self.muted && !trouble(&self.mic_state))
+    }
+
+    /// The track your `device`'s piece publishes into: yours in the call's
+    /// room, or none out of a call.
+    pub(crate) fn own_track(&self, device: Device) -> Option<LiveTrack> {
+        let (call, me) = (self.call.as_ref()?, self.session.account?);
+        let name = match device {
+            Device::Camera => huddle::camera_track(me),
+            Device::Microphone => huddle::microphone_track(me),
+        };
+        Some(LiveTrack {
+            room: call.id.clone(),
+            name,
+        })
+    }
+
+    /// Whether you are speaking, as your microphone says: never muted.
+    pub(crate) fn speaking(&self) -> bool {
+        !self.muted && self.mic_placed() && self.mic_state.speaking
     }
 
     /// Whether `device`'s piece is in trouble: switched on, and neither
@@ -509,6 +588,7 @@ impl Huddle {
 
     fn tick(&mut self, cx: &mut Context<Self>) {
         self.ticks += 1;
+        self.call_tick(cx);
         // drawn again only while something counts seconds: the room (its
         // bar's clock; the compact tile, which has none, is the tree's
         // business), a recording's countdown, a camera slow to open
@@ -523,7 +603,10 @@ impl Huddle {
         self.muted = !self.muted;
         self.monitor = false;
         self.recording_since = None;
-        self.mic_state = MediaState::default();
+        // in a call the piece stays, muted: what it tells still holds
+        if self.call.is_none() {
+            self.mic_state = MediaState::default();
+        }
         cx.notify();
     }
 
@@ -544,7 +627,8 @@ impl Huddle {
         self.menu = None;
         // the room's own clock; the pieces open again in their new place
         self.camera_since = self.ticks;
-        cx.host().notify::<HostTitle>(words::IN_THE_ROOM.into());
+        cx.host()
+            .notify::<HostTitle>(words::in_the_room(self.people_here()));
         cx.notify();
     }
 
@@ -558,8 +642,10 @@ impl Huddle {
         }
     }
 
-    /// Back to the check where the view is. The phone's Leave.
+    /// Back to the check where the view is, out of the call. The phone's
+    /// Leave.
     pub(crate) fn leave_room(&mut self, cx: &mut Context<Self>) {
+        self.hang_up(cx);
         self.screen = Screen::Check;
         self.menu = None;
         self.camera_since = self.ticks;
@@ -611,7 +697,8 @@ impl Huddle {
     }
 
     /// The menu of `which` opened by the control `opener`, its picked row
-    /// active, the lists read again (a device plugged in since shows).
+    /// active, its list read again (a device plugged in since shows, or a
+    /// person new on the network).
     pub(crate) fn open_menu(&mut self, which: Which, opener: &'static str, cx: &mut Context<Self>) {
         let rows = self.rows(which);
         let cursor = rows.iter().position(|row| row.picked).unwrap_or(0);
@@ -620,7 +707,10 @@ impl Huddle {
             cursor,
             opener,
         });
-        self.list(cx);
+        match which {
+            Which::Invite => self.read_invitable(cx),
+            _ => self.list(cx),
+        }
         cx.notify();
     }
 
@@ -630,14 +720,18 @@ impl Huddle {
         self.menu.take()
     }
 
-    /// Row `index` of the open menu picked, its device on its piece; the
-    /// menu closed, and handed back.
+    /// Row `index` of the open menu picked: its device on its piece, or
+    /// its person rung; the menu closed, and handed back.
     pub(crate) fn pick(&mut self, index: usize, cx: &mut Context<Self>) -> Option<Menu> {
         let menu = self.menu?;
         if let Some(row) = self.rows(menu.which).into_iter().nth(index)
             && let Some(id) = row.id
         {
-            self.set_pick(row.kind, Some(id));
+            match (row.kind, id.parse()) {
+                (Kind::Person, Ok(account)) => self.invite(account, cx),
+                (Kind::Person, Err(_)) => {}
+                (kind, _) => self.set_pick(kind, Some(id)),
+            }
         }
         self.close_menu(cx)
     }
@@ -655,6 +749,7 @@ impl Huddle {
             }
             Kind::Microphone => self.microphone = id,
             Kind::Speaker => self.speaker = id,
+            Kind::Person => return,
         }
         self.mic_state = MediaState::default();
         self.monitor = false;
@@ -693,6 +788,33 @@ impl Huddle {
                 self.speaker.as_deref(),
                 nothing(&self.audio),
             ),
+            Kind::Person => {
+                let people = self.invitable.ready().map_or(&[][..], Vec::as_slice);
+                if people.is_empty() {
+                    return vec![Row {
+                        kind,
+                        id: None,
+                        name: match &self.invitable {
+                            Loadable::Ready(_) | Loadable::Reloading(..) => {
+                                words::NO_ONE_TO_INVITE.into()
+                            }
+                            other => nothing(other).into(),
+                        },
+                        twin: None,
+                        picked: false,
+                    }];
+                }
+                people
+                    .iter()
+                    .map(|person| Row {
+                        kind,
+                        id: Some(person.number.to_string()),
+                        name: person.name.clone(),
+                        twin: None,
+                        picked: false,
+                    })
+                    .collect()
+            }
         }
     }
 
@@ -718,6 +840,13 @@ impl Huddle {
         })
         .detach();
         cx.notify();
+    }
+
+    /// The camera piece told its state; a call's track waiting asks for
+    /// its row.
+    pub(crate) fn heard_camera(&mut self, state: &MediaState, cx: &mut Context<Self>) {
+        self.camera_state = state.clone();
+        self.heard_own_track(&state.track, cx);
     }
 
     /// The microphone piece told its state: a recording's start starts the
@@ -867,9 +996,10 @@ impl Render for Huddle {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let size = window.viewport_size();
         self.viewport = (size.width.into(), size.height.into());
+        self.touch = window.touch();
         // one wasm, two designs, the model shared: a finger gets the
         // phone's screens, a pointer the desktop's
-        if window.touch() {
+        if self.touch {
             ui::phone::render(self, cx)
         } else {
             ui::render(self, cx)
@@ -877,6 +1007,7 @@ impl Render for Huddle {
     }
 }
 
+#[cfg(not(feature = "notifier"))]
 export_view!(Huddle);
 
 #[cfg(test)]
