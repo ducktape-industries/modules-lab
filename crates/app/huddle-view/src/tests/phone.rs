@@ -436,6 +436,26 @@ fn the_live_loop_stops_when_the_route_playing_moves_to_the_speaker() {
     assert!(!mic_piece(&cx).unwrap().3, "never through the loudspeaker");
 }
 
+/// The host stopped the live loop before the phone read its routes again
+/// (the AirPods were taken off): the switch turns off and stays off.
+#[test]
+fn a_live_loop_the_host_stopped_turns_its_switch_off() {
+    let (mut cx, _ticks) = opened_on_phone(phone_routes(vec![speaker(false), airpods(true)]));
+    live_pieces(&mut cx);
+    cx.simulate_click("huddle-monitor");
+    assert!(mic_piece(&cx).unwrap().3, "looping through the AirPods");
+    let mic = mic_key(&cx);
+    let stopped = MediaState {
+        monitor_stopped: true,
+        ..live("Phone microphone")
+    };
+    cx.simulate_media_state(&mic, stopped);
+    assert!(!mic_piece(&cx).unwrap().3, "the loop ends");
+    assert_eq!(toggled(&cx, "huddle-monitor"), Some(false));
+    cx.simulate_media_state(&mic, live("Phone microphone"));
+    assert!(!mic_piece(&cx).unwrap().3, "and stays off");
+}
+
 /// The loudspeaker route, `playing` or not.
 fn speaker(playing: bool) -> AudioDevice {
     audio("speaker", "Speaker", playing, AudioKind::Speaker)
