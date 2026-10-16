@@ -270,8 +270,8 @@ its device menu, and Leave; M mutes, V turns the camera off. Calls with
 other people are not connected yet, and the room says so. A refused, busy,
 vanished or missing device says so in a card with what fixes it (Try
 again opens the piece under a new id). A host without camera and microphone
-support refuses both lists `media_unsupported`, and the view says so instead
-of placing pieces.
+support does not answer the lists (`unknown_request`), and the view says so
+instead of placing pieces.
 
 ```sh
 DUCKTAPE_APP=/path/to/app/target/debug/ducktape-app cargo run -p huddle-view --example live

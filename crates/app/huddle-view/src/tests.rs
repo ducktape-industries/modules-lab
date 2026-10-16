@@ -4,19 +4,30 @@
 //! capabilities (a piece the manifest leaves out fails the test).
 use view::Entity;
 use view::methods::{
-    AudioDevices, CameraDevices, ClockTicks, Device, Float, HostFloat, HostPlacement, HostTitle,
-    HostUnfloat, LinkOpen, MicrophoneChime, MicrophoneDevices, Placement,
+    AudioDevice, AudioDevices, AudioKind, CameraDevice, CameraDevices, ClockTicks, Facing, Float,
+    HostFloat, HostPlacement, HostTitle, HostUnfloat, LinkOpen, MicrophoneChime, MicrophoneDevices,
+    Placement,
 };
 use view::testing::{StreamSender, TestAppContext};
-use view::wire::{Fit, MediaState, MediaStatus, MicCommand, Node, Playback};
+use view::wire::{ImageObjectFit, MediaState, MediaStatus, MicCommand, Node, Playback};
 
 use crate::{FLOAT, Huddle, RECORD_SECONDS};
 
-fn device(id: &str, name: &str, default: bool) -> Device {
-    Device {
+fn camera(id: &str, name: &str, default: bool, facing: Facing) -> CameraDevice {
+    CameraDevice {
         id: id.into(),
         name: name.into(),
         default,
+        facing,
+    }
+}
+
+fn audio(id: &str, name: &str, default: bool, kind: AudioKind) -> AudioDevice {
+    AudioDevice {
+        id: id.into(),
+        name: name.into(),
+        default,
+        kind,
     }
 }
 
@@ -26,16 +37,26 @@ fn opened() -> (TestAppContext, Entity<Huddle>, StreamSender<ClockTicks>) {
     let mut cx = TestAppContext::new();
     cx.host().handle::<CameraDevices>(|()| {
         Ok(vec![
-            device("0", "Front Camera", true),
-            device("1", "Desk Camera", false),
+            camera("0", "Front Camera", true, Facing::Front),
+            camera("1", "Desk Camera", false, Facing::External),
         ])
     });
     cx.host().handle::<MicrophoneDevices>(|()| {
         Ok(AudioDevices {
-            inputs: vec![device("alsa:default", "Built-in Microphone", true)],
+            inputs: vec![audio(
+                "alsa:default",
+                "Built-in Microphone",
+                true,
+                AudioKind::Other,
+            )],
             outputs: vec![
-                device("alsa:speakers", "Speakers", true),
-                device("alsa:headphones", "Headphones", false),
+                audio("alsa:speakers", "Speakers", true, AudioKind::Speaker),
+                audio(
+                    "alsa:headphones",
+                    "Headphones",
+                    false,
+                    AudioKind::Headphones,
+                ),
             ],
         })
     });
@@ -54,14 +75,14 @@ fn opened() -> (TestAppContext, Entity<Huddle>, StreamSender<ClockTicks>) {
 }
 
 /// The one camera piece in the tree: its key, device, mirror and fit.
-fn camera_piece(cx: &TestAppContext) -> Option<(String, Option<String>, bool, Fit)> {
+fn camera_piece(cx: &TestAppContext) -> Option<(String, Option<String>, bool, ImageObjectFit)> {
     let mut found = None;
     walk(cx.root(), &mut |node| {
         if let Node::Camera {
             id,
             device,
             mirror,
-            fit,
+            object_fit,
             ..
         } = node
         {
@@ -69,7 +90,7 @@ fn camera_piece(cx: &TestAppContext) -> Option<(String, Option<String>, bool, Fi
                 id.name().unwrap_or_default().to_owned(),
                 device.clone(),
                 *mirror,
-                *fit,
+                *object_fit,
             ));
         }
     });
@@ -144,7 +165,7 @@ fn disabled(cx: &TestAppContext, id: &str) -> bool {
 fn it_opens_on_the_defaults_mirrored() {
     let (cx, ..) = opened();
     let (_, device, mirror, fit) = camera_piece(&cx).expect("a camera piece");
-    assert_eq!((device, mirror, fit), (None, true, Fit::Contain));
+    assert_eq!((device, mirror, fit), (None, true, ImageObjectFit::Contain));
     let (_, input, output, monitor, commands) = mic_piece(&cx).expect("a microphone piece");
     assert_eq!((input, output, monitor), (None, None, false));
     assert!(commands.is_empty());
@@ -400,7 +421,7 @@ fn a_refusal_opens_the_settings_where_the_host_can() {
             detail: "Open System Settings → Privacy & Security → Camera, turn Ducktape on, \
                      then try again."
                 .into(),
-            settings: true,
+            opens_settings: true,
             ..Default::default()
         },
     );
@@ -429,7 +450,7 @@ fn join_and_leave_switch_screens_keeping_picks() {
     let (_, device, mirror, fit) = camera_piece(&cx).unwrap();
     assert_eq!(
         (device.as_deref(), mirror, fit),
-        (Some("1"), false, Fit::Cover)
+        (Some("1"), false, ImageObjectFit::Cover)
     );
     assert!(
         mic_piece(&cx).is_some(),
@@ -443,7 +464,7 @@ fn join_and_leave_switch_screens_keeping_picks() {
     let (_, device, mirror, fit) = camera_piece(&cx).unwrap();
     assert_eq!(
         (device.as_deref(), mirror, fit),
-        (Some("1"), false, Fit::Contain)
+        (Some("1"), false, ImageObjectFit::Contain)
     );
 }
 
@@ -488,11 +509,11 @@ fn the_room_mutes_by_key_and_shows_who_speaks() {
 fn a_host_without_media_says_so() {
     let mut cx = TestAppContext::new();
     cx.host().refuse::<CameraDevices>(
-        view::methods::refusal::MEDIA_UNSUPPORTED,
+        view::methods::refusal::UNKNOWN_REQUEST,
         "this build has no camera or microphone",
     );
     cx.host().refuse::<MicrophoneDevices>(
-        view::methods::refusal::MEDIA_UNSUPPORTED,
+        view::methods::refusal::UNKNOWN_REQUEST,
         "this build has no camera or microphone",
     );
     let _ticks = cx.host().stream::<ClockTicks>();
@@ -507,9 +528,19 @@ fn a_host_without_media_says_so() {
 #[test]
 fn a_shared_name_shows_its_id() {
     let devices = [
-        device("alsa:plughw:CARD=Loopback,DEV=0", "Loopback PCM", false),
-        device("alsa:plughw:CARD=Loopback,DEV=1", "Loopback PCM", false),
-        device("alsa:default", "System default", true),
+        audio(
+            "alsa:plughw:CARD=Loopback,DEV=0",
+            "Loopback PCM",
+            false,
+            AudioKind::Other,
+        ),
+        audio(
+            "alsa:plughw:CARD=Loopback,DEV=1",
+            "Loopback PCM",
+            false,
+            AudioKind::Other,
+        ),
+        audio("alsa:default", "System default", true, AudioKind::Other),
     ];
     assert_eq!(
         crate::twin(&devices, &devices[1]).as_deref(),
@@ -640,7 +671,7 @@ fn the_float_is_one_tile_with_its_controls_and_the_pieces_stay() {
         }
         assert_eq!(toggled(&cx, "huddle-pin"), Some(true));
         let (_, _, mirror, fit) = camera_piece(&cx).unwrap();
-        assert_eq!((mirror, fit), (true, Fit::Cover));
+        assert_eq!((mirror, fit), (true, ImageObjectFit::Cover));
         assert_eq!(
             (path_to(&cx, is_camera), path_to(&cx, is_microphone)),
             room,

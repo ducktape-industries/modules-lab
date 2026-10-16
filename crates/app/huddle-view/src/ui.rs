@@ -146,7 +146,7 @@ fn preview(
             false => black(),
         });
     if view.camera_placed() {
-        preview = preview.child(camera_piece(view, Fit::Contain, cx).size_full());
+        preview = preview.child(camera_piece(view, ObjectFit::Contain, cx).size_full());
     }
     if off {
         preview = preview.child(camera_off(72., Some("Your camera is off"), theme));
@@ -171,10 +171,10 @@ fn preview(
         .child(chip(view, off, theme))
 }
 
-fn camera_piece(view: &Huddle, fit: Fit, cx: &mut Context<Huddle>) -> view::Camera {
+fn camera_piece(view: &Huddle, fit: ObjectFit, cx: &mut Context<Huddle>) -> view::Camera {
     let piece = camera(view.camera_key())
         .mirror(!view.unmirrored)
-        .fit(fit)
+        .object_fit(fit)
         .on_state(cx.listener(|view: &mut Huddle, state: &MediaState, _, cx| {
             view.camera_state = state.clone();
             cx.notify();
@@ -764,7 +764,7 @@ pub(crate) fn words(device: Device, state: &MediaState) -> (&'static str, &'stat
                     "sound settings"
                 }
             ));
-            let why = match state.settings {
+            let why = match state.opens_settings {
                 true => format!("Ducktape is not allowed to use the {noun}."),
                 false => format!("Your system refused this app the {noun}."),
             };
@@ -877,7 +877,7 @@ fn actions(device: Device, state: &MediaState, cx: &mut Context<Huddle>, theme: 
     } else {
         "huddle-microphone"
     };
-    let settings = state.status == MediaStatus::Denied && state.settings;
+    let settings = state.status == MediaStatus::Denied && state.opens_settings;
     let missing = state.status == MediaStatus::NoDevice;
     let link = match camera {
         true => view::wire::media::SETTINGS_CAMERA,
@@ -1024,7 +1024,7 @@ fn tile(
             false => black(),
         });
     if view.camera_placed() {
-        tile = tile.child(camera_piece(view, Fit::Cover, cx).size_full());
+        tile = tile.child(camera_piece(view, ObjectFit::Cover, cx).size_full());
     }
     // the microphone has nothing to draw in the room: it is there to be
     // heard, and to say who is speaking

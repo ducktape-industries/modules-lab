@@ -94,7 +94,7 @@ pub(crate) struct Menu {
 pub struct Huddle {
     /// What the host lists: cameras, and microphones with speakers.
     #[serde(skip)]
-    pub(crate) cameras: Loadable<Vec<Device>>,
+    pub(crate) cameras: Loadable<Vec<CameraDevice>>,
     #[serde(skip)]
     pub(crate) audio: Loadable<AudioDevices>,
     /// The picks, by id; `None`: the system's default.
@@ -200,9 +200,10 @@ impl View for Huddle {
     }
 }
 
-/// Whether a refusal says this host has no camera or microphone at all.
-fn unsupported(error: &Error) -> bool {
-    error.code == refusal::MEDIA_UNSUPPORTED
+/// Whether the host does not answer that kind of request at all: a host
+/// without camera and microphone.
+fn unknown(error: &Error) -> bool {
+    error.code == refusal::UNKNOWN_REQUEST
 }
 
 /// A device that is not starting or live, said as the view says it.
@@ -231,11 +232,11 @@ impl Huddle {
         cx.notify();
     }
 
-    /// The host has no camera or microphone: its lists were refused so, or
-    /// a piece says so.
+    /// The host has no camera or microphone: it does not answer its lists,
+    /// or a piece says so.
     pub(crate) fn no_support(&self) -> bool {
-        matches!(&self.cameras, Loadable::Failed(error) if unsupported(error))
-            || matches!(&self.audio, Loadable::Failed(error) if unsupported(error))
+        matches!(&self.cameras, Loadable::Failed(error) if unknown(error))
+            || matches!(&self.audio, Loadable::Failed(error) if unknown(error))
             || self.camera_state.status == MediaStatus::Unsupported
             || self.mic_state.status == MediaStatus::Unsupported
     }
@@ -511,7 +512,44 @@ pub(crate) struct Row {
     pub(crate) picked: bool,
 }
 
-fn rows(kind: Which, devices: &[Device], picked: Option<&str>, failed: Option<String>) -> Vec<Row> {
+/// What a menu reads of a device: a camera and a microphone or speaker
+/// alike.
+pub(crate) trait Listed {
+    fn id(&self) -> &str;
+    fn name(&self) -> &str;
+    fn default(&self) -> bool;
+}
+
+impl Listed for CameraDevice {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn default(&self) -> bool {
+        self.default
+    }
+}
+
+impl Listed for AudioDevice {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn default(&self) -> bool {
+        self.default
+    }
+}
+
+fn rows<D: Listed>(
+    kind: Which,
+    devices: &[D],
+    picked: Option<&str>,
+    failed: Option<String>,
+) -> Vec<Row> {
     if devices.is_empty() {
         return vec![Row {
             kind,
@@ -523,17 +561,17 @@ fn rows(kind: Which, devices: &[Device], picked: Option<&str>, failed: Option<St
     }
     let picked = devices
         .iter()
-        .position(|device| Some(device.id.as_str()) == picked)
-        .or_else(|| devices.iter().position(|device| device.default));
-    let mut ordered: Vec<(usize, &Device)> = devices.iter().enumerate().collect();
+        .position(|device| Some(device.id()) == picked)
+        .or_else(|| devices.iter().position(|device| device.default()));
+    let mut ordered: Vec<(usize, &D)> = devices.iter().enumerate().collect();
     // the system's default first, the rest as the host listed them
-    ordered.sort_by_key(|(_, device)| !device.default);
+    ordered.sort_by_key(|(_, device)| !device.default());
     ordered
         .into_iter()
         .map(|(at, device)| Row {
             kind,
-            id: Some(device.id.clone()),
-            name: device.name.clone(),
+            id: Some(device.id().to_owned()),
+            name: device.name().to_owned(),
             twin: twin(devices, device),
             picked: picked == Some(at),
         })
@@ -552,13 +590,13 @@ fn failure<T>(list: &Loadable<T>) -> Option<String> {
 /// do), the end of its id that tells the two apart: past the last `:`
 /// (`alsa:plughw:CARD=Loopback,DEV=1` is `CARD=Loopback,DEV=1`), at most
 /// 20 characters.
-pub(crate) fn twin(devices: &[Device], device: &Device) -> Option<String> {
+pub(crate) fn twin<D: Listed>(devices: &[D], device: &D) -> Option<String> {
     let shared = devices
         .iter()
-        .filter(|other| other.name == device.name)
+        .filter(|other| other.name() == device.name())
         .count();
     (shared > 1).then(|| {
-        let end = device.id.rsplit(':').next().unwrap_or(&device.id);
+        let end = device.id().rsplit(':').next().unwrap_or(device.id());
         let chars: Vec<char> = end.chars().collect();
         match chars.len() > 20 {
             true => format!(
