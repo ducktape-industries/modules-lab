@@ -282,9 +282,42 @@ fn glyph(path: &'static str, size: Pixels) -> Svg {
     svg().path(path).size(size).flex_none()
 }
 
-/// A glyph button of the toolbar, `design::icon_button` at the control's
-/// size, in ink, with a soft fill on hover; one that cannot act is faint,
-/// says so, and answers nothing.
+/// A glyph pressed for what `name` says: muted, in ink under the pointer,
+/// at least [`Ladder::hit`](design::Ladder) each way. The browser's own,
+/// not `design::icon_button`, whose builder lets a caller only style it:
+/// the field's reload and a tab's close sit over controls that take
+/// presses too, so each consumes its own, and an unchosen tab's leaves the Tab
+/// order, which needs the element itself.
+fn icon_button(
+    id: impl Into<ElementId>,
+    glyph: impl IntoElement,
+    name: &'static str,
+    ladder: &Ladder,
+    theme: &Theme,
+    click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Stateful<Div> {
+    let theme = *theme;
+    div()
+        .id(id)
+        .min_w(ladder.hit)
+        .min_h(ladder.hit)
+        .flex()
+        .items_center()
+        .justify_center()
+        .px_1()
+        .text_color(theme.muted)
+        .cursor_pointer()
+        .hover(move |style| style.text_color(theme.foreground))
+        .role(Role::Button)
+        .aria_label(name)
+        .focusable()
+        .on_click(click)
+        .child(glyph)
+}
+
+/// A glyph button of the toolbar, [`icon_button`] at the control's size,
+/// in ink, with a soft fill on hover; one that cannot act is faint, says
+/// so, and answers nothing.
 fn glyph_button(
     id: &'static str,
     icon: &'static str,
@@ -297,7 +330,7 @@ fn glyph_button(
     let theme = *theme;
     let icon = glyph(icon, px(16.));
     let button = match enabled {
-        true => design::icon_button(id, icon, name, ladder, &theme, click)
+        true => icon_button(id, icon, name, ladder, &theme, click)
             .text_color(theme.foreground)
             .hover(move |style| style.text_color(theme.foreground).bg(theme.surface_raised)),
         false => div()
@@ -513,7 +546,7 @@ impl Browser {
             .bg(theme.surface_raised)
             .child(shown)
             .child(
-                design::icon_button(
+                icon_button(
                     id,
                     glyph(icon, size),
                     name,
@@ -607,7 +640,7 @@ impl Browser {
                 .when(index > 0, |slot| slot.border_l_1())
                 .child(design::item(title, Role::Tab, active))
                 .child(
-                    design::icon_button(
+                    icon_button(
                         format!("browser-close-tab-{}", tab.id),
                         glyph("icons/x.svg", px(11.)),
                         "Close tab",

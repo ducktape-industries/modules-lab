@@ -16,7 +16,7 @@ it is.
 | `crates/app/live-echo-view` | its view: lines typed in the lobby, live through the node, by account |
 
 The SDK is programs at the live lane's pin (`Cargo.toml`'s `sdk-line`,
-programs `feat/live` today). The app refuses a view built against another
+programs `fix/live-sync` today). The app refuses a view built against another
 wire, so the pin moves when the app's does.
 
 ## trade
