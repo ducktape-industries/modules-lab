@@ -3,7 +3,7 @@
 //! `rules.rs` or `queries.rs`.
 use ::program::{Error, ExecCtx, Program, QueryCtx};
 
-use crate::queries::{call, mine, ringing};
+use crate::queries;
 use crate::rules::{decline, end, invite, join, leave, start};
 use crate::{Op, PROGRAM, Query, Reply, seconds};
 
@@ -32,9 +32,9 @@ impl Program for Huddle {
     fn query(ctx: &QueryCtx, query: Query) -> Result<Reply, Error> {
         let now = seconds(&ctx.env());
         Ok(match query {
-            Query::Call { id } => Reply::Call(call(ctx, &id)?),
-            Query::Mine { account } => Reply::Calls(mine(ctx, account, now)?),
-            Query::Ringing { account } => Reply::Calls(ringing(ctx, account, now)?),
+            Query::Call { id } => Reply::Call(queries::call(ctx, &id)?),
+            Query::Mine { account } => Reply::Calls(queries::mine(ctx, account, now)?),
+            Query::Ringing { account } => Reply::Calls(queries::ringing(ctx, account, now)?),
         })
     }
 }
