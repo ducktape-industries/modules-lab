@@ -79,7 +79,8 @@ pub(super) fn mic_piece(view: &Huddle, cx: &mut Context<Huddle>) -> view::Microp
 // SDK gap: the chip over a picture, swap when feat/phone-kit lands
 /// "You" at the picture's top left: the muted mark before it (or, while
 /// `speaking`, the speaking one), "· mirrored" after it while the picture
-/// is. On the glass over the picture; with the camera off, on the window's
+/// is (not while the camera is still opening: there is no picture yet).
+/// On the glass over the picture; with the camera off, on the window's
 /// ground in a hairline.
 pub(super) fn chip(view: &Huddle, speaking: bool, ladder: &Ladder, theme: &Theme) -> Div {
     let picture = !view.camera_off;
@@ -93,6 +94,7 @@ pub(super) fn chip(view: &Huddle, speaking: bool, ladder: &Ladder, theme: &Theme
         (false, true) => Some((SPEAKING, words::SPEAKING, tone)),
         (false, false) => None,
     };
+    let tagged = view.camera_placed() && !view.camera_slow() && view.mirrored();
     div()
         .absolute()
         .top(design::space::LG)
@@ -123,7 +125,7 @@ pub(super) fn chip(view: &Huddle, speaking: bool, ladder: &Ladder, theme: &Theme
                 .child(design::icon(glyph, MARK).text_color(color))
         }))
         .child(words::YOU)
-        .when(view.camera_placed() && view.mirrored(), |chip| {
+        .when(tagged, |chip| {
             chip.child(
                 div()
                     .font_family(design::fonts::FAMILY_MONO)

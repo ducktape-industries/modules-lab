@@ -521,7 +521,8 @@ fn record_then_play_back() {
     assert_eq!(mic_piece(&cx).unwrap().4, [MicCommand::Stop]);
 }
 
-/// A camera slow to open says the phone is asking.
+/// A camera slow to open says the phone is asking, and the chip calls no
+/// picture mirrored while there is none.
 #[test]
 fn a_camera_slow_to_open_says_the_phone_is_asking() {
     let (mut cx, ticks) = phone();
@@ -536,6 +537,7 @@ fn a_camera_slow_to_open_says_the_phone_is_asking() {
             "Allow the camera when your phone asks.",
         ],
     );
+    assert!(!cx.has_text("\u{b7} mirrored"));
 }
 
 /// A refused camera says so in its card, with Open Settings where the
