@@ -494,19 +494,19 @@ impl Huddle {
                 kind,
                 self.cameras.ready().map_or(&[][..], Vec::as_slice),
                 self.camera.as_deref(),
-                failure(&self.cameras),
+                nothing(&self.cameras),
             ),
             Kind::Microphone => rows(
                 kind,
                 audio.map_or(&[][..], |audio| &audio.inputs),
                 self.microphone.as_deref(),
-                failure(&self.audio),
+                nothing(&self.audio),
             ),
             Kind::Speaker => rows(
                 kind,
                 audio.map_or(&[][..], |audio| &audio.outputs),
                 self.speaker.as_deref(),
-                failure(&self.audio),
+                nothing(&self.audio),
             ),
         }
     }
@@ -593,17 +593,12 @@ impl Listed for AudioDevice {
     }
 }
 
-fn rows<D: Listed>(
-    kind: Kind,
-    devices: &[D],
-    picked: Option<&str>,
-    failed: Option<String>,
-) -> Vec<Row> {
+fn rows<D: Listed>(kind: Kind, devices: &[D], picked: Option<&str>, nothing: &str) -> Vec<Row> {
     if devices.is_empty() {
         return vec![Row {
             kind,
             id: None,
-            name: failed.unwrap_or_else(|| words::NONE_FOUND.into()),
+            name: nothing.to_owned(),
             twin: None,
             picked: false,
         }];
@@ -634,11 +629,13 @@ fn holds<D: Listed>(devices: &[D], pick: &Option<String>) -> bool {
         .is_none_or(|id| devices.iter().any(|device| device.id() == id))
 }
 
-/// Why a device list is not there, in the host's words.
-fn failure<T>(list: &Loadable<T>) -> Option<String> {
+/// What a menu says where `list` holds no device: that it is still being
+/// asked, the host's refusal, or that there is none.
+fn nothing<T>(list: &Loadable<T>) -> &str {
     match list {
-        Loadable::Failed(error) => Some(error.message.clone()),
-        _ => None,
+        Loadable::Idle | Loadable::Loading(_) => words::LISTING,
+        Loadable::Failed(error) => &error.message,
+        Loadable::Ready(_) | Loadable::Reloading(..) => words::NONE_FOUND,
     }
 }
 

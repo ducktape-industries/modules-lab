@@ -823,6 +823,19 @@ fn a_host_without_media_says_so() {
     assert!(!cx.has_text("Join huddle"));
 }
 
+/// A list the host has not answered yet says so: it is no empty list.
+#[test]
+fn a_list_not_answered_yet_says_so() {
+    let (mut cx, _) = hosted();
+    cx.host().never::<CameraDevices>();
+    cx.open::<Huddle>();
+    cx.run_until_parked();
+    cx.simulate_click("huddle-pick-camera");
+    assert!(cx.has_text("Looking for devices\u{2026}"));
+    assert!(!cx.has_text("None found"));
+    assert!(disabled(&cx, "huddle-menu-0"));
+}
+
 /// Two devices of one name are told apart by their ids' ends.
 #[test]
 fn a_shared_name_shows_its_id() {
@@ -840,12 +853,29 @@ fn a_shared_name_shows_its_id() {
             AudioKind::Other,
         ),
         audio("alsa:default", "System default", true, AudioKind::Other),
+        audio(
+            "alsa:hw:CARD=USBAudioInterface,DEV=0",
+            "USB Audio",
+            false,
+            AudioKind::Other,
+        ),
+        audio(
+            "alsa:hw:CARD=USBAudioInterface,DEV=1",
+            "USB Audio",
+            false,
+            AudioKind::Other,
+        ),
     ];
     assert_eq!(
         crate::twin(&devices, &devices[1]).as_deref(),
         Some("CARD=Loopback,DEV=1")
     );
     assert_eq!(crate::twin(&devices, &devices[2]), None);
+    // past 20 characters, its last 19 after an ellipsis
+    assert_eq!(
+        crate::twin(&devices, &devices[4]).as_deref(),
+        Some("\u{2026}udioInterface,DEV=1")
+    );
 }
 
 // ---------- the float ----------

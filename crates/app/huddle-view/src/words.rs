@@ -18,6 +18,9 @@ pub(crate) const SYSTEM_DEFAULT: &str = "System default";
 /// A device list with nothing in it.
 pub(crate) const NONE_FOUND: &str = "None found";
 
+/// A device list the host has not answered yet.
+pub(crate) const LISTING: &str = "Looking for devices\u{2026}";
+
 /// A kind of device, as its picker's label and its group in a menu say it.
 pub(crate) fn kind(kind: Kind) -> &'static str {
     match kind {
