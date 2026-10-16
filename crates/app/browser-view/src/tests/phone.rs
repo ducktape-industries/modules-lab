@@ -1,16 +1,32 @@
 //! The phone's screen (`ui/phone/`), as the phone boards draw it: the
-//! field and Open, the home row, the addresses handed out this session,
-//! under a finger at 390 wide. A phone's build has no web view: an
-//! address goes to the phone's own browser (`link.open`), which only a
-//! phone shows opening. The sweep holds every state at 360, 390 and 430.
+//! field and Open, the links the app sent here, the home row, the
+//! addresses handed out this session, a refused one, under a finger at 390
+//! wide. A phone's build has no web view: an address goes to the phone's
+//! own browser (`link.open`), which only a phone shows opening. The sweep
+//! holds every state at 360, 390 and 430.
+use view::host::Error;
 use view::methods::LinkOpen;
 
 use super::*;
 use crate::{HOME, words};
 
-/// The view open under a finger, 390 by 844.
+/// The app's refusal of a link it does not open (its kernel's words).
+const NOT_OPENED: &str = "`link.open` opens a duck:// or https:// link";
+
+/// The view open under a finger, 390 by 844, on a host that opens a link
+/// as the app does: a `duck://` or `https://` one, else refused.
 fn phone() -> Opened {
     let mut opened = opened();
+    opened.cx.host().handle::<LinkOpen>(|link| {
+        let openable = ["duck://", "https://"].iter().any(|scheme| {
+            link.strip_prefix(scheme)
+                .is_some_and(|rest| !rest.is_empty())
+        });
+        match openable {
+            true => Ok(()),
+            false => Err(Error::new("malformed_request", NOT_OPENED)),
+        }
+    });
     opened.cx.simulate_touch(true);
     opened.cx.simulate_resize(390., 844.);
     opened
@@ -64,7 +80,7 @@ fn a_bare_address_opens_over_https_in_the_phones_browser_and_stays_typed() {
 #[test]
 fn home_opens_the_desktops_home_page() {
     let Opened { mut cx, .. } = phone();
-    shows_all(&cx, &[words::HOME, words::HOME_NAME, "wikipedia.org"]);
+    shows_all(&cx, &[words::HOME_HEAD, words::HOME_NAME, "wikipedia.org"]);
     cx.simulate_click("browser-home");
     assert_eq!(handed(&cx), [HOME]);
 }
@@ -80,6 +96,49 @@ fn an_address_opened_again_is_listed_once_newest_first() {
         ["https://ducktape.industries", HOME]
     );
     assert!(cx.find("browser-opened-2").is_none());
+}
+
+#[test]
+fn an_address_the_host_will_not_open_says_why_and_is_not_listed() {
+    let Opened { mut cx, view, .. } = phone();
+    open_typed(&mut cx, "http://example.com");
+    assert_eq!(handed(&cx), ["http://example.com"]);
+    assert!(cx.find("browser-open-refused").is_some());
+    shows_all(&cx, &[NOT_OPENED]);
+    assert!(view.read(|browser| browser.handed.is_empty()));
+    assert!(!cx.has_text(words::OPENED_THIS_SESSION));
+    // Retry asks again; an address that opens ends the refusal
+    cx.simulate_click("browser-open-retry");
+    assert_eq!(handed(&cx).len(), 2);
+    cx.simulate_click("browser-home");
+    assert!(cx.find("browser-open-refused").is_none());
+    assert_eq!(view.read(|browser| browser.handed.clone()), [HOME]);
+}
+
+/// The phone's browser opens a link only from a press, so a link the app
+/// sends here waits on the screen for one, and no tab hides it.
+#[test]
+fn a_link_the_app_sends_waits_for_a_press_and_opens_no_tab() {
+    let Opened {
+        mut cx,
+        view,
+        routes,
+    } = phone();
+    let titles = cx.host().requests::<HostTitle>().len();
+    routes.send("https://example.org/wiki?q=1".into());
+    cx.run_until_parked();
+    assert!(view.read(|browser| browser.tabs.is_empty()));
+    assert_eq!(cx.host().requests::<HostTitle>().len(), titles);
+    assert!(handed(&cx).is_empty(), "nothing opens without a press");
+    shows_all(&cx, &[words::SENT_HERE, "example.org"]);
+    cx.simulate_click("browser-routed-0");
+    assert_eq!(handed(&cx), ["https://example.org/wiki?q=1"]);
+    assert!(
+        cx.find("browser-routed-0").is_none(),
+        "opened, it waits no more"
+    );
+    assert!(!cx.has_text(words::SENT_HERE));
+    assert!(cx.find("browser-opened-0").is_some());
 }
 
 #[test]
@@ -108,12 +167,17 @@ fn the_phone_places_no_page_and_gives_the_keys_to_nothing() {
 /// phone width.
 #[test]
 fn sweep() {
-    let Opened { mut cx, .. } = phone();
+    let Opened { mut cx, routes, .. } = phone();
     view::testing::sweep(&mut cx, |cx| {
-        // board 30: the field empty, then typed; board 31: opened
+        // board 30: the field empty, then typed; board 31: opened; then a
+        // refused address, and a link sent here
         cx.simulate_input("browser-address", "wikipedia.org/wiki/Duck");
         cx.simulate_click("browser-open");
         cx.simulate_click("browser-home");
+        cx.simulate_input("browser-address", "http://example.com");
+        cx.simulate_click("browser-open");
+        routes.send("https://example.org/".into());
+        cx.run_until_parked();
     });
 }
 

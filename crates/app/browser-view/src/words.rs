@@ -7,7 +7,7 @@
 pub(crate) const BROWSER: &str = "Browser";
 
 /// The address field, as a screen reader names it.
-pub(crate) const ADDRESS: &str = "Address";
+pub(crate) const ADDRESS_LABEL: &str = "Address";
 
 /// The address field while nothing is typed.
 pub(crate) const TYPE_AN_ADDRESS: &str = "Type an address";
@@ -22,9 +22,14 @@ pub(crate) const NO_WEB_VIEW: &str = "This build has no web view. An address you
 /// What hands the typed address to the phone's browser.
 pub(crate) const OPEN_IN_BROWSER: &str = "Open in browser";
 
-/// The head over the home page's row, and the home page's name.
-pub(crate) const HOME: &str = "Home";
+/// The head over the home page's row.
+pub(crate) const HOME_HEAD: &str = "Home";
+
+/// The home page's name.
 pub(crate) const HOME_NAME: &str = "Wikipedia";
+
+/// The head over the links the app sent here, each waiting for a press.
+pub(crate) const SENT_HERE: &str = "Sent here";
 
 /// The head over the addresses handed out this session.
 pub(crate) const OPENED_THIS_SESSION: &str = "Opened this session";

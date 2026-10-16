@@ -5,12 +5,14 @@
 //!
 //! A phone's build has no web view, so no page is drawn here and there
 //! are no tabs: one screen says so, and hands an address to the phone's
-//! own browser (`host.open_link`): the one typed, the home page, or one
-//! handed before this session. The field takes the keys only when pressed.
+//! own browser (`link.open`): the one typed, a link the app sent here, the
+//! home page, or one handed before this session. The field takes the keys
+//! only when pressed.
 //!
-//! Reads the address as typed and the addresses handed out. Writes an
-//! address handed out (`open_outside`, `open_typed`). It never reaches
-//! into the desktop's tree.
+//! Reads the address as typed, the links sent here, the addresses handed
+//! out and the last one refused. Writes an address handed out
+//! (`open_outside`, `open_typed`). It never reaches into the desktop's
+//! tree.
 use view::design::{Ladder, Nav};
 use view::prelude::*;
 use view::{AnyElement, Div, FontWeight, Stateful};
@@ -45,14 +47,29 @@ pub(crate) fn render(view: &Browser, cx: &mut Context<Browser>) -> AnyElement {
                         .overflow_y_scroll()
                         .child(note(ladder, &theme))
                         .child(typed(view, cx, ladder, &theme))
+                        .children(listing(
+                            "browser-routed",
+                            words::SENT_HERE,
+                            &view.routed,
+                            cx,
+                            ladder,
+                            &theme,
+                        ))
                         .child(design::section_head(
                             "browser-home-head",
-                            words::HOME,
+                            words::HOME_HEAD,
                             ladder,
                             &theme,
                         ))
                         .child(home(cx, ladder, &theme))
-                        .children(handed(view, cx, ladder, &theme)),
+                        .children(listing(
+                            "browser-opened",
+                            words::OPENED_THIS_SESSION,
+                            &view.handed,
+                            cx,
+                            ladder,
+                            &theme,
+                        )),
                 ),
         )
         .into_any_element()
@@ -78,9 +95,10 @@ fn note(ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
 }
 
 /// The address field and Open, which hands what is typed to the phone's
-/// browser; Enter in the field does too.
+/// browser; Enter in the field does too. Under them, the last address the
+/// host would not open: its refusal, and Retry.
 fn typed(view: &Browser, cx: &mut Context<Browser>, ladder: &Ladder, theme: &Theme) -> Div {
-    let input = Input::new(ADDRESS, &view.address, words::ADDRESS)
+    let input = Input::new(ADDRESS, &view.address, words::ADDRESS_LABEL)
         .placeholder(words::TYPE_AN_ADDRESS)
         .font_family(design::fonts::FAMILY_MONO)
         .on_submit(cx.listener(|view: &mut Browser, _: &(), _, cx| view.open_typed(cx)));
@@ -92,6 +110,18 @@ fn typed(view: &Browser, cx: &mut Context<Browser>, ladder: &Ladder, theme: &The
         .gap(design::space::SM)
         .child(design::field(input, ladder, theme).lead("globe"))
         .child(open(opens, cx, ladder, theme))
+        .children(view.refused.as_ref().map(|(url, refusal)| {
+            let again = url.clone();
+            design::refused(
+                "browser-open",
+                design::sentence(refusal),
+                ladder,
+                theme,
+                cx.listener(move |view: &mut Browser, _: &ClickEvent, _, cx| {
+                    view.open_outside(again.clone(), cx)
+                }),
+            )
+        }))
 }
 
 /// Open: the primary button, with the glyph of a page that opens outside.
@@ -143,27 +173,25 @@ fn home(cx: &mut Context<Browser>, ladder: &Ladder, theme: &Theme) -> Stateful<D
     }))
 }
 
-/// The addresses handed out this session, under their head, newest first:
-/// each opens again.
-fn handed(
-    view: &Browser,
+/// `urls` under the head `{id}-head` saying `head`, newest first, each a
+/// row (`{id}-{index}`) that hands it to the phone's browser; nothing while
+/// there are none.
+fn listing(
+    id: &str,
+    head: &'static str,
+    urls: &[String],
     cx: &mut Context<Browser>,
     ladder: &Ladder,
     theme: &Theme,
 ) -> Vec<AnyElement> {
-    if view.handed.is_empty() {
+    if urls.is_empty() {
         return Vec::new();
     }
-    let head = design::section_head(
-        "browser-opened-head",
-        words::OPENED_THIS_SESSION,
-        ladder,
-        theme,
-    );
-    let rows = view.handed.iter().enumerate().map(|(index, url)| {
+    let head = design::section_head(format!("{id}-head"), head, ladder, theme);
+    let rows = urls.iter().enumerate().map(|(index, url)| {
         let again = url.clone();
         outside(
-            format!("browser-opened-{index}"),
+            format!("{id}-{index}"),
             ("external-link", host_shown(url).0, url.clone()),
             ladder,
             theme,

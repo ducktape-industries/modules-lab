@@ -8,13 +8,15 @@
 //! leaves the others' pages where they are.
 //!
 //! A phone's build has no web view: under a finger the view is one screen
-//! that hands an address to the phone's own browser (`host.open_link`).
+//! that hands an address to the phone's own browser (`link.open`).
 //!
-//! This file is the model: the tabs, the address as typed, the addresses
-//! handed out, and what each press changes. What is drawn is `ui` (the
-//! desktop's tree, under a pointer) or `ui::phone` (the phone's, under a
-//! finger), picked once at the root, in the words of `words`.
+//! This file is the model: the tabs, the address as typed, the links the
+//! app sent here, the addresses handed out, and what each press changes.
+//! What is drawn is `ui` (the desktop's tree, under a pointer) or
+//! `ui::phone` (the phone's, under a finger), picked once at the root, in
+//! the words of `words`.
 use serde::{Deserialize, Serialize};
+use view::methods::LinkOpen;
 use view::prelude::*;
 use view::wire::{ElementIdWire, WidgetCommand};
 
@@ -24,8 +26,9 @@ mod words;
 /// What the new-tab button opens, and the phone's home row.
 pub const HOME: &str = "https://www.wikipedia.org/";
 
-/// How many addresses handed to the phone's browser the phone lists.
-const HANDED: usize = 8;
+/// How many addresses the phone lists of each kind: links sent here, and
+/// addresses handed to its browser.
+const LISTED: usize = 8;
 
 /// The address field's id, at rest (a button) and typing (the field).
 pub(crate) const ADDRESS: &str = "browser-address";
@@ -62,11 +65,21 @@ pub struct Browser {
     /// field raises the keyboard over half the screen.
     #[serde(skip)]
     pub(crate) keys_to_address: bool,
+    /// The links the app sent here (`host.route`) and no design has taken
+    /// yet, newest first, each once, at most [`LISTED`]. The desktop's
+    /// tree opens each in a tab as it draws; the phone's lists them, as
+    /// its browser opens a link only from a press.
+    #[serde(skip)]
+    pub(crate) routed: Vec<String>,
     /// The addresses handed to the phone's own browser this session,
-    /// newest first, each once, at most [`HANDED`]. A snapshot comes back
+    /// newest first, each once, at most [`LISTED`]. A snapshot comes back
     /// with none, as the desktop's tabs do.
     #[serde(skip)]
     pub(crate) handed: Vec<String>,
+    /// The address the host last would not open, and its refusal: said
+    /// under Open, with Retry, until an address opens.
+    #[serde(skip)]
+    pub(crate) refused: Option<(String, Error)>,
 }
 
 /// One page.
@@ -94,11 +107,13 @@ impl View for Browser {
         // no tab open: typing goes to the address field at once, where a
         // tree gives it the keys
         self.keys_to_address = true;
-        // a route is never empty, so every one is an address
+        // a route is never empty, so every one is an address; each design
+        // takes it as it draws
         cx.follow::<HostRoute>((), |view, route, cx| match route {
             Ok(link) => {
                 if let Some(url) = address(&link) {
-                    view.open(url, cx)
+                    listed(&mut view.routed, url);
+                    cx.notify();
                 }
             }
             Err(refusal) => cx.log_refused("the route", &refusal),
@@ -166,6 +181,14 @@ pub(crate) fn focus_address(window: &mut Window) {
     window.dispatch(WidgetCommand::SelectAll {
         target: vec![ElementIdWire::Name(ADDRESS.into())],
     });
+}
+
+/// `url` first in `list`, and nowhere else in it, which keeps at most
+/// [`LISTED`].
+fn listed(list: &mut Vec<String>, url: String) {
+    list.retain(|listed| *listed != url);
+    list.insert(0, url);
+    list.truncate(LISTED);
 }
 
 impl Browser {
@@ -263,15 +286,25 @@ impl Browser {
     }
 
     /// Hands `url` to the phone's own browser (the phone's build has no
-    /// web view, so the host opens an `https` link outside the app), and
-    /// lists it first among the addresses handed this session. The host
-    /// takes it only from a press or a key.
+    /// web view, so the host opens an `https` link outside the app). Once
+    /// the host has opened it, it is first among the addresses handed this
+    /// session and no longer a link waiting; refused, the refusal is said
+    /// in its place. The host takes it only from a press or a key, which
+    /// the ask carries as it is sent.
     pub(crate) fn open_outside(&mut self, url: String, cx: &mut Context<Self>) {
-        cx.host().open_link(&url);
-        self.handed.retain(|handed| *handed != url);
-        self.handed.insert(0, url);
-        self.handed.truncate(HANDED);
-        cx.notify();
+        let opening = cx.host().ask::<LinkOpen>(url.clone());
+        cx.land(opening, move |view, opened, cx| {
+            match opened {
+                Ok(()) => {
+                    view.refused = None;
+                    view.routed.retain(|routed| *routed != url);
+                    listed(&mut view.handed, url);
+                }
+                Err(refusal) => view.refused = Some((url, refusal)),
+            }
+            cx.notify();
+        })
+        .detach();
     }
 
     /// The phone's Open, or Enter in its field: what is typed, as the

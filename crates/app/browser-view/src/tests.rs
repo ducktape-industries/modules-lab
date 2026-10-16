@@ -1,10 +1,11 @@
 //! The view on a fake host: each test drives the frame the way a person
 //! would and reads what the host would get. Every frame it sends is held
 //! to the host's sanitizer and accessibility audit.
-use view::Entity;
 use view::methods::{HostRoute, HostTitle, HostWidget};
+use view::prelude::Capability;
 use view::testing::{StreamSender, TestAppContext};
 use view::wire::{Node, WebCommand, WebState, WidgetCommand};
+use view::{Entity, View};
 
 use crate::{Browser, address, host_shown};
 
@@ -384,6 +385,14 @@ fn a_link_the_app_hands_over_opens_in_a_new_tab() {
     assert_eq!(piece(cx, "page-2").0, "https://example.org/wiki?q=1");
     assert!(hidden(cx, "page-1") && !hidden(cx, "page-2"));
     assert_eq!(piece(cx, "page-1").0, "https://example.com");
+}
+
+#[test]
+fn the_manifest_names_the_web_view_the_host_and_links() {
+    assert_eq!(
+        <Browser as View>::CAPABILITIES,
+        [Capability::Web, Capability::Host, Capability::Link]
+    );
 }
 
 #[test]

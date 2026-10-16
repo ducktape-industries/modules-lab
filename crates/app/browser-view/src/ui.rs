@@ -34,7 +34,8 @@ const TAB_BAR: Pixels = px(31.);
 const TAB_INSET: Pixels = px(30.);
 
 /// The toolbar, the tab bar from two tabs up, and the pages; on the first
-/// frame, the keys to the address field.
+/// frame, the keys to the address field; each link the app sent here, in a
+/// new tab, the newest on screen.
 pub(crate) fn render(
     view: &mut Browser,
     window: &mut Window,
@@ -42,6 +43,9 @@ pub(crate) fn render(
 ) -> AnyElement {
     if std::mem::take(&mut view.keys_to_address) {
         focus_address(window);
+    }
+    for url in std::mem::take(&mut view.routed).into_iter().rev() {
+        view.open(url, cx);
     }
     let theme = *cx.global::<Theme>();
     let ladder = &design::POINTER;
@@ -225,7 +229,7 @@ impl Browser {
                     )
                     // the field's Escape passes up to here
                     .role(Role::Group)
-                    .aria_label(words::ADDRESS)
+                    .aria_label(words::ADDRESS_LABEL)
                     .consumes_keys(["escape"])
                     .on_key_down(
                         cx.listener(|view: &mut Browser, event: &KeyDownEvent, _, cx| {
@@ -235,7 +239,7 @@ impl Browser {
                         }),
                     )
                     .child(
-                        Input::new(ADDRESS, &self.address, words::ADDRESS)
+                        Input::new(ADDRESS, &self.address, words::ADDRESS_LABEL)
                             .size_full()
                             .px(design::space::MD)
                             .bg(theme.background)
@@ -283,7 +287,7 @@ impl Browser {
             .gap(design::space::XXS)
             .cursor_text()
             .role(Role::Button)
-            .aria_label(words::ADDRESS)
+            .aria_label(words::ADDRESS_LABEL)
             .aria_value(state.url.clone())
             .focusable()
             .on_click(
