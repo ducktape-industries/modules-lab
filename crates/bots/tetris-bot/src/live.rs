@@ -4,8 +4,11 @@
 //! `Hello` → `Challenge` → `Proof` → `Welcome`, the proof the device key's
 //! signature under `live_wire::NAMESPACE`. Then the session watches the
 //! versus room, and carries what the [`Bot`] asks and hears: control
-//! messages, and `WsFrame` groups and datagrams both ways. A ping goes out
-//! every [`KEEP_ALIVE`]; [`IDLE`] with nothing heard ends the session.
+//! messages, and `WsFrame` groups and datagrams both ways. The clocks are
+//! the wire's: the socket's opening, the status and each handshake step
+//! within [`HANDSHAKE_WAIT`]; a ping every [`KEEP_ALIVE`], since the node
+//! closes a websocket silent for [`IDLE`]; and the node silent for `IDLE`
+//! ends the session here.
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -14,8 +17,8 @@ use commonware_cryptography::{Signer as _, ed25519};
 use ducklink::ChainId;
 use futures_util::{SinkExt as _, StreamExt as _};
 use live_wire::{
-    Alias, Code, Control, DEFAULT_PRIORITY, DatagramHeader, Ending, GroupHeader, Hello, KeyScheme,
-    Proof, RequestId, Start, Track, Welcome, WsFrame,
+    Alias, Code, Control, DEFAULT_PRIORITY, DatagramHeader, Ending, GroupHeader, HANDSHAKE_WAIT,
+    Hello, IDLE, KEEP_ALIVE, KeyScheme, Proof, RequestId, Start, Track, Welcome, WsFrame,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::{Instant, MissedTickBehavior};
@@ -24,13 +27,6 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::ai::Level;
 use crate::versus::{Bot, Out};
-
-/// The keep-alive and the idle limit of a session: the app's.
-pub const KEEP_ALIVE: Duration = Duration::from_secs(10);
-pub const IDLE: Duration = Duration::from_secs(30);
-/// How long the socket's opening and the handshake may each take: the
-/// node's own deadline.
-const HELLO_WAIT: Duration = Duration::from_secs(5);
 
 /// Why a session ended.
 #[derive(Debug, PartialEq, Eq)]
@@ -90,7 +86,7 @@ pub async fn session(rpc: &str, key: &ed25519::PrivateKey, level: Level) -> Stop
     };
     let url = format!("{}{}", rpc.replacen("http", "ws", 1), live_wire::ROUTE);
     let mut socket = match tokio::time::timeout(
-        HELLO_WAIT,
+        HANDSHAKE_WAIT,
         tokio_tungstenite::connect_async(url.as_str()),
     )
     .await
@@ -100,7 +96,7 @@ pub async fn session(rpc: &str, key: &ed25519::PrivateKey, level: Level) -> Stop
         Err(_) => return Stop::Lost(format!("the live socket at {url} did not open in time")),
     };
     let welcome = match tokio::time::timeout(
-        HELLO_WAIT,
+        HANDSHAKE_WAIT,
         handshake(&mut socket, status.genesis, &status.identity, key),
     )
     .await
@@ -119,7 +115,7 @@ pub async fn session(rpc: &str, key: &ed25519::PrivateKey, level: Level) -> Stop
 
 async fn status(rpc: &str) -> Result<Status, String> {
     let client = reqwest::Client::builder()
-        .timeout(HELLO_WAIT)
+        .timeout(HANDSHAKE_WAIT)
         .build()
         .map_err(|error| error.to_string())?;
     let response = client
