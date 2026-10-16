@@ -634,21 +634,16 @@ fn mic_trouble(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Statef
 /// Test: the host's chime on the picked speaker; muted or with the
 /// microphone in trouble too (an output, apart from the microphone), not
 /// over a recording's playback.
-fn speaker_test(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
+fn speaker_test(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> impl IntoElement {
     let enabled = view.mic_state.playback == Playback::Idle && !view.chiming;
-    outline(
-        "huddle-speaker-test",
-        None,
-        if view.chiming {
-            "Playing\u{2026}"
-        } else {
-            "Test"
-        },
-        enabled,
-        theme,
-        cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.chime(cx)),
-    )
-    .flex_none()
+    let label = match view.chiming {
+        true => "Playing\u{2026}",
+        false => "Test",
+    };
+    let chime = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.chime(cx));
+    design::button("huddle-speaker-test", label, &design::POINTER, theme, chime)
+        .kind(design::Kind::Outline)
+        .enabled(enabled)
 }
 
 /// Record five seconds and hear them back, and the line under it.
@@ -661,9 +656,8 @@ fn record(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
         _ => (PLAY, format!("Record {RECORD_SECONDS} s and play back")),
     };
     let enabled = (view.mic_live() && !view.chiming) || under_way;
-    let button = outline(
-        "huddle-record",
-        Some(icon),
+    let button = record_button(
+        icon,
         label,
         enabled,
         theme,
@@ -693,7 +687,7 @@ fn record(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
                 .child(
                     div()
                         .font_family(design::fonts::FAMILY_MONO)
-                        .child(format!("0:0{left}")),
+                        .child(format!("0:{left:02}")),
                 )
                 .into_any_element()
         }
@@ -764,6 +758,8 @@ fn monitor(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Div {
         )
 }
 
+// SDK gap: design::button takes no height, width or centred label (Join is
+// 32 tall across the column), swap when feat/phone-kit lands
 fn join_button(cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
     design::focus_shown_on_ink(
         div()
@@ -789,11 +785,12 @@ fn join_button(cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
     )
 }
 
-/// A 28 px control in a hairline box, its glyph before its label; one
-/// that cannot act is faint and says so.
-fn outline(
-    id: &'static str,
-    icon: Option<&'static str>,
+/// Record: a 28 px control in a hairline box, its glyph before its label;
+/// one that cannot act is faint and says so.
+// SDK gap: design::button draws no glyph before its label, swap when
+// feat/phone-kit lands
+fn record_button(
+    icon: &'static str,
     label: impl Into<SharedString>,
     enabled: bool,
     theme: &Theme,
@@ -801,7 +798,7 @@ fn outline(
 ) -> Stateful<Div> {
     let theme = *theme;
     let button = div()
-        .id(id)
+        .id("huddle-record")
         .h(design::size::CONTROL)
         .px(design::space::MD)
         .flex()
@@ -813,7 +810,7 @@ fn outline(
         .text_size(design::text::SECONDARY)
         .whitespace_nowrap()
         .role(Role::Button)
-        .children(icon.map(|icon| design::icon(icon, px(14.))))
+        .child(design::icon(icon, px(14.)))
         .child(label.into());
     match enabled {
         true => button
@@ -906,70 +903,44 @@ fn actions(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &Them
         true => Place::CameraSettings,
         false => Place::MicrophoneSettings,
     };
+    let open_settings = cx
+        .listener(move |_: &mut Huddle, _: &ClickEvent, _, cx| cx.host().notify::<HostShow>(page));
+    let try_again = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx));
+    let without = cx.listener(move |view: &mut Huddle, _: &ClickEvent, window, cx| {
+        match camera {
+            true => view.camera_off = true,
+            false => view.muted = true,
+        }
+        join(view, window, cx)
+    });
+    let id = |what: &str| format!("{prefix}-{what}");
+    let pointer = &design::POINTER;
     div()
         .flex()
         .items_center()
         .justify_center()
         .gap(design::space::SM)
         .when(settings, |row| {
-            row.child(outline(
-                if camera {
-                    "huddle-camera-settings"
-                } else {
-                    "huddle-microphone-settings"
-                },
-                None,
+            let open = design::button(
+                id("settings"),
                 "Open Settings",
-                true,
+                pointer,
                 theme,
-                cx.listener(move |_: &mut Huddle, _: &ClickEvent, _, cx| {
-                    cx.host().notify::<HostShow>(page)
-                }),
-            ))
+                open_settings,
+            );
+            row.child(open.kind(design::Kind::Outline))
         })
-        .child(outline(
-            if camera {
-                "huddle-camera-retry"
-            } else {
-                "huddle-microphone-retry"
-            },
-            None,
-            "Try again",
-            true,
-            theme,
-            cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx)),
-        ))
+        .child(
+            design::button(id("retry"), "Try again", pointer, theme, try_again)
+                .kind(design::Kind::Outline),
+        )
         .when(missing, |row| {
-            row.child(
-                div()
-                    .id(SharedString::from(format!("{prefix}-without")))
-                    .h(design::size::CONTROL)
-                    .px(design::space::MD)
-                    .flex()
-                    .items_center()
-                    .text_size(design::text::SECONDARY)
-                    .text_color(theme.muted)
-                    .cursor_pointer()
-                    .hover({
-                        let theme = *theme;
-                        move |style| style.text_color(theme.foreground)
-                    })
-                    .role(Role::Button)
-                    .focusable()
-                    .on_click(
-                        cx.listener(move |view: &mut Huddle, _: &ClickEvent, window, cx| {
-                            match camera {
-                                true => view.camera_off = true,
-                                false => view.muted = true,
-                            }
-                            join(view, window, cx)
-                        }),
-                    )
-                    .child(match camera {
-                        true => "Join without camera",
-                        false => "Join without a microphone",
-                    }),
-            )
+            let label = match camera {
+                true => "Join without camera",
+                false => "Join without a microphone",
+            };
+            let join = design::button(id("without"), label, pointer, theme, without);
+            row.child(join.kind(design::Kind::Quiet))
         })
 }
 
@@ -1468,24 +1439,13 @@ fn trouble_row(view: &Huddle, device: Device, cx: &mut Context<Huddle>, theme: &
 }
 
 /// Try again, quiet: both pieces opened again, the lists read again.
-fn retry(device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div> {
-    let theme = *theme;
-    div()
-        .id(match device {
-            Device::Camera => "huddle-camera-retry",
-            Device::Microphone => "huddle-microphone-retry",
-        })
-        .h(design::size::CONTROL)
-        .flex()
-        .items_center()
-        .text_size(design::text::SECONDARY)
-        .text_color(theme.muted)
-        .cursor_pointer()
-        .hover(move |style| style.text_color(theme.foreground))
-        .role(Role::Button)
-        .focusable()
-        .on_click(cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx)))
-        .child("Try again")
+fn retry(device: Device, cx: &mut Context<Huddle>, theme: &Theme) -> impl IntoElement {
+    let id = match device {
+        Device::Camera => "huddle-camera-retry",
+        Device::Microphone => "huddle-microphone-retry",
+    };
+    let try_again = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.retry(cx));
+    design::button(id, "Try again", &design::POINTER, theme, try_again).kind(design::Kind::Quiet)
 }
 
 /// What the float says once where the host keeps no window on top
