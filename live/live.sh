@@ -1,5 +1,5 @@
 #!/bin/sh
-# The workspace's modules in the real app, from a clone. `make live` and `make live-down`
+# The workspace's programs in the real app, from a clone. `make live` and `make live-down`
 # run this, and the Makefile passes every variable it reads.
 #
 #   live.sh up     builds each program, its describe module and its view, packs them into
@@ -12,9 +12,10 @@
 #                  seeded, until Ctrl-C
 #   live.sh down   stops the bot when it runs, and the stage's node, which runs until then
 #
-# qa is not edited. kit founds from the founding.toml of its root, so the root is the
-# lab's own ($OUT: qa's founding with live/founding.toml after it), and its .local is
-# qa's, where kit keeps the stages, the worktrees and the builds.
+# qa is not edited. kit founds a stage from the founding programs published for the
+# stage's programs rev: `kit build` copies its files and its founding.toml into the stage's
+# programs/, and `kit up` fills that founding.toml. So the lab's packed programs go into
+# programs/ too, and live/founding.toml's entries after the published ones.
 set -eu
 
 die() {
@@ -26,11 +27,11 @@ die() {
 # from here.
 cd "$(dirname "$0")/.."
 
-[ -n "$QA" ] || die "QA=<a qa checkout> is needed: kit is qa's, and core, app and modules are checked out beside it"
-[ -f "$QA/founding.toml" ] || die "$QA is not a qa checkout: it has no founding.toml"
+[ -n "$QA" ] || die "QA=<a qa checkout> is needed: the stage is one of its kit's"
+[ -x "$QA/kit" ] || die "$QA is not a qa checkout: it has no kit"
 QA=$(cd "$QA" && pwd -P)
 KIT=${KIT:-$QA/kit}
-dir=$OUT/.local/stages/$STAGE
+dir=$QA/.local/stages/$STAGE
 
 case "${1:-}" in
 up) ;;
@@ -54,20 +55,18 @@ for tool in cargo git python3 wasm-opt wasm-tools ps; do
   command -v "$tool" >/dev/null || die "$tool is not on PATH (the README names what a live stage needs)"
 done
 
-# The modules rev a Cargo.toml pins.
+# The programs rev a Cargo.toml pins.
 pin() { sed -n 's|.*ducktape-industries/programs", rev = "\([0-9a-f]*\)".*|\1|p' "$1" | sort -u; }
-modules=$(pin Cargo.toml)
-case $modules in
-'' | *[!0-9a-f]*) die "Cargo.toml does not pin one modules rev (its sdk-line)" ;;
+sdk=$(pin Cargo.toml)
+case $sdk in
+'' | *[!0-9a-f]*) die "Cargo.toml does not pin one programs rev (its sdk-line)" ;;
 esac
 
 mkdir -p "$OUT"
-cat "$QA/founding.toml" live/founding.toml >"$OUT/founding.toml"
-ln -sfn "$QA/.local" "$OUT/.local"
 
-# The stage, at this workspace's modules. kit makes a ref's worktree from the checkout
-# beside its root, so this one call has qa as its root.
-set -- new "$STAGE" --root "$QA" --modules "$modules"
+# The stage, at this workspace's programs: kit founds the founding programs published for
+# that rev.
+set -- new "$STAGE" --root "$QA" --programs "$sdk"
 [ -z "$APP_REF" ] || set -- "$@" --app "$APP_REF"
 [ -z "$CORE_REF" ] || set -- "$@" --core "$CORE_REF"
 "$KIT" "$@"
@@ -76,32 +75,36 @@ set -- new "$STAGE" --root "$QA" --modules "$modules"
 # pins each repo as a commit of its clone in .local/repos.
 app=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["app"]["commit"])' "$dir/stage.json")
 pinned=$(git -C "$QA/.local/repos/app" show "$app:Cargo.toml" | pin /dev/stdin)
-[ "$pinned" = "$modules" ] || die "the app at ${APP_REF:-main} pins modules ${pinned:-none}
-and this workspace pins modules $modules.
-The app refuses a view built on another SDK line: pass APP_REF=<a ref of the app that pins $modules>."
+[ "$pinned" = "$sdk" ] || die "the app at ${APP_REF:-main} pins programs ${pinned:-none}
+and this workspace pins programs $sdk.
+The app refuses a view built on another SDK line: pass APP_REF=<a ref of the app that pins $sdk>."
 
 "$MAKE" wasm-programs wasm-describes wasm-views
 cargo run -q -p trade --example history -- "$OUT/trade.params"
 cargo run -q -p trade --example seed -- "$OUT/trade.params" "$OUT/seed"
 
-# The node, the app and kit's own programs. `up` packs those only for a stage that has
-# none, so a stage made anew at other refs is packed again here.
-"$KIT" build "$STAGE" --root "$OUT"
+# The node, the app and the founding programs published, with its founding.toml, in the
+# stage's programs/ (copied anew each build). `up` copies those only for a stage that has
+# none, so a stage made anew at other refs gets them here.
+"$KIT" build "$STAGE" --root "$QA"
 
 # Each program as a founding takes it: its view (<program>-view), then its describe
-# module, packed in.
-pack() { cargo run -q -p view-pack --manifest-path "$QA/Cargo.toml" -- "$@"; }
+# module, each a custom section, by programs' own packer (`examples/pack.rs`).
+pack() { cargo run -q -p trade --example pack -- "$@"; }
 for program in $PROGRAMS; do
   name=$(echo "$program" | tr - _)
-  pack "$RELEASE/$name.wasm" "$RELEASE/${name}_view.wasm" "$dir/programs/$name.wasm"
-  pack --describe "$dir/programs/$name.wasm" "$RELEASE/$name.describe.wasm" "$dir/programs/$name.wasm"
+  pack ducktape.view "$RELEASE/$name.wasm" "$RELEASE/${name}_view.wasm" "$dir/programs/$name.wasm"
+  pack ducktape.describe "$dir/programs/$name.wasm" "$RELEASE/$name.describe.wasm" "$dir/programs/$name.wasm"
 done
 cp "$OUT/trade.params" "$dir/programs/trade.params"
 # The browser has no program: its view goes in as it is, a `[[views]]` entry of
 # live/founding.toml.
 cp "$RELEASE/browser_view.wasm" "$dir/programs/browser_view.wasm"
+# The lab's entries after the published ones; `up` fills each file name with its path
+# under programs/.
+cat live/founding.toml >>"$dir/programs/founding.toml"
 
-"$KIT" up "$STAGE" --root "$OUT"
+"$KIT" up "$STAGE" --root "$QA"
 
 # kit's CLI signs as wallet `dev` alone, and the book's maker is another wallet. So the
 # seed goes through the node's own binary, the one kit started: WALLET ARGS...
@@ -135,7 +138,7 @@ cat <<EOF
 $PROGRAMS live on stage $STAGE: wallet dev has an account, its funds and two orders
 that traded, and wallet bo's orders rest on both sides of BTC/USD.
 
-  open the app    $KIT app $STAGE --root $OUT
+  open the app    $KIT app $STAGE --root $QA
                   (the wallet's password is $(cat "$dir/password"); each view is on the rail)
   stop the node   make live-down QA=$QA STAGE=$STAGE
                   (it runs until then)

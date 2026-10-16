@@ -6,7 +6,7 @@
 
 [workspace]
 resolver = "2"
-members = ["crates/app/trade", "crates/app/trade-view", "crates/app/arcade", "crates/app/arcade-view", "crates/app/browser-view", "crates/bots/tetris-bot"]
+members = ["crates/app/trade", "crates/app/trade-view", "crates/app/arcade", "crates/app/arcade-view", "crates/app/browser-view", "crates/app/live-echo", "crates/app/live-echo-view", "crates/bots/tetris-bot"]
 
 [workspace.package]
 edition = "2024"
@@ -27,6 +27,9 @@ describe = { git = "https://github.com/ducktape-industries/programs", rev = "742
 # (`crates/app/trade/examples/seed.rs`), and the profiles arcade-view reads
 # names from.
 identity = { git = "https://github.com/ducktape-industries/programs", rev = "742d4f7032ff93134df7998bf0efcadcd3bcd04b" }
+# What packs a program with its view and its describe module, as a founding
+# takes it (`crates/app/trade/examples/pack.rs`, which `live/live.sh` runs).
+founding = { git = "https://github.com/ducktape-industries/programs", rev = "742d4f7032ff93134df7998bf0efcadcd3bcd04b" }
 # The chain id a live track's namespace starts with (`ChainId::of`), as the
 # app names it: what tetris-bot names the versus room by.
 ducklink = { git = "https://github.com/ducktape-industries/programs", rev = "742d4f7032ff93134df7998bf0efcadcd3bcd04b" }
@@ -38,6 +41,7 @@ gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpu
 # ---- here
 trade = { path = "crates/app/trade" }
 arcade = { path = "crates/app/arcade" }
+live-echo = { path = "crates/app/live-echo" }
 
 # ---- external
 borsh = { version = "1", default-features = false, features = ["derive", "std"] }
@@ -67,6 +71,8 @@ opt-level = 3
 [profile.release.package.arcade-view]
 opt-level = 3
 [profile.release.package.browser-view]
+opt-level = 3
+[profile.release.package.live-echo-view]
 opt-level = 3
 [profile.release.package.view]
 opt-level = 3

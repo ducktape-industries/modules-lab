@@ -2,8 +2,8 @@
 # output under $(BUILD_TARGET); none is committed.
 CARGO ?= cargo
 WASM_OPT ?= wasm-opt
-PROGRAMS := trade arcade
-VIEWS := trade-view arcade-view browser-view
+PROGRAMS := trade arcade live-echo
+VIEWS := trade-view arcade-view browser-view live-echo-view
 
 BUILD_TARGET := $(abspath $(or $(CARGO_TARGET_DIR),target))
 RELEASE := $(BUILD_TARGET)/wasm32-unknown-unknown/release
@@ -30,11 +30,11 @@ WASM_BUILD := RUSTFLAGS="$(WASM_RUSTFLAGS)" $(CARGO) build --release --target wa
 # builds in a target dir of its own, and its describe module in another.
 program_wasm = $(BUILD_TARGET)/$1/$2/wasm32-unknown-unknown/release/$(subst -,_,$2).wasm
 
-# A live stage is qa's kit's (`make live`): QA is a qa checkout, with core, app
-# and modules checked out beside it, and KIT its kit (default: $(QA)/kit,
-# which builds it first). The stage is STAGE, its modules the rev this
-# workspace pins, its app APP_REF (it must pin that same rev) and its core
-# CORE_REF (none: core's working checkout).
+# A live stage is qa's kit's (`make live`): QA is a qa checkout and KIT its
+# kit (default: $(QA)/kit, which builds it first). The stage is STAGE, its
+# programs the rev this workspace pins (kit founds the founding programs
+# published for it), its app APP_REF (it must pin that same rev) and its
+# core CORE_REF (none: kit's default, core's main).
 QA ?=
 KIT ?=
 STAGE ?= lab
@@ -52,7 +52,7 @@ test:
 
 ## builds every program for wasm32 into $(RELEASE)/<name>.wasm, unpacked:
 ## packing its view and describe module into it is the founding's job
-## (qa's `view-pack`).
+## (`live/live.sh`, by `crates/app/trade/examples/pack.rs`).
 wasm-programs:
 	@mkdir -p $(RELEASE)
 	@$(foreach p,$(PROGRAMS),$(WASM_BUILD) --target-dir $(BUILD_TARGET)/programs/$(p) -p $(p) --features program && cp $(call program_wasm,programs,$(p)) $(RELEASE)/ || exit 1;)
@@ -75,7 +75,7 @@ shots:
 	$(CARGO) run -q -p trade-view --example frames -- shots/fixtures
 	CARGO_TARGET_DIR=$(abspath $(APP_TARGET)) $(APP)/dev/screens/chat-screens.sh shots/fixtures shots
 
-## every module here in the real app: builds and packs each, founds stage
+## every program here in the real app: builds and packs each, founds stage
 ## $(STAGE) of qa's kit with them (trade with a week of history), seeds two
 ## accounts, a book and two orders that trade, and prints the command that
 ## opens the app on it. The stage's node runs until `make live-down`.

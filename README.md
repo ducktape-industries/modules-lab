@@ -12,6 +12,8 @@ it is.
 | `crates/app/arcade` | the high scores of six classic games, and the door to Tetris versus's live room: the program |
 | `crates/app/arcade-view` | its view: Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, the boards, and Tetris versus over live tracks |
 | `crates/app/browser-view` | a view alone, no program: web pages in tabs on the SDK's `web` piece |
+| `crates/app/live-echo` | the program behind a live room: one op that opens it to every account |
+| `crates/app/live-echo-view` | its view: lines typed in the lobby, live through the node, by account |
 | `crates/bots/tetris-bot` | a Tetris versus player with an account of its own: a client of the node's live lane, playing the view's own match step |
 
 The SDK is programs at the live lane's pin (`Cargo.toml`'s `sdk-line`,
@@ -245,6 +247,38 @@ DUCKTAPE_APP=/path/to/app/target/debug/ducktape-app cargo run -p browser-view --
 runs it in the real app over a fake node; the app must be built with its
 `web` feature (CEF); without it the piece only says the build has no web view.
 
+## live-echo
+
+The smallest use of the SDK's `live` piece: tracks a view publishes and
+subscribes to through the node it is connected to, off the chain. Each
+reader publishes `echo/<account>` in the room `lobby` in stream mode, a
+line as one object alone in its group, so a reader who comes later is
+replayed each person's last line. The view follows the room's tracks
+(`live.tracks`), subscribes to every `echo/*` it hears of, and lists the
+lines by account, the reader's own first. A track opened anew (a
+reconnect) starts that person's lines over from the last one the node
+replays. A line whose group the host cut (its queue to the node full) is
+lost: the view logs it and says nothing again, each next line already in
+a newer group of its own. A track that ends says why under its account
+(`left: publisher_gone` when that app went away).
+
+The node lets an account into a room only as the view's program granted
+it, in a row the program writes. The program keeps nothing else: its one
+op, `Open { room }`, writes the grant that lets every account on the chain
+subscribe to every track of the room and publish only its own,
+`echo/{account}`, the asking account's number in the pattern
+(`program::live::grant(ctx, room, None, open_row())`). On a network nobody
+opened the lobby on, the reader's track and the room's list hear
+`Waiting`: the node holds the view's asks until the grant's block. The
+view sends `Open`, once a session, and asks nothing again. A
+`not_granted` is the grant taken back, and is shown.
+
+`src/tests.rs` links two and three views with the SDK's `testing::Relay`,
+which answers `live.*` as one node would: a line crosses, a late reader
+is replayed the last one, an app that goes away shows `publisher_gone`,
+a lobby the relay holds is opened once and let in on its grant, and a
+grant taken back is shown.
+
 ## Loop
 
 ```sh
@@ -253,7 +287,7 @@ make wasm-programs    # each program for wasm32
 make wasm-describes   # each program's describe module, ABI-checked
 make wasm-views       # each view's wasm, optimized and ABI-checked by modules' own gate
 make shots APP=/path/to/app   # the view's frames, painted by the app's real renderer
-make live QA=/path/to/qa      # the modules in the real app, on a stage of qa's kit ("A view on its own", 3)
+make live QA=/path/to/qa      # the programs in the real app, on a stage of qa's kit ("A view on its own", 3)
 ```
 
 `make wasm-views` needs Binaryen `wasm-opt` 132 and `wasm-tools`, as modules
@@ -282,24 +316,26 @@ There is no runner that keeps one view alive without a node. What there is:
    that point is on a candle, and its frame holds the line the view draws
    on that candle.
 3. **Live, in the app.** A view is served with its program, so it needs
-   a network founded with it: a stage of qa's `kit`. With a qa
-   checkout, and `core`, `app` and `modules` checked out beside it as qa's
-   README says:
+   a network founded with it: a stage of qa's `kit`. With a qa checkout
+   (kit fetches core, app and programs itself, as qa's README says):
 
    ```sh
    make live QA=/path/to/qa
    ```
 
    It builds every program, its describe module and its view, packs those
-   two into `<program>.wasm` with qa's `view-pack`, and founds stage `lab`
-   (`STAGE=`) with them: kit's own founding with `live/founding.toml` after
-   it, the week of history as trade's params. Then it seeds the
+   two into `<program>.wasm` as custom sections with programs' own
+   `founding` packer (`crates/app/trade/examples/pack.rs`), and founds stage `lab`
+   (`STAGE=`) with them: the founding programs published for the rev this
+   workspace pins, which `kit build` copies into the stage's `programs/`,
+   with the lab's programs beside its own and `live/founding.toml`'s
+   entries after them, the week of history as trade's params. Then it seeds the
    stage with the ops `examples/seed.rs` writes. Wallet `dev`, the one the
    app opens with, gets an account and its funds; a second wallet, `bo`,
    rests 36 orders around BTC/USD's last price; two market orders of
    `dev`'s trade against them. It ends with the command that opens the app
-   on the stage, a `kit app` with the lab's root: the wallet's password is
-   `ducktape`, and Trade and Arcade are on the rail. `live/live.sh` is all of it. Run
+   on the stage, a `kit app` on qa's root: the wallet's password is
+   `ducktape`, and Trade, Arcade and Live echo are on the rail. `live/live.sh` is all of it. Run
    again, it founds a fresh network on the same stage.
 
    The stage's node keeps running until `make live-down QA=/path/to/qa`
@@ -315,9 +351,12 @@ There is no runner that keeps one view alive without a node. What there is:
    preconfirm) and the rounds follow each other: about 9 rounds and 450
    ops a minute in all, and 10 to 13 trades a minute in each market.
 
-   The stage's modules is the rev this workspace pins, and its app is
+   The stage's programs is the rev this workspace pins, and its app is
    `APP_REF` (`dev` when not given), which must pin that same rev:
-   `make live` stops and names both revs when it does not.
+   `make live` stops and names both revs when it does not. kit founds
+   only from a founding programs published (a GitHub release
+   `wasm-<commit>`, made for each commit on programs' `main`), so a pin
+   with none stops at `kit build`, which says so.
 
    Beyond the tools above it needs what qa's README asks of a machine that
    runs `kit`, and `git`, `python3` and `ps`. A first run builds kit, the
@@ -330,7 +369,7 @@ There is no runner that keeps one view alive without a node. What there is:
    ```sh
    make wasm-views
    mkdir -p /tmp/views && cp target/wasm32-unknown-unknown/release/trade_view.wasm /tmp/views/
-   DUCKTAPE_VIEWS_DIR=/tmp/views kit app lab --root ...   # the command `make live` printed
+   DUCKTAPE_VIEWS_DIR=/tmp/views kit app lab --root /path/to/qa   # the command `make live` printed
    ```
 
    The file is read again each time the pane opens: rebuild, copy, close

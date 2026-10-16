@@ -278,6 +278,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "attribution"
+version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/programs?rev=742d4f7032ff93134df7998bf0efcadcd3bcd04b#742d4f7032ff93134df7998bf0efcadcd3bcd04b"
+dependencies = [
+ "abi",
+ "borsh",
+ "describe",
+ "program",
+ "store",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -684,6 +696,21 @@ dependencies = [
  "chacha20",
  "cipher",
  "poly1305",
+]
+
+[[package]]
+name = "chat"
+version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/programs?rev=742d4f7032ff93134df7998bf0efcadcd3bcd04b#742d4f7032ff93134df7998bf0efcadcd3bcd04b"
+dependencies = [
+ "abi",
+ "attribution",
+ "borsh",
+ "describe",
+ "program",
+ "serde",
+ "store",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -2038,7 +2065,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2262,12 +2289,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge"
+version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/programs?rev=742d4f7032ff93134df7998bf0efcadcd3bcd04b#742d4f7032ff93134df7998bf0efcadcd3bcd04b"
+dependencies = [
+ "abi",
+ "borsh",
+ "chat",
+ "describe",
+ "gitcore",
+ "program",
+ "store",
+]
+
+[[package]]
 name = "form_urlencoded"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "founding"
+version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/programs?rev=742d4f7032ff93134df7998bf0efcadcd3bcd04b#742d4f7032ff93134df7998bf0efcadcd3bcd04b"
+dependencies = [
+ "abi",
+ "forge",
+ "wasm-encoder 0.251.0",
+ "wasmparser 0.251.0",
 ]
 
 [[package]]
@@ -2462,6 +2514,16 @@ dependencies = [
  "hashbrown 0.16.1",
  "indexmap",
  "stable_deref_trait",
+]
+
+[[package]]
+name = "gitcore"
+version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/programs?rev=742d4f7032ff93134df7998bf0efcadcd3bcd04b#742d4f7032ff93134df7998bf0efcadcd3bcd04b"
+dependencies = [
+ "miniz_oxide 0.8.9",
+ "sha1-checked",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -3410,6 +3472,26 @@ name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
+
+[[package]]
+name = "live-echo"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "describe",
+ "program",
+]
+
+[[package]]
+name = "live-echo-view"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "live-echo",
+ "program",
+ "serde",
+ "view",
+]
 
 [[package]]
 name = "live-wire"
@@ -4373,6 +4455,7 @@ dependencies = [
  "borsh",
  "error",
  "program-derive",
+ "serde",
  "sha2 0.10.9",
 ]
 
@@ -4596,7 +4679,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5141,7 +5224,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5826,7 +5909,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6362,6 +6445,7 @@ dependencies = [
  "abi",
  "borsh",
  "describe",
+ "founding",
  "identity",
  "program",
  "store",
@@ -6466,6 +6550,15 @@ name = "unicode-ident"
 version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-properties"
@@ -7200,7 +7293,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

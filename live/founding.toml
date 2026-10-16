@@ -1,27 +1,34 @@
-# What a lab stage's founding adds to kit's own: `live.sh` puts this after the
-# qa checkout's founding.toml, and `kit up` fills @PROGRAMS@ with the stage's
-# programs/, where `live.sh` has put the files.
+# What a lab stage's founding adds to the one programs published: `live.sh`
+# puts this after it, in the stage's programs/ beside the files, and `kit up`
+# fills each file name with its path there.
 
 # The program with its view and its describe module packed into it. The
 # params are its markets' past: a week of every market's minutes
 # (`crates/app/trade/examples/history.rs`).
 [[programs]]
 id = "trade"
-code = "@PROGRAMS@/trade.wasm"
-params = "@PROGRAMS@/trade.params"
+code = "trade.wasm"
+params = "trade.params"
 
 # The high scores of the arcade's games, with its view packed in; it takes
 # no params.
 [[programs]]
 id = "arcade"
-code = "@PROGRAMS@/arcade.wasm"
+code = "arcade.wasm"
+
+# The live lobby, with its view packed in; no params. Its one op opens a
+# room to every account, and the lines never touch the chain: they ride the
+# node's live tracks.
+[[programs]]
+id = "live-echo"
+code = "live_echo.wasm"
 
 # The browser: a view with no program behind it, listed by the registry and
 # never admitted, as kit's explorer is. It declares `web`, so an https link
 # another view opens comes to it.
 [[views]]
 name = "browser"
-code = "@PROGRAMS@/browser_view.wasm"
+code = "browser_view.wasm"
 
 # A kit stage meters nothing without limits. These are the ones core's README
 # gives: the program is checked against a host that counts.
