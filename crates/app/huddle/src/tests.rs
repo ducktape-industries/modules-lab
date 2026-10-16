@@ -1,0 +1,480 @@
+//! The ops once as meant and once as an attack: each refusal leaves the
+//! store exactly as it was. The harness is the [`Huddle`] program over a
+//! [`MockHost`] with a clock the test moves; the accounts sign the env of
+//! their own ops.
+use ::program::live::Grant;
+use ::program::{Env, Error, MockHost, Program, QueryCtx, code};
+
+use crate::{Call, Huddle, Listed, MAX_PEOPLE, Op, PROGRAM, Query, RING_SECONDS, Reply, seat};
+
+const ADA: u64 = 1;
+const BO: u64 = 2;
+const CY: u64 = 3;
+const DEE: u64 = 4;
+
+const CALL: &str = "call-1";
+
+#[derive(Default)]
+struct Line {
+    store: MockHost,
+    /// The chain's time, in seconds.
+    now: u64,
+}
+
+impl Line {
+    /// The env at the chain's time: the kernel's is in milliseconds.
+    fn env(&self) -> Env {
+        Env {
+            time: self.now * 1000,
+            ..MockHost::env(PROGRAM)
+        }
+    }
+
+    fn reads(&self) -> QueryCtx {
+        self.store.query(self.env())
+    }
+
+    /// Sends `op` as `who`. A refusal has left the store as it found it,
+    /// or this panics.
+    #[track_caller]
+    fn send(&mut self, who: u64, op: Op) -> Result<(), Error> {
+        let signed = self.env().signed(who.to_be_bytes(), Some(who));
+        let ctx = self.store.exec(signed);
+        self.store.attempt(|| Huddle::execute(&ctx, op))
+    }
+
+    #[track_caller]
+    fn ok(&mut self, who: u64, op: Op) {
+        if let Err(refusal) = self.send(who, op) {
+            panic!("refused: {refusal}");
+        }
+    }
+
+    #[track_caller]
+    fn refused(&mut self, who: u64, op: Op) -> &'static str {
+        let refusal = self.send(who, op).expect_err("refused");
+        [
+            code::UNAUTHORIZED,
+            code::WRONG_STATE,
+            code::NOT_FOUND,
+            code::ALREADY_EXISTS,
+            code::INVALID_INPUT,
+            code::CAPACITY,
+        ]
+        .into_iter()
+        .find(|known| refusal.code == *known)
+        .unwrap_or_else(|| panic!("refused as {}", refusal.code))
+    }
+
+    fn start(&mut self, caller: u64, invited: &[u64]) {
+        self.ok(
+            caller,
+            Op::Start {
+                call: CALL.into(),
+                invited: invited.to_vec(),
+            },
+        );
+    }
+
+    fn call(&self) -> Call {
+        let Ok(Reply::Call(Some(call))) =
+            Huddle::query(&self.reads(), Query::Call { id: CALL.into() })
+        else {
+            panic!("a call answers its call");
+        };
+        call
+    }
+
+    fn calls(&self, query: Query) -> Vec<String> {
+        let Ok(Reply::Calls(calls)) = Huddle::query(&self.reads(), query) else {
+            panic!("a list answers calls");
+        };
+        calls.into_iter().map(|Listed { id, .. }| id).collect()
+    }
+
+    fn ringing(&self, account: u64) -> Vec<String> {
+        self.calls(Query::Ringing { account })
+    }
+
+    fn mine(&self, account: u64) -> Vec<String> {
+        self.calls(Query::Mine { account })
+    }
+
+    /// `who`'s row in the room of `call`; `None` for `*`.
+    fn row(&self, call: &str, who: Option<u64>) -> Option<Grant> {
+        let ctx = self.store.exec(self.env());
+        ctx.record(::program::live::key(call, who))
+            .expect("a row decodes")
+    }
+
+    fn state(&self) -> std::collections::BTreeMap<Vec<u8>, Vec<u8>> {
+        self.store.borrow().state.clone()
+    }
+}
+
+#[test]
+fn start_seats_the_caller_and_each_invitee_and_opens_the_room_to_no_one_else() {
+    let mut line = Line {
+        now: 100,
+        ..Line::default()
+    };
+    line.start(ADA, &[BO, CY, BO, ADA]);
+    let call = line.call();
+    assert_eq!((call.caller, call.started, call.ended), (ADA, 100, None));
+    assert_eq!(call.joined, [ADA]);
+    let invited: Vec<_> = call.invited.iter().map(|i| (i.account, i.at)).collect();
+    assert_eq!(
+        invited,
+        [(BO, 100), (CY, 100)],
+        "once each, the caller aside"
+    );
+    for who in [ADA, BO, CY] {
+        assert_eq!(line.row(CALL, Some(who)), Some(seat()), "{who}'s row");
+    }
+    assert_eq!(
+        line.row(CALL, None),
+        None,
+        "no `*` row: no one else gets in"
+    );
+    assert_eq!(line.row(CALL, Some(DEE)), None);
+    // each publishes their own camera and microphone, and hears everyone
+    let row = seat();
+    assert!(row.publishes("mic/2", BO) && row.publishes("cam/2", BO));
+    assert!(!row.publishes("mic/1", BO));
+    assert!(row.subscribes("cam/1", BO));
+    assert_eq!(line.ringing(BO), [CALL]);
+    assert_eq!(
+        line.ringing(ADA),
+        Vec::<String>::new(),
+        "the caller is not rung"
+    );
+    assert_eq!(line.mine(ADA), [CALL]);
+    assert_eq!(line.mine(DEE), Vec::<String>::new());
+}
+
+#[test]
+fn a_start_that_cannot_be_a_call_is_refused() {
+    let mut line = Line::default();
+    let start = |call: &str, invited: Vec<u64>| Op::Start {
+        call: call.into(),
+        invited,
+    };
+    let empty = line.state();
+    let long = "x".repeat(65);
+    for id in ["", "a/b", "call 1", "*", long.as_str()] {
+        assert_eq!(
+            line.refused(ADA, start(id, vec![BO])),
+            code::INVALID_INPUT,
+            "{id:?}"
+        );
+    }
+    assert_eq!(line.refused(ADA, start(CALL, vec![])), code::INVALID_INPUT);
+    assert_eq!(
+        line.refused(ADA, start(CALL, vec![ADA])),
+        code::INVALID_INPUT
+    );
+    let crowd: Vec<u64> = (10..10 + MAX_PEOPLE as u64).collect();
+    assert_eq!(line.refused(ADA, start(CALL, crowd)), code::CAPACITY);
+    assert_eq!(line.state(), empty);
+    line.start(ADA, &[BO]);
+    assert_eq!(
+        line.refused(CY, start(CALL, vec![DEE])),
+        code::ALREADY_EXISTS
+    );
+    assert_eq!(line.call().caller, ADA, "no one takes over a call");
+}
+
+#[test]
+fn join_is_idempotent_and_only_for_one_asked_in() {
+    let mut line = Line::default();
+    line.start(ADA, &[BO]);
+    let join = || Op::Join { call: CALL.into() };
+    line.now = 10;
+    line.ok(BO, join());
+    assert_eq!(line.call().joined, [ADA, BO]);
+    let joined = line.state();
+    // the view's re-ask on `Waiting`: the same row, nothing new
+    line.ok(BO, join());
+    assert_eq!(line.state(), joined);
+    assert_eq!(line.refused(DEE, join()), code::UNAUTHORIZED);
+    assert_eq!(line.row(CALL, Some(DEE)), None);
+    assert_eq!(
+        line.refused(
+            BO,
+            Op::Join {
+                call: "nowhere".into()
+            }
+        ),
+        code::NOT_FOUND
+    );
+    // the caller ends it: no one joins an ended call
+    line.ok(ADA, Op::End { call: CALL.into() });
+    assert_eq!(line.refused(BO, join()), code::WRONG_STATE);
+    assert_eq!(line.refused(ADA, join()), code::WRONG_STATE);
+}
+
+#[test]
+fn the_last_one_out_ends_the_call_and_every_row_goes() {
+    let mut line = Line::default();
+    line.start(ADA, &[BO, CY]);
+    line.ok(BO, Op::Join { call: CALL.into() });
+    line.now = 60;
+    line.ok(ADA, Op::Leave { call: CALL.into() });
+    assert_eq!(line.call().ended, None, "Bo is still in it");
+    assert_eq!(line.row(CALL, Some(ADA)), None, "the leaver's row went");
+    assert_eq!(line.row(CALL, Some(BO)), Some(seat()));
+    assert_eq!(line.mine(ADA), Vec::<String>::new());
+    assert_eq!(
+        line.refused(ADA, Op::Leave { call: CALL.into() }),
+        code::WRONG_STATE,
+        "out already"
+    );
+    line.now = 75;
+    line.ok(BO, Op::Leave { call: CALL.into() });
+    assert_eq!(line.call().ended, Some(75));
+    for who in [ADA, BO, CY] {
+        assert_eq!(line.row(CALL, Some(who)), None, "{who}'s row");
+        assert_eq!(line.mine(who), Vec::<String>::new());
+    }
+    assert_eq!(
+        line.refused(BO, Op::Leave { call: CALL.into() }),
+        code::WRONG_STATE
+    );
+}
+
+#[test]
+fn end_is_the_callers_and_takes_every_row() {
+    let mut line = Line::default();
+    line.start(ADA, &[BO, CY]);
+    line.ok(BO, Op::Join { call: CALL.into() });
+    assert_eq!(
+        line.refused(BO, Op::End { call: CALL.into() }),
+        code::UNAUTHORIZED
+    );
+    line.now = 20;
+    line.ok(ADA, Op::End { call: CALL.into() });
+    assert_eq!(line.call().ended, Some(20));
+    for who in [ADA, BO, CY] {
+        assert_eq!(line.row(CALL, Some(who)), None, "{who}'s row");
+    }
+    assert_eq!(line.ringing(CY), Vec::<String>::new());
+    assert_eq!(
+        line.refused(ADA, Op::End { call: CALL.into() }),
+        code::WRONG_STATE
+    );
+}
+
+#[test]
+fn decline_takes_back_the_decliners_row_alone() {
+    let mut line = Line::default();
+    line.start(ADA, &[BO, CY]);
+    line.ok(CY, Op::Decline { call: CALL.into() });
+    assert_eq!(line.call().declined, [CY]);
+    assert_eq!(line.row(CALL, Some(CY)), None);
+    assert_eq!(line.row(CALL, Some(BO)), Some(seat()));
+    assert_eq!(line.ringing(CY), Vec::<String>::new());
+    assert_eq!(line.mine(CY), Vec::<String>::new());
+    assert_eq!(line.ringing(BO), [CALL]);
+    // again: nothing new
+    let declined = line.state();
+    line.ok(CY, Op::Decline { call: CALL.into() });
+    assert_eq!(line.state(), declined);
+    // the caller and a stranger were not invited; one in the call leaves
+    for who in [ADA, DEE] {
+        assert_eq!(
+            line.refused(who, Op::Decline { call: CALL.into() }),
+            code::UNAUTHORIZED
+        );
+    }
+    line.ok(BO, Op::Join { call: CALL.into() });
+    assert_eq!(
+        line.refused(BO, Op::Decline { call: CALL.into() }),
+        code::WRONG_STATE
+    );
+    // they change their mind while it goes on
+    line.ok(CY, Op::Join { call: CALL.into() });
+    assert_eq!(line.call().declined, Vec::<u64>::new());
+    assert_eq!(line.row(CALL, Some(CY)), Some(seat()));
+}
+
+#[test]
+fn ringing_is_the_invited_not_in_not_declined_inside_their_ring_by_the_chains_clock() {
+    let mut line = Line {
+        now: 1_000,
+        ..Line::default()
+    };
+    line.start(ADA, &[BO, CY, DEE]);
+    line.ok(BO, Op::Join { call: CALL.into() });
+    line.ok(CY, Op::Decline { call: CALL.into() });
+    assert_eq!(line.ringing(BO), Vec::<String>::new(), "joined");
+    assert_eq!(line.ringing(CY), Vec::<String>::new(), "declined");
+    assert_eq!(line.ringing(DEE), [CALL]);
+    // the last second of the ring, then past it: the env's time is
+    // milliseconds, the ring's seconds
+    line.now = 1_000 + RING_SECONDS - 1;
+    assert_eq!(line.ringing(DEE), [CALL]);
+    line.now = 1_000 + RING_SECONDS;
+    assert_eq!(line.ringing(DEE), Vec::<String>::new(), "rung out");
+    assert_eq!(line.call().ring_until(DEE), Some(1_000 + RING_SECONDS));
+    // the call goes on: Ada and Bo are in it, so it is no one's to ring
+    // but still Dee's to join
+    assert_eq!(line.mine(DEE), [CALL]);
+    line.ok(DEE, Op::Join { call: CALL.into() });
+    // ended: no one rings
+    let mut ended = Line {
+        now: 1_000,
+        ..Line::default()
+    };
+    ended.start(ADA, &[BO]);
+    ended.ok(ADA, Op::End { call: CALL.into() });
+    assert_eq!(ended.ringing(BO), Vec::<String>::new());
+}
+
+#[test]
+fn a_later_invitee_rings_on_their_own_clock() {
+    let mut line = Line::default();
+    line.start(ADA, &[BO]);
+    line.now = 30;
+    line.ok(
+        ADA,
+        Op::Invite {
+            call: CALL.into(),
+            accounts: vec![CY, ADA],
+        },
+    );
+    assert_eq!(line.row(CALL, Some(CY)), Some(seat()));
+    assert_eq!(line.call().ring_until(CY), Some(30 + RING_SECONDS));
+    line.now = RING_SECONDS;
+    assert_eq!(line.ringing(BO), Vec::<String>::new(), "Bo's ring ran out");
+    assert_eq!(line.ringing(CY), [CALL], "Cy's runs on");
+    // no one answered Bo, and Cy still rings: the call is not over
+    line.ok(
+        ADA,
+        Op::Invite {
+            call: CALL.into(),
+            accounts: vec![BO],
+        },
+    );
+    assert_eq!(line.ringing(BO), [CALL], "asked again, rung again");
+    // a stranger and one rung but not in the call ask no one in
+    for who in [DEE, CY] {
+        assert_eq!(
+            line.refused(
+                who,
+                Op::Invite {
+                    call: CALL.into(),
+                    accounts: vec![DEE],
+                }
+            ),
+            code::UNAUTHORIZED
+        );
+    }
+    // one who declined is asked again
+    line.ok(CY, Op::Decline { call: CALL.into() });
+    line.ok(
+        ADA,
+        Op::Invite {
+            call: CALL.into(),
+            accounts: vec![CY],
+        },
+    );
+    assert_eq!(line.ringing(CY), [CALL]);
+    assert_eq!(line.row(CALL, Some(CY)), Some(seat()));
+    // past the most a call holds
+    let crowd: Vec<u64> = (10..10 + MAX_PEOPLE as u64).collect();
+    assert_eq!(
+        line.refused(
+            ADA,
+            Op::Invite {
+                call: CALL.into(),
+                accounts: crowd,
+            }
+        ),
+        code::CAPACITY
+    );
+}
+
+#[test]
+fn a_call_no_one_answered_is_over_once_the_rings_run_out_and_still_closes() {
+    let mut line = Line::default();
+    line.start(ADA, &[BO]);
+    line.now = RING_SECONDS;
+    assert!(line.call().over(line.now));
+    assert_eq!(line.mine(ADA), Vec::<String>::new());
+    assert_eq!(
+        line.refused(BO, Op::Join { call: CALL.into() }),
+        code::WRONG_STATE
+    );
+    assert_eq!(
+        line.refused(
+            ADA,
+            Op::Invite {
+                call: CALL.into(),
+                accounts: vec![CY],
+            }
+        ),
+        code::WRONG_STATE
+    );
+    // the caller's view leaves: the rows go
+    line.ok(ADA, Op::Leave { call: CALL.into() });
+    assert_eq!(line.call().ended, Some(RING_SECONDS));
+    assert_eq!(line.row(CALL, Some(BO)), None);
+}
+
+#[test]
+fn a_key_that_holds_no_account_calls_no_one() {
+    let line = Line::default();
+    let unheld = line.env().signed([9u8; 32], None);
+    let ctx = line.store.exec(unheld);
+    let refusal = line.store.refused(|| {
+        Huddle::execute(
+            &ctx,
+            Op::Start {
+                call: CALL.into(),
+                invited: vec![BO],
+            },
+        )
+    });
+    assert_eq!(refusal.code, code::UNAUTHORIZED);
+}
+
+#[test]
+fn an_op_reads_as_a_person_would_say_it() {
+    use ::describe::{Value, field};
+    let said = crate::describe(&Op::Start {
+        call: CALL.into(),
+        invited: vec![BO, CY],
+    });
+    assert_eq!(said.title, "Call people");
+    assert_eq!(
+        said.fields,
+        [
+            field("call", Value::text(CALL)),
+            field(
+                "calling",
+                Value::List(vec![Value::Account(BO), Value::Account(CY)])
+            ),
+        ]
+    );
+    let titles = [
+        Op::Invite {
+            call: CALL.into(),
+            accounts: vec![DEE],
+        },
+        Op::Join { call: CALL.into() },
+        Op::Leave { call: CALL.into() },
+        Op::Decline { call: CALL.into() },
+        Op::End { call: CALL.into() },
+    ]
+    .map(|op| crate::describe(&op).title);
+    assert_eq!(
+        titles,
+        [
+            "Ask people into a call",
+            "Join a call",
+            "Leave a call",
+            "Decline a call",
+            "End a call for everyone",
+        ]
+    );
+}

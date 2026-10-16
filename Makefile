@@ -2,7 +2,7 @@
 # output under $(BUILD_TARGET); none is committed.
 CARGO ?= cargo
 WASM_OPT ?= wasm-opt
-PROGRAMS := trade arcade
+PROGRAMS := trade arcade huddle
 VIEWS := trade-view arcade-view browser-view huddle-view
 
 BUILD_TARGET := $(abspath $(or $(CARGO_TARGET_DIR),target))

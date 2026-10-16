@@ -97,10 +97,9 @@ for program in $PROGRAMS; do
   pack ducktape.describe "$dir/programs/$name.wasm" "$RELEASE/$name.describe.wasm" "$dir/programs/$name.wasm"
 done
 cp "$OUT/trade.params" "$dir/programs/trade.params"
-# The browser and huddle have no program: each view goes in as it is, a
-# `[[views]]` entry of live/founding.toml.
+# The browser has no program: its view goes in as it is, a `[[views]]`
+# entry of live/founding.toml.
 cp "$RELEASE/browser_view.wasm" "$dir/programs/browser_view.wasm"
-cp "$RELEASE/huddle_view.wasm" "$dir/programs/huddle_view.wasm"
 # The lab's entries after the published ones; `up` fills each file name with its path
 # under programs/.
 cat live/founding.toml >>"$dir/programs/founding.toml"
