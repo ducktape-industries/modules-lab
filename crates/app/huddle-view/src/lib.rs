@@ -24,14 +24,22 @@
 //! `microphone.devices` answer, read again whenever a menu opens (no host
 //! tells the view of a device plugged in).
 //!
+//! A phone keeps one full-screen window and cannot float a pane: under a
+//! finger the view draws the phone's own screens (`ui::phone`), picked once
+//! at the root, where Join keeps the view where it is, one Sound route
+//! stands for the microphone and the speaker, and a flip turns to the
+//! camera on the other side.
+//!
 //! This file is the model: what the person picked and switched, what the
 //! host listed and the pieces told, and what each press changes. What is
-//! drawn is `ui` (the desktop's tree), in the words of `words`.
+//! drawn is `ui` (the desktop's tree) or `ui::phone` (the phone's), in the
+//! words of `words`, with what both draw alike in `look`.
 use serde::{Deserialize, Serialize};
 use view::prelude::*;
 
 use crate::words::Device;
 
+mod look;
 mod ui;
 mod words;
 
@@ -64,12 +72,28 @@ pub(crate) enum Kind {
     Speaker,
 }
 
-/// Which device menu: one kind's, or the room's sound menu, which lists
-/// the microphones and then the speakers.
+/// Which device menu: one kind's, the room's sound menu, which lists the
+/// microphones and then the speakers, or a phone's routes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Which {
     Kind(Kind),
     Sound,
+    /// A phone's sound sheet: the speakers, which on a phone are the
+    /// routes the microphone follows.
+    Routes,
+}
+
+/// How a menu orders its devices.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Order {
+    /// The system's default first, the rest as the host listed them: a
+    /// desktop's picker, whose default stays where it is while one is
+    /// picked.
+    DefaultFirst,
+    /// As the host listed them: a phone's routes, whose default is the
+    /// route playing, which moves to the one picked; first, its row would
+    /// jump under the finger.
+    Listed,
 }
 
 impl Which {
@@ -78,6 +102,14 @@ impl Which {
         match self {
             Which::Kind(kind) => std::slice::from_ref(kind),
             Which::Sound => &[Kind::Microphone, Kind::Speaker],
+            Which::Routes => &[Kind::Speaker],
+        }
+    }
+
+    fn order(&self) -> Order {
+        match self {
+            Which::Kind(_) | Which::Sound => Order::DefaultFirst,
+            Which::Routes => Order::Listed,
         }
     }
 }
@@ -183,7 +215,7 @@ impl View for Huddle {
 
     fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         self.list(cx);
-        cx.host().notify::<HostTitle>("Huddle".into());
+        cx.host().notify::<HostTitle>(words::HUDDLE.into());
         cx.follow::<ClockTicks>(1000, |view, tick, cx| match tick {
             Ok(()) => view.tick(cx),
             Err(refusal) => cx.log_refused("the clock", &refusal),
@@ -328,8 +360,151 @@ impl Huddle {
         }
     }
 
+    /// What `device`'s piece last told.
+    pub(crate) fn state(&self, device: Device) -> &MediaState {
+        match device {
+            Device::Camera => &self.camera_state,
+            Device::Microphone => &self.mic_state,
+        }
+    }
+
+    /// The system's page that lets a refused `device` back, where the host
+    /// says its settings can: what Open Settings opens.
+    pub(crate) fn settings_page(&self, device: Device) -> Option<Place> {
+        let state = self.state(device);
+        let helps = state.status == MediaStatus::Denied && state.opens_settings;
+        helps.then_some(match device {
+            Device::Camera => Place::CameraSettings,
+            Device::Microphone => Place::MicrophoneSettings,
+        })
+    }
+
+    /// Open Settings: the system's page for refused `device`, where the
+    /// host can open it.
+    pub(crate) fn open_settings(&self, device: Device, cx: &mut Context<Self>) {
+        if let Some(page) = self.settings_page(device) {
+            cx.host().notify::<HostShow>(page);
+        }
+    }
+
+    /// Whether the person can join without `device`: the host found none,
+    /// and they are on the check (in the room they have joined already).
+    pub(crate) fn can_do_without(&self, device: Device) -> bool {
+        self.state(device).status == MediaStatus::NoDevice && self.screen == Screen::Check
+    }
+
+    /// `device` switched off, to join without it: the camera off, or the
+    /// microphone muted. Each design then joins its own way.
+    pub(crate) fn do_without(&mut self, device: Device) {
+        match device {
+            Device::Camera => self.camera_off = true,
+            Device::Microphone => self.muted = true,
+        }
+    }
+
     pub(crate) fn mic_live(&self) -> bool {
         !self.muted && self.mic_state.status == MediaStatus::Live
+    }
+
+    /// The camera on and still opening two seconds on (a system asking
+    /// for permission, a slow driver): said, so it is not taken for a dead
+    /// one.
+    pub(crate) fn camera_slow(&self) -> bool {
+        !self.camera_off
+            && self.camera_state.status == MediaStatus::Starting
+            && self.ticks.saturating_sub(self.camera_since) >= 2
+    }
+
+    /// Whether Record can act: on a live microphone with no speaker test
+    /// sounding, or to stop what is under way.
+    pub(crate) fn can_record(&self) -> bool {
+        (self.mic_live() && !self.chiming) || self.mic_state.playback != Playback::Idle
+    }
+
+    /// Whether the speaker test can sound: not over another, nor over a
+    /// recording's playback. It works muted, and with the microphone in
+    /// trouble: an output, apart from the microphone.
+    pub(crate) fn can_test(&self) -> bool {
+        self.mic_state.playback == Playback::Idle && !self.chiming
+    }
+
+    /// A recording's countdown, `0:SS`: the seconds it has left, at least
+    /// one (the host's playback takes over at the end).
+    pub(crate) fn countdown(&self) -> String {
+        let since = self.recording_since.unwrap_or(self.ticks);
+        let left = u64::from(RECORD_SECONDS)
+            .saturating_sub(self.ticks.saturating_sub(since))
+            .max(1);
+        format!("0:{left:02}")
+    }
+
+    /// The time in the room, `MM:SS`, `H:MM:SS` past an hour.
+    pub(crate) fn clock(&self) -> String {
+        let elapsed = self.ticks.saturating_sub(self.entered);
+        match elapsed / 3600 {
+            0 => format!("{:02}:{:02}", elapsed / 60, elapsed % 60),
+            hours => format!("{hours}:{:02}:{:02}", elapsed / 60 % 60, elapsed % 60),
+        }
+    }
+
+    /// The camera the pieces open: the pick, else the system's default;
+    /// `None` before the list lands, or with none in it.
+    pub(crate) fn camera_in_use(&self) -> Option<&CameraDevice> {
+        in_use(self.cameras.ready()?, self.camera.as_deref())
+    }
+
+    /// The speaker the microphone piece plays through (on a phone, the
+    /// route the microphone follows): the pick, else the system's default.
+    pub(crate) fn speaker_in_use(&self) -> Option<&AudioDevice> {
+        in_use(&self.audio.ready()?.outputs, self.speaker.as_deref())
+    }
+
+    /// The listed speaker `id` names.
+    pub(crate) fn speaker(&self, id: &str) -> Option<&AudioDevice> {
+        let outputs = &self.audio.ready()?.outputs;
+        outputs.iter().find(|output| output.id == id)
+    }
+
+    /// Whether the sound plays where the microphone hears it: through a
+    /// loudspeaker, or a speaker not listed yet. A phone refuses the live
+    /// loop then, its speaker a hand's width from its microphone.
+    pub(crate) fn loops_back(&self) -> bool {
+        self.speaker_in_use()
+            .is_none_or(|speaker| speaker.kind == AudioKind::Speaker)
+    }
+
+    /// Whether the camera in use faces away from the person: a phone's
+    /// back camera.
+    pub(crate) fn facing_away(&self) -> bool {
+        self.camera_in_use()
+            .is_some_and(|camera| camera.facing == Facing::Back)
+    }
+
+    /// Whether the picture is mirrored: as the person set it, and never
+    /// from a camera facing away (text in it would read backwards).
+    pub(crate) fn mirrored(&self) -> bool {
+        !self.unmirrored && !self.facing_away()
+    }
+
+    /// The camera on the other side from the one in use, where the host
+    /// lists a front and a back one: what the phone's flip turns to.
+    pub(crate) fn other_camera(&self) -> Option<&CameraDevice> {
+        let cameras = self.cameras.ready()?;
+        let facing = |facing| cameras.iter().find(|camera| camera.facing == facing);
+        let (front, back) = (facing(Facing::Front)?, facing(Facing::Back)?);
+        match self.camera_in_use()?.facing {
+            Facing::Back => Some(front),
+            Facing::Front | Facing::External => Some(back),
+        }
+    }
+
+    /// The camera on the other side picked: its piece opens again on it.
+    pub(crate) fn flip(&mut self, cx: &mut Context<Self>) {
+        if let Some(other) = self.other_camera() {
+            let id = other.id.clone();
+            self.set_pick(Kind::Camera, Some(id));
+            cx.notify();
+        }
     }
 
     fn tick(&mut self, cx: &mut Context<Self>) {
@@ -360,36 +535,46 @@ impl Huddle {
         cx.notify();
     }
 
-    /// Into the room, floated in the same press where the host floats: the
-    /// call stays in sight above other windows while the person works
-    /// elsewhere.
-    pub(crate) fn join(&mut self, cx: &mut Context<Self>) {
+    /// Into the room where the view is: the room's clock starts, the live
+    /// loop ends. The phone's Join: a phone keeps one window.
+    pub(crate) fn enter_room(&mut self, cx: &mut Context<Self>) {
         self.screen = Screen::Room;
         self.entered = self.ticks;
         self.monitor = false;
         self.menu = None;
         // the room's own clock; the pieces open again in their new place
         self.camera_since = self.ticks;
-        cx.host()
-            .notify::<HostTitle>("Huddle \u{b7} just you".into());
+        cx.host().notify::<HostTitle>(words::IN_THE_ROOM.into());
+        cx.notify();
+    }
+
+    /// Into the room, floated in the same press where the host floats: the
+    /// call stays in sight above other windows while the person works
+    /// elsewhere.
+    pub(crate) fn join(&mut self, cx: &mut Context<Self>) {
+        self.enter_room(cx);
         if !self.no_float {
             self.float(true, cx);
         }
+    }
+
+    /// Back to the check where the view is. The phone's Leave.
+    pub(crate) fn leave_room(&mut self, cx: &mut Context<Self>) {
+        self.screen = Screen::Check;
+        self.menu = None;
+        self.camera_since = self.ticks;
+        self.no_keep_on_top_line = false;
+        cx.host().notify::<HostTitle>(words::HUDDLE.into());
         cx.notify();
     }
 
     /// Out of the room, the pane back on the desk (asked whether or not
     /// the host has said it floats yet: nothing happens where it does not).
     pub(crate) fn leave(&mut self, cx: &mut Context<Self>) {
-        self.screen = Screen::Check;
-        self.menu = None;
-        self.camera_since = self.ticks;
-        self.no_keep_on_top_line = false;
-        cx.host().notify::<HostTitle>("Huddle".into());
+        self.leave_room(cx);
         if !self.no_float {
             cx.host().notify::<HostUnfloat>(());
         }
-        cx.notify();
     }
 
     /// The pane in a window of its own (or, floating already, kept on top
@@ -476,34 +661,34 @@ impl Huddle {
         self.recording_since = None;
     }
 
-    /// The rows of menu `which`: each kind's devices in turn.
+    /// The rows of menu `which`: each kind's devices in turn, in its order.
     pub(crate) fn rows(&self, which: Which) -> Vec<Row> {
         which
             .kinds()
             .iter()
-            .flat_map(|kind| self.rows_of(*kind))
+            .flat_map(|kind| self.rows_of(*kind, which.order()))
             .collect()
     }
 
-    /// The rows of one kind: its devices, the system's default first, the
-    /// rest in the host's order; one row saying why when there are none.
-    fn rows_of(&self, kind: Kind) -> Vec<Row> {
+    /// The rows of one kind in `order`; one row saying why when there are
+    /// none.
+    fn rows_of(&self, kind: Kind, order: Order) -> Vec<Row> {
         let audio = self.audio.ready();
         match kind {
             Kind::Camera => rows(
-                kind,
+                (kind, order),
                 self.cameras.ready().map_or(&[][..], Vec::as_slice),
                 self.camera.as_deref(),
                 nothing(&self.cameras),
             ),
             Kind::Microphone => rows(
-                kind,
+                (kind, order),
                 audio.map_or(&[][..], |audio| &audio.inputs),
                 self.microphone.as_deref(),
                 nothing(&self.audio),
             ),
             Kind::Speaker => rows(
-                kind,
+                (kind, order),
                 audio.map_or(&[][..], |audio| &audio.outputs),
                 self.speaker.as_deref(),
                 nothing(&self.audio),
@@ -513,7 +698,7 @@ impl Huddle {
 
     /// The name a picker shows: the picked device's, else the default's.
     pub(crate) fn shown_device(&self, kind: Kind) -> String {
-        self.rows_of(kind)
+        self.rows_of(kind, Order::DefaultFirst)
             .into_iter()
             .find(|row| row.picked && row.id.is_some())
             .map_or(words::SYSTEM_DEFAULT.into(), |row| row.name)
@@ -593,7 +778,14 @@ impl Listed for AudioDevice {
     }
 }
 
-fn rows<D: Listed>(kind: Kind, devices: &[D], picked: Option<&str>, nothing: &str) -> Vec<Row> {
+/// The rows of `kind`'s `devices` in `order`, the one in use (`picked`,
+/// else the default) checked; `nothing` alone where there are none.
+fn rows<D: Listed>(
+    (kind, order): (Kind, Order),
+    devices: &[D],
+    picked: Option<&str>,
+    nothing: &str,
+) -> Vec<Row> {
     if devices.is_empty() {
         return vec![Row {
             kind,
@@ -603,23 +795,29 @@ fn rows<D: Listed>(kind: Kind, devices: &[D], picked: Option<&str>, nothing: &st
             picked: false,
         }];
     }
-    let picked = devices
-        .iter()
-        .position(|device| Some(device.id()) == picked)
-        .or_else(|| devices.iter().position(|device| device.default()));
-    let mut ordered: Vec<(usize, &D)> = devices.iter().enumerate().collect();
-    // the system's default first, the rest as the host listed them
-    ordered.sort_by_key(|(_, device)| !device.default());
+    let in_use = in_use(devices, picked).map(Listed::id);
+    let mut ordered: Vec<&D> = devices.iter().collect();
+    if order == Order::DefaultFirst {
+        ordered.sort_by_key(|device| !device.default());
+    }
     ordered
         .into_iter()
-        .map(|(at, device)| Row {
+        .map(|device| Row {
             kind,
             id: Some(device.id().to_owned()),
             name: device.name().to_owned(),
             twin: twin(devices, device),
-            picked: picked == Some(at),
+            picked: in_use == Some(device.id()),
         })
         .collect()
+}
+
+/// The device `pick` names, else the system's default.
+fn in_use<'a, D: Listed>(devices: &'a [D], pick: Option<&str>) -> Option<&'a D> {
+    devices
+        .iter()
+        .find(|device| Some(device.id()) == pick)
+        .or_else(|| devices.iter().find(|device| device.default()))
 }
 
 /// Whether `devices` lists the device `pick` names (no pick, the system's
@@ -665,7 +863,13 @@ impl Render for Huddle {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let size = window.viewport_size();
         self.viewport = (size.width.into(), size.height.into());
-        ui::render(self, cx)
+        // one wasm, two designs, the model shared: a finger gets the
+        // phone's screens, a pointer the desktop's
+        if window.touch() {
+            ui::phone::render(self, cx)
+        } else {
+            ui::render(self, cx)
+        }
     }
 }
 

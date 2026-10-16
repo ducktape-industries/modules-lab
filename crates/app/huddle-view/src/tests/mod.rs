@@ -1,8 +1,9 @@
 //! The view on a fake host: each test drives the frame the way a person
 //! would and reads what the host would get. Every frame it sends is held
 //! to the host's sanitizer and accessibility audit, and to the view's
-//! capabilities (a piece the manifest leaves out fails the test).
-use view::Entity;
+//! capabilities (a piece the manifest leaves out fails the test). The
+//! desktop's tree is driven here, under a pointer; the phone's, under a
+//! finger, in `phone.rs`.
 use view::methods::{
     AudioDevice, AudioDevices, AudioKind, CameraDevice, CameraDevices, ClockTicks, Facing, Float,
     HostFloat, HostPlacement, HostShow, HostTitle, HostUnfloat, MicrophoneChime, MicrophoneDevices,
@@ -11,8 +12,11 @@ use view::methods::{
 use view::testing::{StreamSender, TestAppContext};
 use view::wire::list::UniformListScrollStrategy;
 use view::wire::{ImageObjectFit, MediaState, MediaStatus, MicCommand, Node, Playback};
+use view::{Entity, Role};
 
 use crate::{FLOAT, Huddle, RECORD_SECONDS};
+
+mod phone;
 
 fn camera(id: &str, name: &str, default: bool, facing: Facing) -> CameraDevice {
     CameraDevice {
@@ -310,6 +314,42 @@ fn try_again_does_not_ask_again_for_a_camera_that_went_away() {
     cx.run_until_parked();
     assert_eq!(camera_piece(&cx).unwrap().1, None);
     assert!(!cx.has_text("The camera went away"));
+}
+
+/// A device that went away says why when the host knows (a call took
+/// it), and the view's own line only when it does not.
+#[test]
+fn a_device_gone_says_why_when_the_host_knows() {
+    let fallback = "It was unplugged or its driver stopped. The last picture is gone; plug it \
+                    back in and try again.";
+    let (mut cx, ..) = opened();
+    let (key, ..) = camera_piece(&cx).unwrap();
+    cx.simulate_media_state(
+        &key,
+        MediaState {
+            status: MediaStatus::Gone,
+            detail: "A call or another app took the camera.".into(),
+            ..Default::default()
+        },
+    );
+    assert!(cx.has_text("The camera went away"));
+    assert!(cx.has_text("A call or another app took the camera."));
+    assert!(!cx.has_text(fallback));
+    cx.simulate_click("huddle-camera-retry");
+    cx.run_until_parked();
+    let (key, ..) = camera_piece(&cx).unwrap();
+    cx.simulate_media_state(&key, status(MediaStatus::Gone));
+    assert!(cx.has_text(fallback));
+    let key = mic_key(&cx);
+    cx.simulate_media_state(
+        &key,
+        MediaState {
+            status: MediaStatus::Gone,
+            detail: "A phone call took the microphone.".into(),
+            ..Default::default()
+        },
+    );
+    assert!(cx.has_text("The microphone went away. A phone call took the microphone."));
 }
 
 /// Picking a microphone or a speaker ends the live loop, as muting does:
