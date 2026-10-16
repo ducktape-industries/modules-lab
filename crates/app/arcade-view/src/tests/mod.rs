@@ -24,6 +24,7 @@ mod breakout;
 mod games;
 mod invaders;
 mod snake;
+mod versus;
 
 /// The account the reader is seated as.
 pub(crate) const READER: u64 = 7;
@@ -158,6 +159,15 @@ impl Opened {
         self.cx.simulate_key_down("arcade-board", keystroke);
     }
 
+    /// The modifier keys down on the board become `modifiers`.
+    pub(crate) fn modifiers(&mut self, modifiers: gpui::Modifiers) {
+        let event = gpui::ModifiersChangedEvent {
+            modifiers,
+            capslock: gpui::Capslock { on: false },
+        };
+        self.cx.simulate_modifiers_changed("arcade-board", event);
+    }
+
     /// The keyboard repeats `keystroke`, held down on the board.
     pub(crate) fn held(&mut self, keystroke: &str) {
         let handler = self.cx.interactivity("arcade-board").on_key_down;
@@ -228,7 +238,7 @@ pub(crate) fn shows(cx: &TestAppContext, texts: &[&str]) {
 }
 
 #[test]
-fn the_manifest_names_the_program_identity_and_the_clock() {
+fn the_manifest_names_the_program_identity_the_clock_and_live() {
     assert_eq!(<Arcade as View>::NAME, "Arcade");
     assert_eq!(<Arcade as View>::TARGETS, [arcade::PROGRAM, "identity"]);
     assert_eq!(
@@ -237,7 +247,8 @@ fn the_manifest_names_the_program_identity_and_the_clock() {
             Capability::Program,
             Capability::Op,
             Capability::Host,
-            Capability::Clock
+            Capability::Clock,
+            Capability::Live
         ]
     );
 }

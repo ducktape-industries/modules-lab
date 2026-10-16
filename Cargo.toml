@@ -6,7 +6,7 @@
 
 [workspace]
 resolver = "2"
-members = ["crates/app/trade", "crates/app/trade-view", "crates/app/arcade", "crates/app/arcade-view", "crates/app/browser-view", "crates/app/live-echo", "crates/app/live-echo-view"]
+members = ["crates/app/trade", "crates/app/trade-view", "crates/app/arcade", "crates/app/arcade-view", "crates/app/browser-view", "crates/app/live-echo", "crates/app/live-echo-view", "crates/bots/tetris-bot"]
 
 [workspace.package]
 edition = "2024"
@@ -30,6 +30,9 @@ identity = { git = "https://github.com/ducktape-industries/programs", rev = "18f
 # What packs a program with its view and its describe module, as a founding
 # takes it (`crates/app/trade/examples/pack.rs`, which `live/live.sh` runs).
 founding = { git = "https://github.com/ducktape-industries/programs", rev = "18f6cd0006315aa6f8e6c511c66d24c0ab8999ff" }
+# The chain id a live track's namespace starts with (`ChainId::of`), as the
+# app names it: what tetris-bot names the versus room by.
+ducklink = { git = "https://github.com/ducktape-industries/programs", rev = "18f6cd0006315aa6f8e6c511c66d24c0ab8999ff" }
 # `canvas().rect` takes a `Bounds` made with gpui's `point` and `size`, which
 # the SDK does not re-export.
 # The rev is the one modules names.

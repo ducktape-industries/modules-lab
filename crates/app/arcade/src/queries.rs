@@ -4,13 +4,11 @@ use ::program::{Error, QueryCtx};
 
 use crate::rules::game;
 use crate::state::{BEST, BOARD, highest_first};
-use crate::{Entry, GAMES, MAX_TOP};
+use crate::{Entry, GAMES};
 
 pub(crate) fn top(ctx: &QueryCtx, game_id: u8, limit: u32) -> Result<Vec<Entry>, Error> {
     let game = game(game_id)?;
-    let ranked = BOARD
-        .prefix_of(&game)
-        .limit(u64::from(limit.clamp(1, MAX_TOP)));
+    let ranked = BOARD.prefix_of(&game).limit(u64::from(limit.max(1)));
     Ok(BOARD
         .scan(ctx, ranked)?
         .into_iter()

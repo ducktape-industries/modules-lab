@@ -13,6 +13,8 @@ crate-type = ["cdylib", "rlib"]
 view.workspace = true
 gpui.workspace = true
 serde.workspace = true
+# what versus says on its live tracks
+borsh.workspace = true
 # the program's types, linked with `program` off
 arcade.workspace = true
 # `Reads`: which tables a query reads, asked of each block's change

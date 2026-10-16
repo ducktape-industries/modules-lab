@@ -7,6 +7,7 @@ use view::methods::Submitted;
 use view::prelude::*;
 
 use crate::games::Game;
+use crate::versus::Versus;
 use crate::{Arcade, Post};
 
 /// The rows a board shows.
@@ -54,6 +55,7 @@ impl Arcade {
         } else if self.session.connected && !prev.connected {
             self.changed(None, cx);
         }
+        self.versus_session(&prev, cx);
     }
 
     /// A block of the program landed: the bests and the board are asked
@@ -101,9 +103,15 @@ impl Arcade {
     }
 
     /// The host said whether the view is on screen: off it, a running game
-    /// pauses, and stays paused until the reader goes on.
+    /// pauses, and stays paused until the reader goes on. A versus round
+    /// runs on, the other side playing, and lets go of its keys.
     fn visibility(&mut self, visible: bool, cx: &mut Context<Self>) {
         self.hidden = !visible;
+        if self.hidden
+            && let Some(game) = self.versus.as_mut().and_then(|versus| versus.game.as_mut())
+        {
+            game.let_go();
+        }
         if self.hidden
             && let Some(play) = &mut self.play
             && play.game.ready().is_some_and(|game| !game.over())
@@ -164,16 +172,20 @@ impl Arcade {
         self.run_clock(cx);
     }
 
-    /// Asks for the clock at the running game's period, drops it when no
-    /// game runs, and asks again when the period changes.
+    /// Asks for the clock at the running game's period, or a versus
+    /// round's, drops it when none runs, and asks again when the period
+    /// changes. A versus round runs on off screen: the other side plays on.
+    /// An ended game's effects play out first.
     fn run_clock(&mut self, cx: &mut Context<Self>) {
         let running = self
             .play
             .as_ref()
             .filter(|play| !play.paused && !self.hidden)
             .and_then(|play| play.game.ready())
-            .filter(|game| !game.over());
-        let period = running.and_then(Game::period);
+            .filter(|game| !game.over() || game.animating());
+        let period = running
+            .and_then(Game::period)
+            .or_else(|| self.versus.as_ref().and_then(Versus::period));
         if self.clock.as_ref().map(|(running, _)| *running) == period {
             return;
         }
@@ -188,6 +200,9 @@ impl Arcade {
 
     /// One tick of the clock: one step of the running game.
     fn ticked(&mut self, cx: &mut Context<Self>) {
+        if self.versus.is_some() {
+            return self.versus_ticked(cx);
+        }
         let Some(game) = self
             .play
             .as_mut()

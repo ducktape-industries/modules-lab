@@ -81,10 +81,11 @@ impl Game {
         }
     }
 
-    /// One step of the clock. Whether the board changed.
+    /// One step of the clock. Whether the board changed, or Tetris's
+    /// effects did.
     pub(crate) fn tick(&mut self) -> bool {
         match self {
-            Game::Tetris(game) => game.tick(),
+            Game::Tetris(game) => game.fade() | game.tick(),
             Game::Snake(game) => game.tick(),
             Game::Merge(game) => game.tick(),
             Game::Mines(game) => game.tick(),
@@ -103,6 +104,15 @@ impl Game {
             Game::Mines(game) => game.period(),
             Game::Breakout(_) => Some(breakout::PERIOD),
             Game::Invaders(_) => Some(invaders::PERIOD),
+        }
+    }
+
+    /// Tetris's effects show: the clock runs on past the game's end until
+    /// they are done.
+    pub(crate) fn animating(&self) -> bool {
+        match self {
+            Game::Tetris(game) => game.animating(),
+            _ => false,
         }
     }
 
