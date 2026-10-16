@@ -16,7 +16,7 @@ arcade.workspace = true
 ducklink.workspace = true
 borsh.workspace = true
 # the live wire and the key scheme of core `dev` 18477333b, the rev
-# programs 2bb873d1 pins
+# programs 18f6cd00 pins
 live-wire = { git = "https://github.com/ducktape-industries/ducktape", rev = "18477333b668df1bd36699eef05ecc131522aa1a" }
 keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "18477333b668df1bd36699eef05ecc131522aa1a" }
 # `/v1/status` decodes into the node's own types (the workspace patches
