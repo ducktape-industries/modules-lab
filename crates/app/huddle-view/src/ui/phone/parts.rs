@@ -201,6 +201,11 @@ pub(super) fn state_card(
         true => (VIDEO, words::OPENING_CAMERA, words::ALLOW_CAMERA.to_owned()),
         false => {
             let (title, text) = words::phone_trouble(Device::Camera, state);
+            // in the room the person has joined already: no word of joining
+            let text = match (&state.status, view.screen) {
+                (MediaStatus::NoDevice, Screen::Room) => String::new(),
+                _ => text,
+            };
             (trouble_glyph(&state.status), title, text)
         }
     };

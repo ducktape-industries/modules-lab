@@ -568,6 +568,20 @@ fn a_camera_taken_or_missing_says_so() {
     assert!(camera_piece(&cx).is_none(), "joined without the camera");
 }
 
+/// In the room a phone with no camera says so, with Try again, and no
+/// word of joining: the person has joined already.
+#[test]
+fn a_missing_camera_in_the_room_offers_no_join() {
+    let (mut cx, _ticks) = phone();
+    cx.simulate_click("huddle-join");
+    let (key, ..) = camera_piece(&cx).unwrap();
+    cx.simulate_media_state(&key, status(MediaStatus::NoDevice));
+    assert!(cx.has_text("No camera on this device"));
+    assert!(cx.find("huddle-camera-retry").is_some());
+    assert!(cx.find("huddle-camera-without").is_none());
+    assert!(!cx.has_text("Join with your microphone only."));
+}
+
 /// A microphone in trouble on the check is the Sound row's one line, with
 /// Try again opening a new piece; Record and the live loop wait.
 #[test]
