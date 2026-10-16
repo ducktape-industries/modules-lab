@@ -42,21 +42,33 @@
 //! host listed and the pieces told, and what each press changes. What is
 //! drawn is `ui` (the desktop's tree) or `ui::phone` (the phone's), in the
 //! words of `words`, with what both draw alike in `look`.
-#![cfg_attr(feature = "notifier", allow(dead_code))]
+#[cfg(not(feature = "notifier"))]
 use std::collections::BTreeMap;
 
+#[cfg(not(feature = "notifier"))]
 use identity::Profile;
+#[cfg(not(feature = "notifier"))]
 use serde::{Deserialize, Serialize};
+#[cfg(not(feature = "notifier"))]
 use view::prelude::*;
 
+#[cfg(not(feature = "notifier"))]
 use crate::call::Call;
+#[cfg(not(feature = "notifier"))]
 use crate::words::Device;
 
+#[cfg(not(feature = "notifier"))]
 mod call;
+#[cfg(not(feature = "notifier"))]
 mod look;
 mod notifier;
+#[cfg(not(feature = "notifier"))]
 mod people;
+#[cfg(not(feature = "notifier"))]
 mod ui;
+// the notifier says three of the view's words: the rest, and the kinds
+// they name, lie dead in its build
+#[cfg_attr(feature = "notifier", allow(dead_code))]
 mod words;
 
 pub use notifier::HuddleNotices;
@@ -68,6 +80,7 @@ pub const RECORD_SECONDS: u8 = 5;
 
 /// The float Join asks for: the room laid out 320 by 200, never under 240
 /// by 150, kept above other windows.
+#[cfg(not(feature = "notifier"))]
 pub const FLOAT: Float = Float {
     width: 320,
     height: 200,
@@ -77,6 +90,7 @@ pub const FLOAT: Float = Float {
 };
 
 /// Which screen is up: the device check, or the room.
+#[cfg(not(feature = "notifier"))]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Screen {
     #[default]
@@ -86,6 +100,7 @@ pub(crate) enum Screen {
 
 /// What a pick picks: a camera, a microphone or a speaker, or a person to
 /// ring.
+#[cfg_attr(feature = "notifier", allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
     Camera,
@@ -97,6 +112,7 @@ pub(crate) enum Kind {
 /// Which menu: one kind's, the room's sound menu, which lists the
 /// microphones and then the speakers, a phone's routes, or the people to
 /// invite.
+#[cfg_attr(feature = "notifier", allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Which {
     Kind(Kind),
@@ -109,6 +125,7 @@ pub(crate) enum Which {
 }
 
 /// How a menu orders its devices.
+#[cfg_attr(feature = "notifier", allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Order {
     /// The system's default first, the rest as the host listed them: a
@@ -121,6 +138,7 @@ enum Order {
     Listed,
 }
 
+#[cfg_attr(feature = "notifier", allow(dead_code))]
 impl Which {
     /// The kinds it lists, in order.
     pub(crate) fn kinds(&self) -> &[Kind] {
@@ -142,6 +160,7 @@ impl Which {
 
 /// An open device menu: which, the row the arrows are on, and the id of
 /// the control that opened it, which takes the keys back.
+#[cfg(not(feature = "notifier"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Menu {
     pub(crate) which: Which,
@@ -149,6 +168,7 @@ pub(crate) struct Menu {
     pub(crate) opener: &'static str,
 }
 
+#[cfg(not(feature = "notifier"))]
 #[derive(Default, Serialize, Deserialize)]
 pub struct Huddle {
     /// What the host lists: cameras, and microphones with speakers.
@@ -192,19 +212,16 @@ pub struct Huddle {
     /// What the desktop's tree keeps between frames.
     #[serde(skip)]
     pub(crate) desk: ui::Desk,
-    /// The pointer is a finger: the phone's tree draws, which never floats.
-    #[serde(skip)]
-    pub(crate) touch: bool,
     /// Who reads, on which network.
     #[serde(skip)]
     pub(crate) session: Session,
     /// The call the room is in.
     #[serde(skip)]
     pub(crate) call: Option<Call>,
-    /// The calls you are in or asked into, as the program lists them: the
-    /// rings shown on the check.
+    /// The calls ringing you, as the program lists them: the rings shown
+    /// on the check.
     #[serde(skip)]
-    pub(crate) calls: Loadable<Vec<huddle::Listed>>,
+    pub(crate) ringing: Loadable<Vec<huddle::Listed>>,
     /// What identity calls each account the view has shown.
     #[serde(skip)]
     pub(crate) names: BTreeMap<u64, String>,
@@ -244,6 +261,7 @@ pub struct Huddle {
     pub(crate) no_keep_on_top_line: bool,
 }
 
+#[cfg(not(feature = "notifier"))]
 impl View for Huddle {
     const NAME: &'static str = words::HUDDLE;
     const DESCRIPTION: &'static str = "Check your camera and microphone, then call people.";
@@ -298,15 +316,18 @@ impl View for Huddle {
 
 /// Whether the host does not answer that kind of request at all: a host
 /// without camera and microphone, or one that cannot float a pane.
+#[cfg(not(feature = "notifier"))]
 fn unknown(error: &Error) -> bool {
     error.code == refusal::UNKNOWN_REQUEST
 }
 
 /// A device that is not starting or live, said as the view says it.
+#[cfg(not(feature = "notifier"))]
 pub(crate) fn trouble(state: &MediaState) -> bool {
     !matches!(state.status, MediaStatus::Starting | MediaStatus::Live)
 }
 
+#[cfg(not(feature = "notifier"))]
 impl Huddle {
     /// The device lists, read again (the lists on screen stay meanwhile).
     pub(crate) fn list(&mut self, cx: &mut Context<Self>) {
@@ -622,6 +643,8 @@ impl Huddle {
     /// loop ends. The phone's Join: a phone keeps one window.
     pub(crate) fn enter_room(&mut self, cx: &mut Context<Self>) {
         self.screen = Screen::Room;
+        // what the last call said stays on the check it was said on
+        self.call_note = None;
         self.entered = self.ticks;
         self.monitor = false;
         self.menu = None;
@@ -868,6 +891,7 @@ impl Huddle {
 }
 
 /// One row of a device menu.
+#[cfg(not(feature = "notifier"))]
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Row {
     pub(crate) kind: Kind,
@@ -881,12 +905,14 @@ pub(crate) struct Row {
 
 /// What a menu reads of a device: a camera and a microphone or speaker
 /// alike.
+#[cfg(not(feature = "notifier"))]
 pub(crate) trait Listed {
     fn id(&self) -> &str;
     fn name(&self) -> &str;
     fn default(&self) -> bool;
 }
 
+#[cfg(not(feature = "notifier"))]
 impl Listed for CameraDevice {
     fn id(&self) -> &str {
         &self.id
@@ -899,6 +925,7 @@ impl Listed for CameraDevice {
     }
 }
 
+#[cfg(not(feature = "notifier"))]
 impl Listed for AudioDevice {
     fn id(&self) -> &str {
         &self.id
@@ -913,6 +940,7 @@ impl Listed for AudioDevice {
 
 /// The rows of `kind`'s `devices` in `order`, the one in use (`picked`,
 /// else the default) checked; `nothing` alone where there are none.
+#[cfg(not(feature = "notifier"))]
 fn rows<D: Listed>(
     (kind, order): (Kind, Order),
     devices: &[D],
@@ -946,6 +974,7 @@ fn rows<D: Listed>(
 }
 
 /// The device `pick` names, else the system's default.
+#[cfg(not(feature = "notifier"))]
 fn in_use<'a, D: Listed>(devices: &'a [D], pick: Option<&str>) -> Option<&'a D> {
     devices
         .iter()
@@ -955,6 +984,7 @@ fn in_use<'a, D: Listed>(devices: &'a [D], pick: Option<&str>) -> Option<&'a D> 
 
 /// Whether `devices` lists the device `pick` names (no pick, the system's
 /// default, always is).
+#[cfg(not(feature = "notifier"))]
 fn holds<D: Listed>(devices: &[D], pick: &Option<String>) -> bool {
     pick.as_deref()
         .is_none_or(|id| devices.iter().any(|device| device.id() == id))
@@ -962,6 +992,7 @@ fn holds<D: Listed>(devices: &[D], pick: &Option<String>) -> bool {
 
 /// What a menu says where `list` holds no device: that it is still being
 /// asked, the host's refusal, or that there is none.
+#[cfg(not(feature = "notifier"))]
 fn nothing<T>(list: &Loadable<T>) -> &str {
     match list {
         Loadable::Idle | Loadable::Loading(_) => words::LISTING,
@@ -974,6 +1005,7 @@ fn nothing<T>(list: &Loadable<T>) -> &str {
 /// do), the end of its id that tells the two apart: past the last `:`
 /// (`alsa:plughw:CARD=Loopback,DEV=1` is `CARD=Loopback,DEV=1`), at most
 /// 20 characters.
+#[cfg(not(feature = "notifier"))]
 pub(crate) fn twin<D: Listed>(devices: &[D], device: &D) -> Option<String> {
     let shared = devices
         .iter()
@@ -992,14 +1024,14 @@ pub(crate) fn twin<D: Listed>(devices: &[D], device: &D) -> Option<String> {
     })
 }
 
+#[cfg(not(feature = "notifier"))]
 impl Render for Huddle {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let size = window.viewport_size();
         self.viewport = (size.width.into(), size.height.into());
-        self.touch = window.touch();
         // one wasm, two designs, the model shared: a finger gets the
         // phone's screens, a pointer the desktop's
-        if self.touch {
+        if window.touch() {
             ui::phone::render(self, cx)
         } else {
             ui::render(self, cx)
@@ -1010,5 +1042,6 @@ impl Render for Huddle {
 #[cfg(not(feature = "notifier"))]
 export_view!(Huddle);
 
+#[cfg(not(feature = "notifier"))]
 #[cfg(test)]
 mod tests;

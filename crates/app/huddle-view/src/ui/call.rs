@@ -13,6 +13,15 @@ use crate::{Huddle, Which};
 
 const INVITE: &str = "user-plus";
 const NETWORK: &str = "wifi-off";
+const NOTE: &str = "info";
+
+/// The room's line's glyph: a note on the call, or the network's.
+pub(super) fn glyph(view: &Huddle) -> &'static str {
+    match view.call_note {
+        Some(_) => NOTE,
+        None => NETWORK,
+    }
+}
 
 /// The grid `n` tiles take on a stage `w` by `h`: columns and rows.
 pub(super) fn grid(n: usize, w: f32, h: f32) -> (usize, usize) {
@@ -31,7 +40,7 @@ pub(super) fn shown(others: usize) -> usize {
 }
 
 /// The network row under the stage: one line, no numbers.
-pub(super) fn network_row(line: String, theme: &Theme) -> Stateful<Div> {
+pub(super) fn network_row(glyph: &'static str, line: String, theme: &Theme) -> Stateful<Div> {
     div()
         .id("huddle-network")
         .h(px(22.))
@@ -45,12 +54,12 @@ pub(super) fn network_row(line: String, theme: &Theme) -> Stateful<Div> {
         .text_color(theme.warning)
         .role(Role::Status)
         .aria_live(view::accesskit::Live::Polite)
-        .child(design::icon(NETWORK, px(12.)))
+        .child(design::icon(glyph, px(12.)))
         .child(div().min_w(px(0.)).truncate().child(line))
 }
 
 /// The same line on the glass over the compact room's strip.
-pub(super) fn network_glass(line: String) -> Stateful<Div> {
+pub(super) fn network_glass(glyph: &'static str, line: String) -> Stateful<Div> {
     div()
         .id("huddle-network")
         .absolute()
@@ -67,7 +76,7 @@ pub(super) fn network_glass(line: String) -> Stateful<Div> {
         .text_size(design::text::CAPTION)
         .role(Role::Status)
         .aria_live(view::accesskit::Live::Polite)
-        .child(design::icon(NETWORK, px(12.)))
+        .child(design::icon(glyph, px(12.)))
         .child(div().min_w(px(0.)).truncate().child(line))
 }
 
@@ -129,7 +138,7 @@ pub(super) fn rings(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> O
         let with = words::huddle_with(listed.call.people().count());
         let (answer, decline) = (id.clone(), id.clone());
         let answer = cx.listener(move |view: &mut Huddle, _: &ClickEvent, window, cx| {
-            view.answer(answer.clone(), cx);
+            view.answer(answer.clone(), false, cx);
             window.focus(super::ROOM);
         });
         let decline = cx.listener(move |view: &mut Huddle, _: &ClickEvent, _, cx| {

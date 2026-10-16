@@ -32,8 +32,8 @@ use view::prelude::*;
 
 use crate::{Huddle, Screen, words};
 
-/// How long the last speaker keeps the main tile once they stop, in the
-/// view's seconds.
+/// How long the main tile stays with whoever took it before the next one
+/// to start speaking takes it, in the view's seconds.
 const SPEAKER_HOLD: u64 = 2;
 
 /// How long a person's track may stay `Starting` before the room says it
@@ -57,9 +57,11 @@ pub(crate) struct Call {
     /// A Join went out for the `Waiting` heard; cleared when a track is up
     /// or the Join is refused, so each `Waiting` sends one.
     knocked: bool,
-    /// Who holds the main tile, and since when they are quiet (`None`
-    /// while they speak).
-    speaker: Option<(u64, Option<u64>)>,
+    /// Who holds the main tile, and since when.
+    speaker: Option<(u64, u64)>,
+    /// The last person whose voice turned to speaking: the main tile's
+    /// next holder once the hold is out.
+    last_spoke: Option<u64>,
 }
 
 /// One other person in the call.
@@ -107,6 +109,7 @@ impl Call {
             _watch: watch,
             knocked: false,
             speaker: None,
+            last_spoke: None,
         }
     }
 
@@ -133,30 +136,20 @@ impl Call {
         self.people.len() + 1
     }
 
-    /// The main tile handed on, at `now`: its holder keeps it while they
-    /// speak and for [`SPEAKER_HOLD`] after; then the first other one
-    /// speaking takes it. A quiet holder past the hold keeps it until
-    /// someone speaks.
+    /// The main tile handed on, at `now`: to the last person whose voice
+    /// turned to speaking, once its holder has had it [`SPEAKER_HOLD`]
+    /// (at once when its holder left). No one speaking since, it stays.
     fn hand_on(&mut self, now: u64) {
-        let holds = self.speaker.is_some_and(|(account, quiet)| {
-            self.people.contains_key(&account)
-                && quiet.is_none_or(|since| now < since + SPEAKER_HOLD)
+        let held = self.speaker.is_some_and(|(account, since)| {
+            self.people.contains_key(&account) && now < since + SPEAKER_HOLD
         });
-        if holds {
+        if held {
             return;
         }
-        let speaking = self
-            .people
-            .iter()
-            .find(|(_, person)| person.voice.speaking)
-            .map(|(account, _)| *account);
-        if let Some(account) = speaking {
-            self.speaker = Some((account, None));
-        } else if self
-            .speaker
-            .is_some_and(|(account, _)| !self.people.contains_key(&account))
+        if let Some(last) = self.last_spoke.filter(|n| self.people.contains_key(n))
+            && self.speaker.map(|(account, _)| account) != Some(last)
         {
-            self.speaker = None;
+            self.speaker = Some((last, now));
         }
     }
 
@@ -185,18 +178,25 @@ impl Huddle {
                 let Some(account) = view.session.account else {
                     return;
                 };
-                let mine = huddle::ask::Mine { account };
-                if change.is_none_or(|change| change.touches::<huddle::Huddle, _>(&mine)) {
+                let ringing = huddle::ask::Ringing { account };
+                if change.is_none_or(|change| change.touches::<huddle::Huddle, _>(&ringing)) {
                     view.read_calls(cx);
                 }
             }
             Err(refusal) => cx.log_refused("huddle's blocks", &refusal),
         })
         .detach();
-        cx.follow::<HostRoute>((), |view, route, cx| match route {
+        cx.follow::<HostRoute>((), |_, route, cx| match route {
             Ok(route) => {
                 if let Some(id) = route.strip_prefix("call/") {
-                    view.answer(id.to_owned(), cx);
+                    // after this update, where the window says what the
+                    // pointer is
+                    let id = id.to_owned();
+                    cx.spawn(async move |view, cx| {
+                        let _ = view
+                            .update_in(cx, |view, window, cx| view.answer(id, window.touch(), cx));
+                    })
+                    .detach();
                 }
             }
             Err(refusal) => cx.log_refused("the links opened here", &refusal),
@@ -212,7 +212,7 @@ impl Huddle {
         if self.session.account != prev.account {
             // another account's calls: the one under way is not theirs
             self.call = None;
-            self.calls = Loadable::Idle;
+            self.ringing = Loadable::Idle;
             self.invitable = Loadable::Idle;
             self.read_calls(cx);
         } else if self.session.connected && !prev.connected {
@@ -225,39 +225,33 @@ impl Huddle {
         cx.notify();
     }
 
-    /// The calls you are in or asked into, as the program lists them.
+    /// The calls ringing you, as the program lists them at the chain's
+    /// time.
     pub(crate) fn read_calls(&mut self, cx: &mut Context<Self>) {
         let Some(account) = self.session.account else {
             return;
         };
-        let mine = cx.host().query(huddle::ask::Mine { account });
-        cx.land(mine, |view, mine, cx| {
-            if let Ok(calls) = &mine {
+        let ringing = cx.host().query(huddle::ask::Ringing { account });
+        cx.land(ringing, |view, ringing, cx| {
+            if let Ok(calls) = &ringing {
                 let callers = calls.iter().map(|listed| listed.call.caller).collect();
                 view.ask_names(callers, cx);
             }
-            view.calls = mine.into();
+            view.ringing = ringing.into();
             cx.notify();
         })
         .detach();
     }
 
-    /// The calls ringing you, by the program's list: asked in, not in the
-    /// room, not declined, and not the one the room is in.
+    /// The calls ringing you, the one the room is in aside.
     pub(crate) fn rings(&self) -> Vec<&Listed> {
-        let (Some(me), Some(calls)) = (self.session.account, self.calls.ready()) else {
+        let Some(ringing) = self.ringing.ready() else {
             return Vec::new();
         };
         let here = self.call.as_ref().map(|call| call.id.as_str());
-        calls
+        ringing
             .iter()
             .filter(|listed| Some(listed.id.as_str()) != here)
-            .filter(|listed| {
-                let call = &listed.call;
-                call.ring_until(me).is_some()
-                    && !call.joined.contains(&me)
-                    && !call.declined.contains(&me)
-            })
             .collect()
     }
 
@@ -357,7 +351,9 @@ impl Huddle {
                 None if view.screen == Screen::Room && view.call.is_none() => {
                     view.enter_call(id, cx)
                 }
-                None => {}
+                // left, or in another call, before it landed: out of it,
+                // so no one is rung into an empty room
+                None => view.send(Op::Leave { call: id }, cx),
                 Some(why) => view.call_failed(&why, cx),
             })
             .detach();
@@ -365,9 +361,10 @@ impl Huddle {
         .detach();
     }
 
-    /// Answers call `id`: in the room at once, the microphone on (a phone
-    /// that rang wants the call, not a settings page), the Join on its way.
-    pub(crate) fn answer(&mut self, id: String, cx: &mut Context<Self>) {
+    /// Answers call `id`: in the room at once (on a phone, `touch`, where
+    /// the view is; else floated), the microphone on (a phone that rang
+    /// wants the call, not a settings page), the Join on its way.
+    pub(crate) fn answer(&mut self, id: String, touch: bool, cx: &mut Context<Self>) {
         if self.call.as_ref().is_some_and(|call| call.id == id) {
             return;
         }
@@ -378,7 +375,7 @@ impl Huddle {
         self.knock(cx);
         match self.screen {
             Screen::Room => {}
-            Screen::Check if self.touch => self.enter_room(cx),
+            Screen::Check if touch => self.enter_room(cx),
             Screen::Check => self.join(cx),
         }
     }
@@ -386,8 +383,8 @@ impl Huddle {
     /// Says no to call `id`: its ring stops here at once, and for the
     /// program on the next block.
     pub(crate) fn decline(&mut self, id: String, cx: &mut Context<Self>) {
-        if let Some(calls) = self.calls.ready_mut() {
-            calls.retain(|listed| listed.id != id);
+        if let Some(ringing) = self.ringing.ready_mut() {
+            ringing.retain(|listed| listed.id != id);
         }
         self.send(Op::Decline { call: id }, cx);
         cx.notify();
@@ -504,13 +501,8 @@ impl Huddle {
             Piece::Picture => person.picture = state.clone(),
         }
         person.clock(now);
-        if piece == Piece::Voice
-            && was_speaking
-            && !state.speaking
-            && let Some((holder, quiet)) = &mut call.speaker
-            && *holder == who
-        {
-            *quiet = Some(now);
+        if piece == Piece::Voice && !was_speaking && state.speaking {
+            call.last_spoke = Some(who);
         }
         call.hand_on(now);
         cx.notify();
@@ -528,9 +520,13 @@ impl Huddle {
             || call.slow(self.ticks)
     }
 
-    /// What the network row says, if anything: reconnecting, or the
-    /// camera sending less picture (the host's words).
+    /// What the room's line (the network row) says, if anything: why the
+    /// call's last op did not go through, reconnecting, or the camera
+    /// sending less picture (the host's words).
     pub(crate) fn network(&self) -> Option<String> {
+        if let Some(note) = &self.call_note {
+            return Some(note.clone());
+        }
         if self.reconnecting() {
             return Some(words::RECONNECTING.into());
         }
@@ -548,15 +544,19 @@ impl Huddle {
     }
 
     /// The call's tracks were refused for good: the grant taken back (the
-    /// caller ended it, or it was over), or no live connection. Back to
-    /// the check, with why.
+    /// caller ended it, or it was over: nothing to leave), or no live
+    /// connection (left, so no one waits on you). Out of the room and back
+    /// on the desk, with why.
     fn call_over(&mut self, refusal: &Error, cx: &mut Context<Self>) {
-        self.call = None;
-        self.call_note = Some(match refusal.code.as_str() {
-            "not_granted" => words::CALL_ENDED.into(),
+        let note = match refusal.code.as_str() {
+            "not_granted" => {
+                self.call = None;
+                words::CALL_ENDED.into()
+            }
             _ => words::call_trouble(&refusal.message),
-        });
-        self.leave_room(cx);
+        };
+        self.leave(cx);
+        self.call_note = Some(note);
     }
 
     /// An op of the call refused: said, and the room left when its call
@@ -583,6 +583,6 @@ fn refused(submitted: Result<Submitted, Error>) -> Option<String> {
     match submitted {
         Ok(Submitted::Applied { .. }) => None,
         Ok(Submitted::Refused { refusal, .. }) | Err(refusal) => Some(refusal.message),
-        Ok(Submitted::InDoubt { .. }) => Some("no answer came back".into()),
+        Ok(Submitted::InDoubt { .. }) => Some(words::NO_ANSWER.into()),
     }
 }

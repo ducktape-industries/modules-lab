@@ -52,9 +52,9 @@ pub(crate) fn invite(
     if !call.joined.contains(&me) {
         return Err(unauthorized("only someone in a call asks people into it"));
     }
-    if call.over(now) {
-        return Err(wrong_state(format!("call {id} is over")));
-    }
+    // a call no one answered is over for a Join, not for its caller still
+    // in the room: their Invite rings again
+    not_ended(&call, &id)?;
     let asked = ask_in(&mut call, accounts, now)?;
     if asked.is_empty() {
         return Ok(());

@@ -405,20 +405,31 @@ fn a_call_no_one_answered_is_over_once_the_rings_run_out_and_still_closes() {
         line.refused(BO, Op::Join { call: CALL.into() }),
         code::WRONG_STATE
     );
-    assert_eq!(
-        line.refused(
-            ADA,
-            Op::Invite {
-                call: CALL.into(),
-                accounts: vec![CY],
-            }
-        ),
-        code::WRONG_STATE
-    );
     // the caller's view leaves: the rows go
     line.ok(ADA, Op::Leave { call: CALL.into() });
     assert_eq!(line.call().ended, Some(RING_SECONDS));
     assert_eq!(line.row(CALL, Some(BO)), None);
+}
+
+/// The caller left alone in the room by a decline (the call over: no one
+/// else in it, no one rung) asks someone in again, and it rings; once the
+/// call has ended, it does not.
+#[test]
+fn the_caller_alone_after_a_decline_can_invite() {
+    let mut line = Line::default();
+    line.start(ADA, &[BO]);
+    line.ok(BO, Op::Decline { call: CALL.into() });
+    assert!(line.call().over(line.now));
+    let invite = |accounts: Vec<u64>| Op::Invite {
+        call: CALL.into(),
+        accounts,
+    };
+    line.ok(ADA, invite(vec![CY]));
+    assert!(!line.call().over(line.now));
+    assert_eq!(line.ringing(CY), [CALL]);
+    assert_eq!(line.row(CALL, Some(CY)), Some(seat()));
+    line.ok(ADA, Op::End { call: CALL.into() });
+    assert_eq!(line.refused(ADA, invite(vec![DEE])), code::WRONG_STATE);
 }
 
 #[test]

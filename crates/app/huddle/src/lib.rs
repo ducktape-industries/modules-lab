@@ -151,7 +151,8 @@ pub enum Op {
     Start { call: String, invited: Vec<u64> },
     /// Asks `accounts` into a call the sender is in, each rung from now;
     /// one asked before rings again, one who declined is asked again, one
-    /// in the call already is left as they are.
+    /// in the call already is left as they are. A call that is over but
+    /// not ended (the sender alone, no one rung) rings again.
     Invite { call: String, accounts: Vec<u64> },
     /// The sender is in the call: its caller, or one asked in. Sent again,
     /// it writes the same row, so a view sends it on each `Waiting` its

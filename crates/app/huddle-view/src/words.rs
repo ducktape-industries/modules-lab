@@ -151,6 +151,10 @@ pub(crate) fn call_trouble(why: &str) -> String {
 /// The call ended under the person: the caller ended it, or it was over.
 pub(crate) const CALL_ENDED: &str = "The call ended.";
 
+/// Why an op of the call is not known to have gone through: the node
+/// never said.
+pub(crate) const NO_ANSWER: &str = "no answer came back";
+
 /// A kind of device, as its picker's label and its group in a menu say it.
 pub(crate) fn kind(kind: Kind) -> &'static str {
     match kind {

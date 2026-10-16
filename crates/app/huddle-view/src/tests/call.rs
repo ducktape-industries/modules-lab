@@ -9,8 +9,8 @@ use std::rc::Rc;
 use ::program::{Env, MockHost, Program};
 use huddle::{Huddle as Calls, Op};
 use view::methods::{
-    Change, Changes, HostId, HostRoute, HostSession, LiveAnnounce, LiveMode, LiveTrack, LiveTracks,
-    Query as Ask, Session, Submit, Watching,
+    Change, Changes, HostId, HostRoute, HostSession, HostUnfloat, LiveAnnounce, LiveMode,
+    LiveTrack, LiveTracks, Query as Ask, Session, Submit, Watching,
 };
 use view::testing::{Relay, StreamSender, TestAppContext};
 use view::wire::{MediaState, MediaStatus, Node, RemoteMedia, TrackState};
@@ -31,6 +31,7 @@ const ADAS: &str = "call-ada";
 /// speaks for the host through.
 struct Line {
     cx: TestAppContext,
+    view: view::Entity<Huddle>,
     chain: MockHost,
     /// The chain's time, in seconds.
     now: Rc<Cell<u64>>,
@@ -107,7 +108,7 @@ fn seated(me: u64, chain: MockHost, now: Rc<Cell<u64>>, touch: bool) -> Line {
     let sessions = cx.host().stream::<HostSession>();
     let changes = cx.host().stream::<Changes<Calls>>();
     let route = cx.host().stream::<HostRoute>();
-    cx.open::<Huddle>();
+    let view = cx.open::<Huddle>();
     if touch {
         cx.simulate_touch(true);
         cx.simulate_resize(390., 844.);
@@ -122,6 +123,7 @@ fn seated(me: u64, chain: MockHost, now: Rc<Cell<u64>>, touch: bool) -> Line {
     cx.run_until_parked();
     Line {
         cx,
+        view,
         chain,
         now,
         sent,
@@ -447,8 +449,8 @@ fn a_second_voice_turns_only_you_into_two() {
     assert!(line.pieces().voices.is_empty());
 }
 
-/// The one speaking takes the main tile (the stage's first), held two
-/// seconds after they stop; never you with others there.
+/// The last one to start speaking takes the main tile (the stage's
+/// first), each holder keeping it two seconds; never you with others there.
 #[test]
 fn the_speaker_takes_the_main_tile() {
     let mut line = line(false);
@@ -475,14 +477,27 @@ fn the_speaker_takes_the_main_tile() {
     assert_eq!(line.tiles()[0], "huddle-tile-2");
     line.tell("huddle-voice-3", speaking(true));
     assert_eq!(line.tiles()[0], "huddle-tile-3");
-    // Bo stops and Ada speaks: Bo holds the tile two seconds
-    line.tell("huddle-voice-3", speaking(false));
+    // Ada starts while Bo still speaks: Bo holds the tile two seconds,
+    // then the last to start has it, the lower number or not
     line.tell("huddle-voice-2", speaking(true));
     assert_eq!(line.tiles()[0], "huddle-tile-3", "held");
     line.second();
     assert_eq!(line.tiles()[0], "huddle-tile-3", "held");
     line.second();
     assert_eq!(line.tiles()[0], "huddle-tile-2", "handed on");
+    // Bo starts again: Ada had it two seconds already
+    line.tell("huddle-voice-3", speaking(false));
+    line.second();
+    line.second();
+    line.tell("huddle-voice-3", speaking(true));
+    assert_eq!(line.tiles()[0], "huddle-tile-3", "the last to start");
+    // quiet, the holder keeps it until someone starts
+    line.tell("huddle-voice-3", speaking(false));
+    line.tell("huddle-voice-2", speaking(false));
+    for _ in 0..3 {
+        line.second();
+    }
+    assert_eq!(line.tiles()[0], "huddle-tile-3", "kept");
 }
 
 /// Seven in the call: six on the stage, you among them, and "+1".
@@ -658,4 +673,126 @@ fn two_views_call_each_other_over_the_relay() {
     assert!(me.pieces().voices.is_empty(), "her voice ended");
     assert!(!me.tiles().contains(&"huddle-tile-2".to_owned()));
     assert!(me.cx.find("huddle-leave").is_some(), "still in the call");
+}
+
+/// A ring runs out on the chain's clock: an invitee who never answered a
+/// call that goes on without them sees its card go once the ring is asked
+/// again.
+#[test]
+fn a_ring_that_ran_out_is_no_card() {
+    let mut line = line(false);
+    line.block(
+        ADA,
+        Op::Start {
+            call: ADAS.into(),
+            invited: vec![ME, BO],
+        },
+    );
+    line.block(BO, Op::Join { call: ADAS.into() });
+    let card = format!("huddle-ring-{ADAS}");
+    assert!(line.cx.find(&card).is_some(), "ringing");
+    line.now.set(1_000 + 105);
+    for _ in 0..5 {
+        line.second();
+    }
+    assert!(line.cx.find(&card).is_none(), "{:?}", line.cx.texts());
+}
+
+/// On a phone, a call that cannot go on says why in the room: here a link
+/// to a call its caller already ended, whose Join is refused.
+#[test]
+fn on_a_phone_the_room_says_why_a_call_did_not_go_on() {
+    let mut line = line(true);
+    line.block(
+        ADA,
+        Op::Start {
+            call: ADAS.into(),
+            invited: vec![ME],
+        },
+    );
+    line.block(ADA, Op::End { call: ADAS.into() });
+    line.route.send(format!("call/{ADAS}"));
+    line.cx.run_until_parked();
+    assert!(line.cx.find("huddle-leave").is_some(), "in the room");
+    assert_eq!(
+        line.sent.borrow().as_slice(),
+        [Op::Join { call: ADAS.into() }]
+    );
+    assert!(
+        line.cx
+            .has_text("The call did not go through: call call-ada is over"),
+        "{:?}",
+        line.cx.texts()
+    );
+}
+
+/// The node ends the room's track list under you: out of the room, the
+/// pane back on the desk. A grant taken back leaves nothing to leave; any
+/// other end (no live connection) says Leave, so no one waits on you.
+#[test]
+fn a_call_ended_under_you_unfloats_and_says_leave() {
+    for (code, says_leave) in [("not_granted", false), ("live_unavailable", true)] {
+        let mut line = line(false);
+        line.block(
+            ADA,
+            Op::Start {
+                call: ADAS.into(),
+                invited: vec![ME],
+            },
+        );
+        line.cx
+            .host()
+            .refuse::<LiveTracks>(code, "the room is gone");
+        line.cx.simulate_click(&format!("huddle-answer-{ADAS}"));
+        line.cx.run_until_parked();
+        assert!(
+            line.cx.find("huddle-join").is_some(),
+            "{code}: on the check"
+        );
+        assert_eq!(
+            line.cx.host().requests::<HostUnfloat>().len(),
+            1,
+            "{code}: back on the desk"
+        );
+        let left = line
+            .sent
+            .borrow()
+            .contains(&Op::Leave { call: ADAS.into() });
+        assert_eq!(left, says_leave, "{code}");
+    }
+}
+
+/// You leave the room before the Start of your call lands: the call is
+/// left at once, so no one is rung into an empty room.
+#[test]
+fn a_start_landing_after_you_left_says_leave() {
+    let mut line = line(false);
+    line.cx.simulate_click("huddle-join");
+    let view = line.view.clone();
+    line.cx.update(&view, |view, _, cx| view.invite(ADA, cx));
+    // the minted id lands, and Start goes out; its answer is still owed
+    for _ in 0..4 {
+        if !line.sent.borrow().is_empty() {
+            break;
+        }
+        line.cx.tick(Vec::new());
+    }
+    line.cx.update(&view, |view, _, cx| view.leave(cx));
+    line.cx.run_until_parked();
+    let start = Op::Start {
+        call: MINTED.into(),
+        invited: vec![ADA],
+    };
+    let leave = Op::Leave {
+        call: MINTED.into(),
+    };
+    assert_eq!(line.sent.borrow().as_slice(), [start, leave]);
+    let call = Calls::query(
+        &line.chain.query(env(line.now.get())),
+        huddle::Query::Call { id: MINTED.into() },
+    );
+    let Ok(huddle::Reply::Call(Some(call))) = call else {
+        panic!("the call is kept");
+    };
+    assert!(call.ended.is_some(), "no one is rung into it");
 }

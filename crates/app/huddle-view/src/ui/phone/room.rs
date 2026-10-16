@@ -26,8 +26,9 @@ use crate::{Huddle, Kind, Which};
 /// Invite's glyph, by the Lucide name `design::icon` draws.
 const INVITE: &str = "user-plus";
 
-/// The network row's glyph.
+/// The room's line's glyphs: the network's, and a note on the call.
 const NETWORK: &str = "wifi-off";
+const NOTE: &str = "info";
 
 /// Your face while the camera is off (SPEC §2.1), and in your thumbnail.
 const FACE: Pixels = px(72.);
@@ -129,8 +130,9 @@ fn stage(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme
         }))
 }
 
-/// The network's line over the stage, in the warning tone: the call's
-/// tracks not through, or the camera sending less picture.
+/// The room's line over the stage, in the warning tone: why the call's
+/// last op did not go through, its tracks not through, or the camera
+/// sending less picture.
 fn network(view: &Huddle, ladder: &Ladder, theme: &Theme) -> Option<Stateful<Div>> {
     let line = view.network()?;
     Some(
@@ -146,7 +148,13 @@ fn network(view: &Huddle, ladder: &Ladder, theme: &Theme) -> Option<Stateful<Div
             .text_color(theme.warning)
             .role(Role::Status)
             .aria_live(view::accesskit::Live::Polite)
-            .child(design::icon(NETWORK, ladder.icon_row))
+            .child(design::icon(
+                match view.call_note {
+                    Some(_) => NOTE,
+                    None => NETWORK,
+                },
+                ladder.icon_row,
+            ))
             .child(div().min_w_0().truncate().child(line)),
     )
 }

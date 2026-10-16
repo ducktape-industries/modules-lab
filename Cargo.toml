@@ -15,7 +15,8 @@ version = "0.1.0"
 [workspace.dependencies]
 # ---- sdk-line: programs @ cfb5a592 (programs `feat/huddle-call-sdk`, PR #430: the call's pieces and a
 # ring's notice, on dev 38d79ea2 with the notifiers of #418; on core dev 8a0151a41 and gpui-pre ef025a32;
-# WIRE_ID 5da8eae9). The app refuses a view built against another wire, so this moves when the app's pin moves.
+# WIRE_ID 5da8eae9). The views here are built at the rev the app pins (the app takes this one with #430), so
+# this moves when the app's pin moves.
 view = { git = "https://github.com/ducktape-industries/programs", rev = "cfb5a5925483af91ddc9427d26bf733a92c6b43a" }
 # What a program is written against: the kernel ABI (a copy of core's, never
 # to drift from it), the program SDK and its mock host, the tables, and the

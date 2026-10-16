@@ -906,7 +906,7 @@ fn room(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div>
         .children(people::voices(view, cx))
         .child(stage(view, compact, network.clone(), cx, theme))
         .when(!compact, |room| {
-            room.children(network.map(|line| call::network_row(line, theme)))
+            room.children(network.map(|line| call::network_row(call::glyph(view), line, theme)))
                 .child(bar(view, cx, theme))
         })
 }
@@ -959,7 +959,7 @@ fn stage(
         return stage
             .child(float_strip(view, main, cx, theme))
             .children(trouble_rows(view, cx, theme))
-            .children(network.map(call::network_glass))
+            .children(network.map(|line| call::network_glass(call::glyph(view), line)))
             .when(view.no_keep_on_top_line, |stage| {
                 stage.child(no_keep_on_top_line(cx))
             });

@@ -16,9 +16,8 @@ it is.
 | `crates/app/huddle-view` | its view: check your camera and microphone, then call people, on the SDK's `camera`, `microphone` and remote pieces; and, built with `notifier`, its notifier: a call ringing you |
 | `crates/bots/tetris-bot` | a Tetris versus player with an account of its own: a client of the node's live lane, playing the view's own match step |
 
-The SDK is programs at the live lane's pin (`Cargo.toml`'s `sdk-line`,
-programs `dev` today). The app refuses a view built against another
-wire, so the pin moves when the app's does.
+The SDK is programs at the rev the app pins (`Cargo.toml`'s `sdk-line`),
+so the pin moves when the app's does.
 
 ## trade
 
@@ -255,7 +254,8 @@ ended. `Op::Start { call, invited }` makes one with the caller joined and
 gives everyone asked in their row in the call's live room (the room is the
 call's id): each publishes only `cam/{account}` and `mic/{account}`, under
 their own number, and hears every track; never a `*` row.
-`Op::Invite` (someone joined) asks more in, or rings again; `Op::Join`
+`Op::Invite` (someone joined, the call not ended) asks more in, or rings
+again, the caller left alone too; `Op::Join`
 (someone asked in, the call not over) and `Op::Decline` answer a ring;
 `Op::Leave` stands you up, and the last one out ends the call; `Op::End`
 (the caller) ends it for everyone and takes every row back. A ring lasts
@@ -288,10 +288,11 @@ its device menu, Invite (the people identity lists) and Leave; M mutes, V
 turns the camera off. In a call your camera and microphone publish your
 tracks (muted, the microphone's track stays up: it is your presence), each
 other person is a voice and a tile (their picture while their camera's
-track is up), the speaker takes the main tile, six tiles at most and "+N"
-for the rest, and a network row says when a track does not come through. A
-call ringing you is a card on the check (a whole screen on a phone) with
-Answer and Decline; a `duck://<chain>/huddle/call/<id>` link answers at
+track is up), the last one to start speaking takes the main tile (each holder keeps it
+2 s), six tiles at most and "+N" for the rest, and a network row says when
+a track does not come through, or why an op of the call did not. A call
+ringing you (`Query::Ringing`) is a card on the check (a whole screen on a
+phone) with Answer and Decline; a `duck://<chain>/huddle/call/<id>` link answers at
 once. A track the node holds (`Waiting`) sends one `Join` each time.
 
 Built with `--features notifier` (`make wasm-notifiers`, packed as

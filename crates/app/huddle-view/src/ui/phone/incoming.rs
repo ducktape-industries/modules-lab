@@ -82,7 +82,7 @@ pub(super) fn screen(
                     ("huddle-answer", ANSWER, words::ANSWER),
                     theme.success,
                     ring.id.clone(),
-                    |view, id, cx| view.answer(id, cx),
+                    |view, id, cx| view.answer(id, true, cx),
                     cx,
                     ladder,
                 )),
