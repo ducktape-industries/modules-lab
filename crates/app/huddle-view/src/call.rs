@@ -23,7 +23,7 @@
 //! The calls ringing the person are the program's `Mine`, asked again on
 //! each block that writes one and, while one is shown, every five seconds:
 //! a ring runs out by the chain's clock, with no block to say so.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use huddle::{Listed, Op};
 use identity::{Identity, Kind as Account, Profile};
@@ -56,6 +56,10 @@ pub(crate) struct Call {
     /// Everyone else in the room, by account: in while their microphone
     /// track is up.
     pub(crate) people: BTreeMap<u64, Person>,
+    /// Everyone whose camera's track is up, in the room or not yet: the
+    /// room lists tracks in no set order, so a camera heard before its
+    /// microphone still shows once its person is in.
+    pub(crate) cameras: BTreeSet<u64>,
     /// The room's track list, followed while in the call.
     _watch: Task<()>,
     /// A Join went out for the `Waiting` heard; cleared when a track is up
@@ -71,8 +75,6 @@ pub(crate) struct Call {
 /// One other person in the call.
 #[derive(Default)]
 pub(crate) struct Person {
-    /// Their camera's track is up: their picture can be drawn.
-    pub(crate) camera: bool,
     /// What their voice's piece last told: whether they speak, and how its
     /// track stands.
     pub(crate) voice: MediaState,
@@ -93,10 +95,10 @@ pub(crate) enum Piece {
 impl Person {
     /// Starts or stops the clock of a piece waiting: a piece placed anew
     /// waits (the host tells a state only when it moves off `Starting`),
-    /// and a picture is drawn only while their camera is up.
-    fn clock(&mut self, now: u64) {
+    /// and a picture is drawn only while their `camera` is up.
+    fn clock(&mut self, now: u64, camera: bool) {
         let starting = self.voice.status == MediaStatus::Starting
-            || (self.camera && self.picture.status == MediaStatus::Starting);
+            || (camera && self.picture.status == MediaStatus::Starting);
         self.starting_since = match (starting, self.starting_since) {
             (true, None) => Some(now),
             (true, since) => since,
@@ -110,6 +112,7 @@ impl Call {
         Self {
             id,
             people: BTreeMap::new(),
+            cameras: BTreeSet::new(),
             _watch: watch,
             knocked: false,
             speaker: None,
@@ -453,7 +456,13 @@ impl Huddle {
         }
         if announce.name == huddle::microphone_track(who) {
             match announce.up {
-                true => call.people.entry(who).or_default().clock(self.ticks),
+                true => {
+                    let camera = call.cameras.contains(&who);
+                    call.people
+                        .entry(who)
+                        .or_default()
+                        .clock(self.ticks, camera);
+                }
                 false => {
                     call.people.remove(&who);
                 }
@@ -462,13 +471,16 @@ impl Huddle {
             let count = call.count();
             cx.host().notify::<HostTitle>(words::in_the_room(count));
             self.ask_names(vec![who], cx);
-        } else if announce.name == huddle::camera_track(who)
-            && let Some(person) = call.people.get_mut(&who)
-        {
-            // a picture placed anew starts over
-            person.camera = announce.up;
-            person.picture = MediaState::default();
-            person.clock(self.ticks);
+        } else if announce.name == huddle::camera_track(who) {
+            match announce.up {
+                true => call.cameras.insert(who),
+                false => call.cameras.remove(&who),
+            };
+            if let Some(person) = call.people.get_mut(&who) {
+                // a picture placed anew starts over
+                person.picture = MediaState::default();
+                person.clock(self.ticks, announce.up);
+            }
         }
         cx.notify();
     }
@@ -499,6 +511,7 @@ impl Huddle {
     ) {
         let now = self.ticks;
         let Some(call) = &mut self.call else { return };
+        let camera = call.cameras.contains(&who);
         let Some(person) = call.people.get_mut(&who) else {
             return;
         };
@@ -507,7 +520,7 @@ impl Huddle {
             Piece::Voice => person.voice = state.clone(),
             Piece::Picture => person.picture = state.clone(),
         }
-        person.clock(now);
+        person.clock(now, camera);
         if piece == Piece::Voice && !was_speaking && state.speaking {
             call.last_spoke = Some(who);
         }

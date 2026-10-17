@@ -827,3 +827,40 @@ fn a_note_in_the_room_gives_way_to_reconnecting_and_goes() {
     assert!(line.cx.find("huddle-network").is_none(), "gone");
     assert!(line.cx.find("huddle-leave").is_some(), "still in the room");
 }
+
+/// The room lists tracks in no set order: Ada's camera up before her
+/// microphone (her row first lets her publish the camera alone) still
+/// shows her picture once her microphone brings her in.
+#[test]
+fn a_camera_heard_before_its_microphone_still_shows() {
+    let (chain, now) = (MockHost::default(), Rc::new(Cell::new(1_000)));
+    let mut me = seated(ME, chain.clone(), now.clone(), false);
+    let mut ada = seated(ADA, chain, now, false);
+    let relay = Relay::new();
+    relay.link(&me.cx).link(&ada.cx);
+    relay.hold(MINTED);
+    relay.grant(MINTED, Some(ME), huddle::seat());
+    let camera_only = ::program::live::Grant {
+        publish: vec!["cam/{account}".into()],
+        subscribe: vec!["*".into()],
+    };
+    relay.grant(MINTED, Some(ADA), camera_only);
+
+    ada.cx.simulate_click("huddle-join");
+    ada.cx.simulate_click("huddle-invite");
+    ada.cx.run_until_parked();
+    ada.cx.simulate_click("huddle-menu-0");
+    ada.wrote();
+    me.wrote();
+    me.cx.simulate_click(&format!("huddle-answer-{MINTED}"));
+    settle(&mut [&mut me, &mut ada]);
+    assert!(
+        me.pieces().voices.is_empty(),
+        "her microphone is not up yet"
+    );
+
+    relay.grant(MINTED, Some(ADA), huddle::seat());
+    settle(&mut [&mut me, &mut ada]);
+    assert_eq!(me.pieces().voices, ["mic/2"]);
+    assert_eq!(me.pieces().pictures, ["cam/2"], "her picture");
+}

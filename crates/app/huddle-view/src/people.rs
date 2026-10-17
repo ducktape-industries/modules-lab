@@ -48,7 +48,10 @@ pub(crate) fn tile(
     theme: &Theme,
 ) -> Stateful<Div> {
     let person = view.call.as_ref().and_then(|call| call.people.get(&who));
-    let camera = person.is_some_and(|person| person.camera);
+    let camera = view
+        .call
+        .as_ref()
+        .is_some_and(|call| call.cameras.contains(&who));
     let speaking = person.is_some_and(|person| person.voice.speaking);
     let name = view.name(who);
     let picture = view.call.as_ref().filter(|_| camera).map(|call| LiveTrack {
