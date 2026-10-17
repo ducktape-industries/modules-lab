@@ -187,6 +187,7 @@ impl View for Trade {
     const DESCRIPTION: &'static str =
         "Spot markets for practice funds: the chart, the book, your orders and balances.";
     const ICON: &'static str = "icons/chart-candlestick.svg";
+    const TINT: Tint = Tint::Green;
     const CAPABILITIES: &'static [Capability] =
         &[Capability::Program, Capability::Op, Capability::Host];
     const TARGETS: &'static [&'static str] = &[trade::PROGRAM];

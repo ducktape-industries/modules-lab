@@ -235,6 +235,7 @@ pub(crate) fn notice(listed: &Listed, caller: &str, until: u64, chain: &str) -> 
         link: ducklink::mint(chain, huddle::PROGRAM, &["call", &listed.id]).unwrap_or_default(),
         kind: NoticeKind::Call,
         until,
+        end_link: String::new(),
     }
 }
 

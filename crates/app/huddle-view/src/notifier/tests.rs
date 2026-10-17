@@ -152,6 +152,7 @@ fn a_call_ringing_me_is_one_ring_until_i_join() {
             link: "duck://testnet-0a1b2c3d/huddle/call/call-1".into(),
             kind: NoticeKind::Call,
             until: 1_000 + RING_SECONDS,
+            end_link: String::new(),
         }
     );
 
