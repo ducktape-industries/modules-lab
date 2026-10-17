@@ -130,7 +130,8 @@ fn start(invited: Vec<u64>) -> Op {
 }
 
 /// A call that rings the reader is one notice: a ring with its `until`,
-/// under the call's tag, linking the call. A block that leaves it ringing
+/// under the call's tag, linking the call, and its end link the call's
+/// leave. A block that leaves it ringing
 /// rings nothing more; their joining takes it down.
 #[test]
 fn a_call_ringing_me_is_one_ring_until_i_join() {
@@ -152,6 +153,7 @@ fn a_call_ringing_me_is_one_ring_until_i_join() {
             link: "duck://testnet-0a1b2c3d/huddle/call/call-1".into(),
             kind: NoticeKind::Call,
             until: 1_000 + RING_SECONDS,
+            end_link: "duck://testnet-0a1b2c3d/huddle/call/call-1/leave".into(),
         }
     );
 

@@ -4,8 +4,11 @@
 //! tag the call (`call/<id>`), its link the call
 //! (`duck://<chain>/huddle/call/<id>`, which the view answers at once),
 //! its kind [`NoticeKind::Call`] (a carrier rings: a VoIP push on a phone,
-//! a banner with Answer and Decline on a desktop) and its `until` the end
-//! of the reader's ring, in the chain's seconds.
+//! a banner with Answer and Decline on a desktop), its `until` the end of
+//! the reader's ring, in the chain's seconds, and its end link the call's
+//! leave (`duck://<chain>/huddle/call/<id>/leave`, which the view leaves
+//! that call by): what a carrier opens when the person ends the answered
+//! call from the system's own call screen.
 //!
 //! This is huddle's NOTIFIER: the host runs it once per network, whether or
 //! not a Huddle pane is open. It asks the program which calls ring the
@@ -235,6 +238,8 @@ pub(crate) fn notice(listed: &Listed, caller: &str, until: u64, chain: &str) -> 
         link: ducklink::mint(chain, huddle::PROGRAM, &["call", &listed.id]).unwrap_or_default(),
         kind: NoticeKind::Call,
         until,
+        end_link: ducklink::mint(chain, huddle::PROGRAM, &["call", &listed.id, "leave"])
+            .unwrap_or_default(),
     }
 }
 
