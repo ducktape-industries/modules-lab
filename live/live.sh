@@ -8,7 +8,7 @@
 #                  with their funds, 36 orders of one resting around BTC/USD's last price,
 #                  two market orders of the other's that trade. Prints the command that
 #                  opens the app on it. Run again, it founds a fresh network on the stage.
-#   live.sh bot    runs the market maker (examples/bot.rs) as wallet bo on the stage `up`
+#   live.sh bot    runs the market maker (crates/bots/trade-bot) as wallet bo on the stage `up`
 #                  seeded, until Ctrl-C
 #   live.sh down   stops the bot when it runs, and the stage's node, which runs until then
 #
@@ -38,10 +38,10 @@ up) ;;
 bot)
   node=$(ps -ww -p "$(cat "$dir/node.pid")" -o args= | sed 's| run --listen .*||')
   [ -x "$node" ] || die "stage $STAGE's node is not running: make live first"
-  DUCKTAPE_PASSWORD=$(cat "$dir/password") exec cargo run -q -p trade --example bot -- "$node" "$dir/home" bo
+  DUCKTAPE_PASSWORD=$(cat "$dir/password") exec cargo run -q -p trade-bot -- "$node" "$dir/home" bo
   ;;
 down)
-  pkill -f "examples/bot .* $dir/home bo" || :
+  pkill -f "trade-bot .* $dir/home bo" || :
   "$KIT" down "$STAGE" --root "$QA"
   exit
   ;;

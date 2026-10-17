@@ -6458,6 +6458,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "trade-bot"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "identity",
+ "store",
+ "trade",
+]
+
+[[package]]
 name = "trade-view"
 version = "0.1.0"
 dependencies = [
