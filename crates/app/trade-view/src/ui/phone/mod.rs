@@ -42,12 +42,11 @@ pub(crate) fn render(view: &Trade, cx: &mut Context<Trade>) -> AnyElement {
         Route::Balances => balances::page(view, cx, &theme),
     };
     // a sheet is the market page's, and goes with it
-    let sheet = match (view.pages.top(), view.sheet) {
-        (Route::Market, Some(Sheet::Ticket)) => Some(ticket::sheet(view, cx, &theme)),
-        (Route::Market, Some(Sheet::ChartSettings)) => Some(sheets::chart(view, cx, &theme)),
-        (Route::Market, Some(Sheet::Step)) => Some(sheets::step(view, cx, &theme)),
-        _ => None,
-    };
+    let sheet = view.drawn_sheet().map(|sheet| match sheet {
+        Sheet::Ticket => ticket::sheet(view, cx, &theme),
+        Sheet::ChartSettings => sheets::chart(view, cx, &theme),
+        Sheet::Step => sheets::step(view, cx, &theme),
+    });
     // Back undoes what is drawn: the sheet, else the page over the
     // markets; with neither, the host leaves the view
     let back = (sheet.is_some() || view.pages.depth() > 0)

@@ -65,7 +65,8 @@ fn page<T: Clone>(rows: Vec<T>, request: &PageRequest) -> PageResponse<T> {
 }
 
 impl World {
-    fn answer(&self, query: Query) -> Reply {
+    /// What the program answers `query`.
+    pub fn answer(&self, query: Query) -> Reply {
         match query {
             Query::Stats => Reply::Stats(self.stats.clone()),
             Query::Candles {

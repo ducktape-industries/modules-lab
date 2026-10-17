@@ -60,7 +60,7 @@ pub(super) fn page(view: &Trade, cx: &mut Context<Trade>, theme: &Theme) -> AnyE
     .caption(words::PRACTICE_FUNDS)
     .child(
         scroller("trade-balances-page")
-            .children(refusal(view, theme))
+            .children(refusal(view.refused(|op| *op == Op::Fund), theme))
             .child(body),
     )
     .into_any_element()
@@ -69,9 +69,7 @@ pub(super) fn page(view: &Trade, cx: &mut Context<Trade>, theme: &Theme) -> AnyE
 /// An asset's row: its name over what its resting orders hold, and what
 /// is free of it.
 fn asset_row(balance: &trade::Balance, theme: &Theme) -> Stateful<Div> {
-    let name = ASSETS
-        .get(balance.asset as usize)
-        .map_or("?", |asset| asset.name);
+    let name = Trade::asset_name(balance.asset);
     let held = format::balance(balance.asset, balance.held);
     let free = div()
         .flex_none()

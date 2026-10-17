@@ -66,13 +66,11 @@ pub(super) fn page(view: &Trade, cx: &mut Context<Trade>, theme: &Theme) -> AnyE
 /// The market's last price and how far it moved in a day, in the move's
 /// colour, over the day's high, low and volume.
 fn price_head(view: &Trade, theme: &Theme) -> Stateful<Div> {
-    let (base, _) = view.assets();
     let stats = view.market_stats().filter(|stats| stats.last > 0);
     let change = stats.and_then(|stats| format::change(stats.last, stats.before));
     let tone = moved(change, theme.foreground, theme);
     // a day nobody traded in has no high and no low to tell
     let traded = stats.filter(|stats| stats.high > 0);
-    let volume = stats.map(|stats| format!("{} {base}", format::quote(stats.volume)));
     let fact = |label: &'static str, value: Option<String>| {
         div()
             .flex()
@@ -127,7 +125,7 @@ fn price_head(view: &Trade, theme: &Theme) -> Stateful<Div> {
                     words::LOW_24H,
                     traded.map(|stats| view.price(stats.low)),
                 ))
-                .child(fact(words::VOLUME_24H, volume)),
+                .child(fact(words::VOLUME_24H, view.day_volume())),
         )
 }
 

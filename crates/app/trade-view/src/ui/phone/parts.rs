@@ -62,8 +62,8 @@ pub(super) fn refused(
 }
 
 /// A refused write, the program's own words, over what it was about.
-pub(super) fn refusal(view: &Trade, theme: &Theme) -> Option<Stateful<Div>> {
-    (!view.refusal.is_empty()).then(|| {
+pub(super) fn refusal(said: Option<&str>, theme: &Theme) -> Option<Stateful<Div>> {
+    said.map(|said| {
         div()
             .id("trade-refusal")
             .px(space::BLOCK)
@@ -73,7 +73,7 @@ pub(super) fn refusal(view: &Trade, theme: &Theme) -> Option<Stateful<Div>> {
             .text_color(theme.danger)
             .role(Role::Alert)
             .aria_live(Live::Assertive)
-            .child(view.refusal.clone())
+            .child(said.to_owned())
     })
 }
 

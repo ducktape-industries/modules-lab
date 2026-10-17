@@ -2,7 +2,7 @@
 //! last price and its day's move, and under them the reader's account,
 //! their open orders and their balances, each a page of its own. A
 //! reader with no account reads why there is none.
-use trade::{ASSETS, MARKETS};
+use trade::MARKETS;
 use view::AnyElement;
 use view::design::Nav;
 use view::prelude::*;
@@ -99,9 +99,7 @@ fn account_rows(view: &Trade, cx: &mut Context<Trade>, theme: &Theme) -> Vec<Any
     let resting = view.open.ready().map(|open| words::resting(open.len()));
     let balances = view.balances.ready().map(|balances| {
         let free = balances.iter().map(|balance| {
-            let name = ASSETS
-                .get(balance.asset as usize)
-                .map_or("?", |asset| asset.name);
+            let name = Trade::asset_name(balance.asset);
             format!("{} {name}", format::brief(balance.asset, balance.free))
         });
         words::joined(&free.collect::<Vec<_>>())

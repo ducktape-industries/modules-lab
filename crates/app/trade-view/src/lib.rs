@@ -84,14 +84,19 @@ pub struct Trade {
     pub(crate) history: Option<Entity<Paged<Order>>>,
     #[serde(skip)]
     pub(crate) fills: Option<Entity<Paged<Fill>>>,
-    /// Why the program refused the last cancel or grant; the ticket keeps
-    /// its own.
+    /// The reader's last cancel, cancel all or grant that the program
+    /// refused, and why; the ticket keeps its own.
     #[serde(skip)]
-    pub(crate) refusal: String,
-    /// The cancel, cancel all or grant on its way: its control waits for
-    /// the answer. The ticket's order is `ticket.placing`.
+    pub(crate) refusal: Option<(Op, String)>,
+    /// The cancels, cancel alls and grants on their way: each one's
+    /// control waits for its answer. The ticket's order is
+    /// `ticket.placing`.
     #[serde(skip)]
-    pub(crate) sending: Option<Op>,
+    pub(crate) sending: Vec<Op>,
+    /// The cancels the program took, whose controls wait on until the
+    /// open orders are read again without what they cancelled.
+    #[serde(skip)]
+    pub(crate) settling: Vec<Op>,
     // What the phone's tree shows; the desktop's reads none of it.
     /// The phone's pages: the markets at the root.
     pub(crate) pages: Pages<Route>,
@@ -203,6 +208,11 @@ impl Trade {
         &MARKETS[self.market]
     }
 
+    /// An asset's name; one past those this build lists reads `?`.
+    pub(crate) fn asset_name(asset: u8) -> &'static str {
+        ASSETS.get(asset as usize).map_or("?", |asset| asset.name)
+    }
+
     /// The names of what the market trades and what it is paid in.
     pub(crate) fn assets(&self) -> (&'static str, &'static str) {
         let market = self.market();
@@ -262,10 +272,28 @@ impl Trade {
         cx.notify();
     }
 
-    /// The phone's Back: it closes the sheet drawn, else the page on top.
+    /// The sheet the phone draws: the one over the market's page, while
+    /// that page is on top.
+    pub(crate) fn drawn_sheet(&self) -> Option<Sheet> {
+        self.sheet.filter(|_| self.pages.top() == &Route::Market)
+    }
+
+    /// Whether the drawn sheet stays: the ticket does while its order is
+    /// on its way, so the answer is said where the order was placed.
+    fn sheet_held(&self) -> bool {
+        self.drawn_sheet() == Some(Sheet::Ticket) && self.ticket.placing
+    }
+
+    /// The phone's Back: it closes the sheet drawn, unless it is held,
+    /// else the page on top.
     pub(crate) fn back(&mut self, cx: &mut Context<Self>) {
-        if self.sheet.take().is_none() {
-            self.pages.pop();
+        match self.drawn_sheet() {
+            Some(_) if self.sheet_held() => return,
+            Some(_) => self.sheet = None,
+            None => {
+                self.pages.pop();
+                self.sheet = None;
+            }
         }
         cx.notify();
     }
@@ -275,9 +303,12 @@ impl Trade {
         cx.notify();
     }
 
+    /// The sheet drawn, closed, unless it is held.
     pub(crate) fn close_sheet(&mut self, cx: &mut Context<Self>) {
-        self.sheet = None;
-        cx.notify();
+        if !self.sheet_held() {
+            self.sheet = None;
+            cx.notify();
+        }
     }
 
     /// The ticket's sheet, on the side pressed.
@@ -294,11 +325,14 @@ impl Trade {
         self.open_ticket(rests == Side::Buy, cx);
     }
 
-    /// An order the program took: the phone's ticket closes and its market
-    /// page shows the reader's orders, where it rests.
+    /// An order the program took: the phone's ticket, which waited on it,
+    /// closes, and its market page shows the reader's orders, where it
+    /// rests.
     pub(crate) fn placed(&mut self) {
-        self.sheet = None;
-        self.segment = Segment::Orders;
+        if self.drawn_sheet() == Some(Sheet::Ticket) {
+            self.sheet = None;
+            self.segment = Segment::Orders;
+        }
     }
 
     pub(crate) fn pick_segment(&mut self, segment: Segment, cx: &mut Context<Self>) {
@@ -311,14 +345,26 @@ impl Trade {
         cx.notify();
     }
 
-    /// The reader's open order `order`, cancelled.
-    pub(crate) fn cancel(&mut self, order: u64, cx: &mut Context<Self>) {
-        self.submit(Op::Cancel { order }, cx);
+    /// Whether `op` is on its way, or a cancel the open orders do not yet
+    /// show taken.
+    pub(crate) fn is_sending(&self, op: &Op) -> bool {
+        self.sending.contains(op) || self.settling.contains(op)
     }
 
-    /// Whether `op` is on its way.
-    pub(crate) fn is_sending(&self, op: &Op) -> bool {
-        self.sending.as_ref() == Some(op)
+    /// Why the program refused the reader's last write that `about` picks
+    /// out: the phone says a cancel's over the open orders, a grant's over
+    /// the balances.
+    pub(crate) fn refused(&self, about: fn(&Op) -> bool) -> Option<&str> {
+        let refusal = self.refusal.as_ref().filter(|(op, _)| about(op));
+        refusal.map(|(_, said)| said.as_str())
+    }
+
+    /// The market's volume over its last 24 hours, with what it trades,
+    /// once it has a last price.
+    pub(crate) fn day_volume(&self) -> Option<String> {
+        let (base, _) = self.assets();
+        let stats = self.market_stats().filter(|stats| stats.last > 0);
+        stats.map(|stats| format!("{} {base}", format::quote(stats.volume)))
     }
 }
 

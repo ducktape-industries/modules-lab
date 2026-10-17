@@ -76,7 +76,9 @@ pub(super) fn step(view: &Trade, cx: &mut Context<Trade>, theme: &Theme) -> AnyE
         let id = ElementId::Name(format!("trade-step-{index}").into());
         let row: Stateful<Div> =
             design::sheet_row(id, view.step_name(*step), LADDER, theme, pick).into_element();
-        row.aria_toggled(picked.into())
+        // one step of several, as the desktop's menu rows are
+        row.role(Role::MenuItemRadio)
+            .aria_toggled(picked.into())
             .when(picked, |row| row.child(design::icon("check", CHECK)))
     });
     let rows: Vec<_> = rows.collect();
@@ -90,6 +92,15 @@ pub(super) fn step(view: &Trade, cx: &mut Context<Trade>, theme: &Theme) -> AnyE
     design::sheet("trade-step-sheet", words::PRICE_STEP, LADDER, theme)
         .on_dismiss(dismiss)
         .child(head)
-        .child(div().flex().flex_col().pb(space::BLOCK).children(rows))
+        .child(
+            div()
+                .id("trade-steps")
+                .flex()
+                .flex_col()
+                .pb(space::BLOCK)
+                .role(Role::Menu)
+                .aria_label(words::PRICE_STEP)
+                .children(rows),
+        )
         .into_any_element()
 }

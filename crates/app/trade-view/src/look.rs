@@ -30,6 +30,13 @@ const TOLD_W: f32 = 88.;
 /// From this wide a plot's readout also tells the candle's time and its
 /// averages.
 const ROOMY: f32 = 600.;
+/// Under this wide a plot (a phone's; the desktop's narrowest is 416) has
+/// its readout told in a caption's size, its figures closer, and wrapped
+/// onto a second line of the strip where one does not hold them.
+const NARROW: f32 = 400.;
+/// A narrow readout's line: two of them under its 4 px top fill the
+/// strip.
+const NARROW_LINE: f32 = 12.;
 /// The minutes between two time labels: what a clock or a calendar reads
 /// easily, up to a month.
 const AXIS: [u64; 13] = [
@@ -167,14 +174,20 @@ impl Trade {
 
     /// The readout along the plot's top: the candle in `slot`, its open,
     /// high, low, close and volume, and on a roomy plot its time and its
-    /// averages.
+    /// averages. A narrow plot's ends at the plot's edge, clear of the
+    /// tags on the axis.
     fn readout(&self, plot: &Plot, slot: usize, span: &Span, theme: &Theme) -> Option<Div> {
         let candle = plot.slots[slot]?;
         let roomy = plot.width >= ROOMY;
+        let narrow = plot.width < NARROW;
+        let (inside, between) = match narrow {
+            true => (design::space::HAIR, design::space::XXS),
+            false => (px(5.), design::space::LG),
+        };
         let pair = |key: &'static str, value: String, tone: Hsla| {
             div()
                 .flex()
-                .gap(px(5.))
+                .gap(inside)
                 .child(key)
                 .child(div().text_color(tone).child(value))
         };
@@ -189,11 +202,20 @@ impl Trade {
             .pl(design::space::LG)
             .pt(design::space::SM)
             .flex()
-            .gap(design::space::LG)
+            .gap(between)
             .font_family(design::fonts::FAMILY_MONO)
             .text_size(design::text::MONO)
             .text_color(theme.muted)
             .whitespace_nowrap()
+            .when(narrow, |readout| {
+                readout
+                    .w(px(plot.width))
+                    .flex_wrap()
+                    .pl(design::space::SM)
+                    .pt(design::space::XXS)
+                    .text_size(design::text::CAPTION)
+                    .line_height(px(NARROW_LINE))
+            })
             .when(roomy, |readout| readout.child(stamp(&candle, span)))
             .child(pair("O", self.price(candle.open), theme.foreground))
             .child(pair("H", self.price(candle.high), theme.foreground))

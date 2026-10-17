@@ -5,7 +5,7 @@
 //! it, so the sheet may be shorter than what it holds with the keyboard
 //! up. It reads the ticket's model (`ticket.rs`) and presses its verbs.
 use trade::Side;
-use view::accesskit::Invalid;
+use view::accesskit::{Invalid, Live};
 use view::design::{Orientation, SHEET_INSET, space};
 use view::prelude::*;
 use view::{AnyElement, Div, FontWeight, Stateful, wire};
@@ -93,11 +93,12 @@ fn body(view: &Trade, draft: &Draft, cx: &mut Context<Trade>, theme: &Theme) -> 
         )
         .into_any_element(),
     };
+    // the amount is what the free funds fall short of, too
     let amount = input(
         "trade-amount",
         &ticket.amount,
         words::AMOUNT,
-        view.amount_problem(draft),
+        view.amount_problem(draft).or(view.funds_problem(draft)),
     );
     let kinds = design::segmented(
         "trade-kind",
@@ -176,7 +177,11 @@ fn body(view: &Trade, draft: &Draft, cx: &mut Context<Trade>, theme: &Theme) -> 
     };
     // what is wrong takes the place of what is available
     let standing = match view.ticket_problem(draft) {
-        Some(wrong) => strip(wrong, theme.danger_soft, theme.danger).into_any_element(),
+        Some(wrong) => strip(wrong, theme.danger_soft, theme.danger)
+            .id("trade-ticket-problem")
+            .role(Role::Alert)
+            .aria_live(Live::Assertive)
+            .into_any_element(),
         None => div()
             .flex()
             .items_baseline()

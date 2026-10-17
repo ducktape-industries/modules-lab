@@ -6,7 +6,7 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use trade::{ASSETS, Balance, Fill, Op, Order, Side};
+use trade::{Balance, Fill, Op, Order, Side};
 use view::design::Ladder;
 use view::prelude::*;
 use view::{Div, Paged, Stateful};
@@ -142,8 +142,8 @@ impl Trade {
             .child(bar)
             .child(div().flex_1())
             .children(action);
-        let refused = (!self.refusal.is_empty()).then(|| {
-            nothing(self.refusal.clone(), theme)
+        let refused = self.refusal.as_ref().map(|(_, said)| {
+            nothing(said.clone(), theme)
                 .bg(theme.danger_soft)
                 .text_color(theme.danger)
         });
@@ -273,10 +273,9 @@ impl Trade {
             move |rows, _| {
                 let rows = rows.filter_map(|row| balances.get(row));
                 let rows = rows.map(|balance| {
-                    let asset = ASSETS.get(balance.asset as usize);
                     let amount = |value: u64| format::balance(balance.asset, value);
                     vec![
-                        cell(asset.map_or("?", |asset| asset.name), theme.foreground),
+                        cell(Trade::asset_name(balance.asset), theme.foreground),
                         figure(amount(balance.free)),
                         design::mono(amount(balance.held))
                             .text_color(theme.muted)

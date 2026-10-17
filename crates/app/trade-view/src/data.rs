@@ -51,7 +51,7 @@ impl Trade {
             // the rows on screen are another account's
             (self.balances, self.open) = (Loadable::Idle, Loadable::Idle);
             (self.history, self.fills) = (None, None);
-            self.refusal.clear();
+            self.refusal = None;
             self.ticket.refusal.clear();
         }
         // a link that came back reads everything; else another account
@@ -110,9 +110,7 @@ impl Trade {
         }
         let (open, page) = (false, PageRequest::default());
         if touched(change, &ask::Orders { owner, open, page }) {
-            cx.load(self, open_orders(host.clone(), owner), |view| {
-                &mut view.open
-            });
+            self.read_open(owner, host.clone(), cx);
             match &self.history {
                 Some(history) => history.update(cx, |history, cx| history.reread(cx)),
                 None => {
@@ -138,6 +136,34 @@ impl Trade {
                 }
             }
         }
+    }
+
+    /// The reader's open orders, read again over the ones shown, as
+    /// [`Context::load`] reads a slot. A read that lands started after
+    /// every cancel the program took so far (each one's answer reads them
+    /// again, which drops any older read), so those cancels are settled.
+    fn read_open(&mut self, owner: u64, host: Host, cx: &mut Context<Self>) {
+        let read = cx.land(open_orders(host, owner), |view, orders, cx| {
+            let settled = !std::mem::take(&mut view.settling).is_empty();
+            let same = match (&view.open, &orders) {
+                (Loadable::Reloading(shown, _), Ok(orders)) => shown == orders,
+                _ => false,
+            };
+            view.open = orders.into();
+            if settled || !same {
+                cx.notify();
+            }
+        });
+        self.open = match self.open.take() {
+            Loadable::Ready(shown) | Loadable::Reloading(shown, _) => {
+                Loadable::Reloading(shown, read)
+            }
+            Loadable::Loading(_) => Loadable::Loading(read),
+            Loadable::Idle | Loadable::Failed(_) => {
+                cx.notify();
+                Loadable::Loading(read)
+            }
+        };
     }
 
     /// The market on screen changed: its chart, book and tape are read in
@@ -185,10 +211,11 @@ impl Trade {
     }
 
     /// The newest candles of the market and span on screen, in place of
-    /// the ones shown: the chart starts over at its live edge.
+    /// the ones shown: the chart starts over at its live edge, no candle
+    /// held and no part of a pan carried.
     pub(crate) fn read_candles(&mut self, cx: &mut Context<Self>) {
         let chart = &mut self.chart;
-        chart.back = 0;
+        (chart.back, chart.held, chart.pan_rest) = (0, None, 0.);
         (chart.rereading, chart.older) = (None, None);
         let page = cx.host().query(self.candles_page(None));
         self.chart.candles = Loadable::Loading(cx.land(page, |view, page, cx| {
@@ -263,21 +290,23 @@ impl Trade {
 
     /// One op to the program, from an account with a link: what it
     /// changed is read again. A refused order says why in the ticket, any
-    /// other op over the panel. While it is on its way the ticket is
-    /// placing, or the op is the one `sending`.
+    /// other op where it was pressed. While it is on its way the ticket is
+    /// placing, or the op is one of those `sending`; a cancel the program
+    /// took waits on until the open orders are read again without it.
     pub(crate) fn submit(&mut self, op: Op, cx: &mut Context<Self>) {
         if !self.may_trade() {
             return;
         }
         let placing = matches!(op, Op::Place { .. });
-        let refusal: fn(&mut Trade) -> &mut String = match placing {
-            true => |view| &mut view.ticket.refusal,
-            false => |view| &mut view.refusal,
-        };
-        refusal(self).clear();
-        self.ticket.placing |= placing;
-        if !placing {
-            self.sending = Some(op.clone());
+        match placing {
+            true => {
+                self.ticket.refusal.clear();
+                self.ticket.placing = true;
+            }
+            false => {
+                self.refusal = None;
+                self.sending.push(op.clone());
+            }
         }
         // the control that sent it is drawn waiting
         cx.notify();
@@ -287,27 +316,36 @@ impl Trade {
             if placing {
                 view.ticket.placing = false;
             }
-            if view.is_sending(&op) {
-                view.sending = None;
+            if let Some(at) = view.sending.iter().position(|sent| *sent == op) {
+                view.sending.remove(at);
             }
-            match result {
+            let refused = match result {
                 Ok(Submitted::Applied { .. }) => {
                     if placing {
                         view.placed();
                     }
-                    view.refresh(cx)
+                    if cancels(&op) {
+                        view.settling.push(op);
+                    }
+                    return view.refresh(cx);
                 }
-                Ok(Submitted::Refused {
-                    refusal: refused, ..
-                })
-                | Err(refused) => *refusal(view) = refused.message,
+                Ok(Submitted::Refused { refusal, .. }) | Err(refusal) => refusal.message,
                 // a doubt reads as a refusal the person may retry: the
-                // changes the op wrote, if it landed, refresh the panel
-                Ok(Submitted::InDoubt { .. }) => *refusal(view) = words::IN_DOUBT.into(),
+                // changes the op wrote, if it landed, refresh what it changed
+                Ok(Submitted::InDoubt { .. }) => words::IN_DOUBT.into(),
+            };
+            match placing {
+                true => view.ticket.refusal = refused,
+                false => view.refusal = Some((op, refused)),
             }
         })
         .detach();
     }
+}
+
+/// Whether `op` cancels the reader's open orders: one, or all of them.
+pub(crate) fn cancels(op: &Op) -> bool {
+    matches!(op, Op::Cancel { .. } | Op::CancelAll)
 }
 
 /// Whether `change` can have moved the answer to `read`; no change in

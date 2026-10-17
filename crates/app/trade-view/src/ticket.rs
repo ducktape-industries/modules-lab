@@ -54,6 +54,9 @@ pub(crate) enum Problem {
     Price,
     /// The amount is not a number of whole lots.
     Amount,
+    /// A market order, and the book has nothing on its other side to
+    /// trade against.
+    Book,
     /// The free funds are short of what the order needs.
     Funds(u64),
 }
@@ -119,9 +122,12 @@ impl Trade {
             Side::Buy => total,
             Side::Sell => amount.ok().flatten(),
         };
+        let unmatched =
+            ticket.market && self.book.ready().is_some() && self.makers(side).is_empty();
         let problem = match (&limit, &amount, needs) {
             (Err(()), ..) => Some(Problem::Price),
             (_, Err(()), _) => Some(Problem::Amount),
+            _ if unmatched => Some(Problem::Book),
             (_, _, Some(needs)) if needs > free => Some(Problem::Funds(needs)),
             _ => None,
         };
@@ -193,7 +199,8 @@ impl Trade {
     }
 
     /// Whether the order has its price: the limit typed, or for a market
-    /// order the book read, which its funds are checked against.
+    /// order the book read, which its funds are checked against and its
+    /// other side found empty or not.
     fn priced(&self, draft: &Draft) -> bool {
         match self.ticket.market {
             true => self.book.ready().is_some(),
@@ -275,16 +282,29 @@ impl Trade {
         matches!(draft.problem, Some(Problem::Amount)).then(|| words::amount_step(&step(), base))
     }
 
-    /// What stands between the ticket and its order, said: the free funds
-    /// short of it, a field's problem, or else why the program refused the
-    /// last order. `None` while nothing does.
-    pub(crate) fn ticket_problem(&self, draft: &Draft) -> Option<String> {
-        match &draft.problem {
+    /// What the free funds fall short of, said: what the order needs and
+    /// what is available.
+    pub(crate) fn funds_problem(&self, draft: &Draft) -> Option<String> {
+        match draft.problem {
             Some(Problem::Funds(needs)) => Some(words::short_of(
-                &draft.funds(*needs),
+                &draft.funds(needs),
                 &draft.funds(draft.free),
             )),
-            Some(_) => self.price_problem(draft).or(self.amount_problem(draft)),
+            _ => None,
+        }
+    }
+
+    /// What stands between the ticket and its order, said: a field's
+    /// problem, the book's other side empty, the free funds short of it,
+    /// or else why the program refused the last order. `None` while
+    /// nothing does.
+    pub(crate) fn ticket_problem(&self, draft: &Draft) -> Option<String> {
+        match &draft.problem {
+            Some(Problem::Price | Problem::Amount) => {
+                self.price_problem(draft).or(self.amount_problem(draft))
+            }
+            Some(Problem::Book) => Some(words::no_makers(draft.side).into()),
+            Some(Problem::Funds(_)) => self.funds_problem(draft),
             None => Some(self.ticket.refusal.clone()).filter(|refusal| !refusal.is_empty()),
         }
     }

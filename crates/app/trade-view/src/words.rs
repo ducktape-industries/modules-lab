@@ -104,6 +104,14 @@ pub(crate) fn short_of(needs: &str, free: &str) -> String {
     format!("This order needs {needs}. {free} is available.")
 }
 
+/// A market order with nothing on the book's other side to trade against.
+pub(crate) fn no_makers(side: Side) -> &'static str {
+    match side {
+        Side::Buy => "The book has no asks: a market order has nothing to buy.",
+        Side::Sell => "The book has no bids: a market order has nothing to sell to.",
+    }
+}
+
 /// Why a reader places nothing: they have no account, or one and no link.
 pub(crate) fn cannot_place(signed_in: bool) -> String {
     let needs = match signed_in {

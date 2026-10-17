@@ -50,7 +50,7 @@ impl Trade {
                 .child(name);
             design::item(segment, Role::RadioButton, picked)
         };
-        let sides = design::composite("trade-side", Role::RadioGroup, "Side")
+        let sides = design::composite("trade-side", Role::RadioGroup, words::SIDE)
             .orientation(Orientation::Horizontal)
             .wrap()
             .active(usize::from(ticket.sell), 2)
@@ -67,7 +67,7 @@ impl Trade {
             .child(side("trade-sell", words::SELL, true));
         let kinds = tabs(
             "trade-kind",
-            "Order type",
+            words::ORDER_TYPE,
             ladder,
             &theme,
             usize::from(ticket.market),

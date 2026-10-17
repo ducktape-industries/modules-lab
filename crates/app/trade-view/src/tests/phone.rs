@@ -2,9 +2,11 @@
 //! phone's tree, picked once at the root. Each test drives it as a finger
 //! would: a tap, a pan, a pinch, the phone's Back.
 use gpui::{PinchEvent, ScrollDelta, ScrollWheelEvent, TouchPhase, point, px};
-use view::methods::{HostSession, Session};
+use trade::Book;
+use view::Role;
+use view::methods::{HostSession, Session, Submitted};
 use view::testing::sweep;
-use view::wire;
+use view::wire::{self, Node};
 
 use super::*;
 use crate::{OrderList, Route, Segment, Sheet};
@@ -247,10 +249,17 @@ fn the_ticket_says_what_stands_in_the_orders_way() {
     cx.simulate_input("trade-amount", "0.00001");
     shows(&cx, &["An amount is a number in steps of 0.0001 BTC."]);
     cx.simulate_input("trade-amount", "0.5");
-    shows(
-        &cx,
-        &["This order needs 31,600.00 USD. 25,280.00 USD is available."],
-    );
+    let short = "This order needs 31,600.00 USD. 25,280.00 USD is available.";
+    shows(&cx, &[short]);
+    // said where it is wrong, and at once
+    let Node::Field { options, .. } = cx.node("trade-amount") else {
+        panic!("the amount is a field");
+    };
+    assert!(options.invalid.is_some());
+    assert_eq!(options.description.as_deref(), Some(short));
+    let problem = cx.interactivity("trade-ticket-problem");
+    assert_eq!(problem.role, Some(Role::Alert));
+    assert_eq!(problem.aria.live, Some(wire::Live::Assertive));
     assert!(!pressable(&cx, "trade-submit"));
     assert_eq!(cx.interactivity("trade-submit").aria.disabled, Some(true));
     cx.simulate_submit("trade-amount");
@@ -280,6 +289,40 @@ fn placing_waits_on_its_answer() {
     assert!(busy(&cx, "trade-submit") && !pressable(&cx, "trade-submit"));
     cx.simulate_submit("trade-amount");
     assert_eq!(ops(&cx).len(), 1, "one order, however often it is pressed");
+}
+
+#[test]
+fn the_ticket_stays_while_its_order_is_on_its_way() {
+    let (mut cx, view, _) = phone();
+    typed_buy(&mut cx);
+    cx.host().never::<Submit<trade::Trade>>();
+    cx.simulate_click("trade-submit");
+    cx.simulate_back();
+    cx.simulate_dismiss("trade-ticket");
+    assert!(
+        cx.find("trade-ticket").is_some(),
+        "its answer is said in it"
+    );
+    view.read(|trade| assert_eq!(trade.pages.top(), &Route::Market));
+}
+
+#[test]
+fn an_order_in_doubt_is_said_in_the_sheet() {
+    let (mut cx, view, _) = phone();
+    typed_buy(&mut cx);
+    cx.host().handle::<Submit<trade::Trade>>(|_| {
+        Ok(Submitted::InDoubt {
+            frame: [0; 32],
+            until: 0,
+        })
+    });
+    cx.simulate_click("trade-submit");
+    cx.run_until_parked();
+    assert!(cx.find("trade-ticket").is_some());
+    shows(&cx, &["No answer came back: it may have gone through."]);
+    view.read(|trade| assert_eq!(trade.segment, Segment::Book, "not placed"));
+    cx.simulate_back();
+    assert!(cx.find("trade-ticket").is_none(), "nothing on its way now");
 }
 
 #[test]
@@ -322,6 +365,63 @@ fn a_cancel_waits_on_its_answer_in_its_row() {
     shows(&cx, &["Cancelling\u{2026}"]);
     assert!(cx.find("cancel-6").is_none(), "no second cancel");
     assert!(pressable(&cx, "cancel-5"), "the other rows' still go");
+    // a second cancel on its way leaves the first one waiting
+    cx.simulate_click("cancel-5");
+    assert!(cx.find("cancel-6").is_none() && cx.find("cancel-5").is_none());
+}
+
+#[test]
+fn a_cancel_the_program_took_waits_until_the_orders_are_read_again() {
+    let (mut cx, _, world) = phone();
+    btc(&mut cx);
+    cx.simulate_click("trade-segment-orders");
+    // the program takes both cancels; the orders' read after them is
+    // on its way, the rows still shown
+    cx.host().never::<Ask<trade::Trade>>();
+    cx.simulate_click("cancel-6");
+    cx.simulate_click("trade-cancel-all");
+    cx.run_until_parked();
+    assert_eq!(ops(&cx), [Op::Cancel { order: 6 }, Op::CancelAll]);
+    assert!(
+        cx.find("cancel-6").is_none(),
+        "no cancel of what is cancelled"
+    );
+    assert!(busy(&cx, "trade-cancel-all") && !pressable(&cx, "trade-cancel-all"));
+    // the read lands: this world keeps its rows, which go again
+    let reads = world.clone();
+    cx.host()
+        .handle::<Ask<trade::Trade>>(move |query| Ok(reads.borrow().answer(query)));
+    linked(&mut cx, false);
+    linked(&mut cx, true);
+    assert!(pressable(&cx, "cancel-6") && pressable(&cx, "trade-cancel-all"));
+}
+
+#[test]
+fn a_refused_cancel_is_said_over_the_orders_alone() {
+    let (mut cx, _, world) = phone();
+    let refusal = "order 6 is not open";
+    world.borrow_mut().refusal = Some(refusal.into());
+    cx.simulate_click("trade-open-orders");
+    cx.simulate_click("cancel-6");
+    cx.run_until_parked();
+    shows(&cx, &[refusal]);
+    cx.simulate_back();
+    cx.simulate_click("trade-balances");
+    assert!(!cx.has_text(refusal), "a grant's page");
+}
+
+#[test]
+fn a_list_on_its_way_says_it_is_read() {
+    let (mut cx, ..) = phone();
+    // another account's lists, which never come
+    cx.host().never::<Ask<trade::Trade>>();
+    cx.host()
+        .stream::<HostSession>()
+        .send(sample::session(Some(READER + 1)));
+    cx.run_until_parked();
+    cx.simulate_click("trade-open-orders");
+    cx.simulate_click("trade-list-history");
+    shows(&cx, &["Reading\u{2026}"]);
 }
 
 #[test]
@@ -380,6 +480,44 @@ fn a_tap_holds_a_candle_and_a_second_tap_lets_it_go() {
     // a tap under the candles, on the times, holds none
     tap_plot(&mut cx, (100., CHART.1 - 4.));
     view.read(|trade| assert_eq!(trade.chart.held, None));
+    // another span's candles hold none
+    tap_plot(&mut cx, (100., 100.));
+    cx.simulate_click("trade-span-4h");
+    view.read(|trade| assert_eq!(trade.chart.held, None));
+}
+
+#[test]
+fn an_empty_market_says_so_and_takes_no_market_order() {
+    let mut world = sample::board();
+    (world.book, world.trades) = (Book::default(), Vec::new());
+    world.candles.clear();
+    let (mut cx, ..) = finger(world, Some(READER));
+    btc(&mut cx);
+    shows(&cx, &["No trades yet", "No orders in the book"]);
+    cx.simulate_click("trade-sell");
+    cx.simulate_click("trade-at-market");
+    cx.simulate_input("trade-amount", "0.1");
+    shows(
+        &cx,
+        &["The book has no bids: a market order has nothing to sell to."],
+    );
+    assert!(!pressable(&cx, "trade-submit"));
+}
+
+#[test]
+fn refused_candles_say_why_in_the_charts_place() {
+    let (mut cx, ..) = phone();
+    btc(&mut cx);
+    cx.host()
+        .refuse::<Ask<trade::Trade>>("unavailable", "the node can't be reached");
+    cx.simulate_click("trade-span-4h");
+    cx.run_until_parked();
+    assert!(cx.find("trade-candles-refused").is_some() && cx.find("trade-plot").is_none());
+    assert!(pressable(&cx, "trade-candles-retry"));
+    assert!(
+        cx.find("book-ask-0").is_some(),
+        "the book read before stays"
+    );
 }
 
 #[test]
@@ -406,6 +544,12 @@ fn the_chart_sheet_switches_what_it_draws_and_the_step_sheet_picks_a_step() {
         &cx,
         &["Price step", "USD per row of the book", "0.1", "1", "10"],
     );
+    // one step of several
+    assert_eq!(
+        cx.interactivity("trade-step-0").role,
+        Some(Role::MenuItemRadio)
+    );
+    assert_eq!(cx.interactivity("trade-steps").role, Some(Role::Menu));
     cx.simulate_click("trade-step-1");
     cx.run_until_parked();
     view.read(|trade| {

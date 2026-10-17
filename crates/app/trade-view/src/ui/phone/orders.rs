@@ -6,7 +6,7 @@
 //! scrolled to its end.
 use std::ops::Range;
 
-use trade::{ASSETS, Fill, Op, Order};
+use trade::{Fill, Op, Order};
 use view::AnyElement;
 use view::accesskit::Live;
 use view::design::space;
@@ -15,6 +15,7 @@ use view::{Div, Paged, Stateful};
 
 use super::parts::{head_action, order_row, quiet, refusal, refused, scroller, traded, waiting};
 use super::{LADDER, back};
+use crate::data::cancels;
 use crate::orders::{average, filled, limit, market_of, priced};
 use crate::{OrderList, Trade, format, words};
 
@@ -101,7 +102,7 @@ pub(super) fn open(view: &Trade, cx: &mut Context<Trade>, theme: &Theme) -> AnyE
     div()
         .flex()
         .flex_col()
-        .children(refusal(view, theme))
+        .children(refusal(view.refused(cancels), theme))
         .child(head)
         .children(rows)
         .into_any_element()
@@ -133,8 +134,9 @@ fn open_row(
             .aria_busy(true)
             .into_any_element(),
         false => {
-            let cancel =
-                cx.listener(move |view: &mut Trade, _: &ClickEvent, _, cx| view.cancel(id, cx));
+            let cancel = cx.listener(move |view: &mut Trade, _: &ClickEvent, _, cx| {
+                view.submit(Op::Cancel { order: id }, cx)
+            });
             design::button(format!("cancel-{id}"), words::CANCEL, LADDER, theme, cancel)
                 .small()
                 .enabled(trades)
@@ -187,7 +189,7 @@ fn fills(view: &Trade, cx: &mut Context<Trade>, theme: &Theme) -> AnyElement {
         &theme,
         move |at, fill: &Fill| {
             let market = market_of(fill.market);
-            let quote = ASSETS[market.quote as usize].name;
+            let quote = Trade::asset_name(market.quote);
             let total = format::total(format::cost(fill.price, fill.amount));
             let caption = words::joined(&[
                 priced(market, fill.price),
@@ -235,7 +237,7 @@ fn paged<T: PartialEq + 'static>(
     if held == 0 {
         // the first page is on its way, or the list has no rows
         let said = match list.read(Paged::is_loading) {
-            true => "",
+            true => words::READING,
             false => empty,
         };
         return quiet(format!("{id}-empty"), said, theme).into_any_element();

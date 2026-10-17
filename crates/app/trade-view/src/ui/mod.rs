@@ -183,7 +183,6 @@ impl Trade {
     /// how far it is from the price a day before, and the day's high, low
     /// and volume. The pane has no room for the volume.
     fn bar(&self, wide: bool, cx: &mut Context<Self>, theme: &Theme) -> impl IntoElement + use<> {
-        let (base, _) = self.assets();
         let stats = self.market_stats().filter(|stats| stats.last > 0);
         let moved = stats.and_then(|stats| format::change(stats.last, stats.before));
         let tone = look::moved(moved, theme.foreground, theme);
@@ -251,8 +250,7 @@ impl Trade {
                 traded.map(|stats| self.price(stats.low)),
             ))
             .when(wide, |bar| {
-                let volume = stats.map(|stats| format!("{} {base}", format::quote(stats.volume)));
-                bar.child(fact(words::VOLUME_24H, volume))
+                bar.child(fact(words::VOLUME_24H, self.day_volume()))
             })
     }
 
