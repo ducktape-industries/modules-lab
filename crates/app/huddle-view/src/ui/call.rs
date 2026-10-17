@@ -12,16 +12,6 @@ use crate::words;
 use crate::{Huddle, Which};
 
 const INVITE: &str = "user-plus";
-const NETWORK: &str = "wifi-off";
-const NOTE: &str = "info";
-
-/// The room's line's glyph: a note on the call, or the network's.
-pub(super) fn glyph(view: &Huddle) -> &'static str {
-    match view.call_note {
-        Some(_) => NOTE,
-        None => NETWORK,
-    }
-}
 
 /// The grid `n` tiles take on a stage `w` by `h`: columns and rows.
 pub(super) fn grid(n: usize, w: f32, h: f32) -> (usize, usize) {

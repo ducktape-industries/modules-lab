@@ -43,6 +43,10 @@ const SLOW_START: u64 = 2;
 /// How often a shown ring is asked again, in the view's seconds.
 const RING_CHECK: u64 = 5;
 
+/// How long the room says why an op of the call did not go through, in the
+/// view's seconds: the call goes on, and the line is the network's again.
+pub(crate) const NOTE_SECONDS: u64 = 5;
+
 /// The most people the desktop's stage shows; the rest are a "+N" chip.
 pub(crate) const STAGE: usize = 6;
 
@@ -261,6 +265,9 @@ impl Huddle {
         let now = self.ticks;
         if let Some(call) = &mut self.call {
             call.hand_on(now);
+        }
+        if self.screen == Screen::Room && now >= self.noted + NOTE_SECONDS {
+            self.call_note = None;
         }
         if !self.rings().is_empty() && now.is_multiple_of(RING_CHECK) {
             self.read_calls(cx);
@@ -520,12 +527,18 @@ impl Huddle {
             || call.slow(self.ticks)
     }
 
-    /// What the room's line (the network row) says, if anything: why the
-    /// call's last op did not go through, reconnecting, or the camera
-    /// sending less picture (the host's words).
+    /// Whether the room's line says the note: there is one, and nothing is
+    /// reconnecting, which wins while it holds.
+    pub(crate) fn noting(&self) -> bool {
+        self.call_note.is_some() && !self.reconnecting()
+    }
+
+    /// What the room's line (the network row) says, if anything:
+    /// reconnecting, why the call's last op did not go through, or the
+    /// camera sending less picture (the host's words).
     pub(crate) fn network(&self) -> Option<String> {
-        if let Some(note) = &self.call_note {
-            return Some(note.clone());
+        if self.noting() {
+            return self.call_note.clone();
         }
         if self.reconnecting() {
             return Some(words::RECONNECTING.into());
@@ -556,14 +569,19 @@ impl Huddle {
             _ => words::call_trouble(&refusal.message),
         };
         self.leave(cx);
-        self.call_note = Some(note);
+        self.say(note);
     }
 
-    /// An op of the call refused: said, and the room left when its call
-    /// cannot go on.
+    /// An op of the call refused: said.
     fn call_failed(&mut self, why: &str, cx: &mut Context<Self>) {
-        self.call_note = Some(words::call_trouble(why));
+        self.say(words::call_trouble(why));
         cx.notify();
+    }
+
+    /// `note` said from now.
+    fn say(&mut self, note: String) {
+        self.call_note = Some(note);
+        self.noted = self.ticks;
     }
 
     /// Sends `op`; a refusal is said in the room.

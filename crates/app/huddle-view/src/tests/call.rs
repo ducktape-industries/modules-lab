@@ -796,3 +796,34 @@ fn a_start_landing_after_you_left_says_leave() {
     };
     assert!(call.ended.is_some(), "no one is rung into it");
 }
+
+/// Why an op of the call did not go through is the room's line for five
+/// seconds, then the call goes on without it; while a track of yours is
+/// not up, "Reconnecting…" is the line instead.
+#[test]
+fn a_note_in_the_room_gives_way_to_reconnecting_and_goes() {
+    let mut line = line(false);
+    line.block(
+        ADA,
+        Op::Start {
+            call: ADAS.into(),
+            invited: vec![ME],
+        },
+    );
+    line.block(ADA, Op::End { call: ADAS.into() });
+    line.route.send(format!("call/{ADAS}"));
+    line.cx.run_until_parked();
+    let note = "The call did not go through: call call-ada is over";
+    assert!(line.cx.has_text(note), "{:?}", line.cx.texts());
+    let key = mic(&line);
+    line.tell(&key, waiting());
+    assert!(line.cx.has_text("Reconnecting\u{2026}"));
+    assert!(!line.cx.has_text(note), "reconnecting wins");
+    line.tell(&key, up());
+    assert!(line.cx.has_text(note), "said again, from now");
+    for _ in 0..5 {
+        line.second();
+    }
+    assert!(line.cx.find("huddle-network").is_none(), "gone");
+    assert!(line.cx.find("huddle-leave").is_some(), "still in the room");
+}

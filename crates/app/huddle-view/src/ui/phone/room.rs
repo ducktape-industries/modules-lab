@@ -26,10 +26,6 @@ use crate::{Huddle, Kind, Which};
 /// Invite's glyph, by the Lucide name `design::icon` draws.
 const INVITE: &str = "user-plus";
 
-/// The room's line's glyphs: the network's, and a note on the call.
-const NETWORK: &str = "wifi-off";
-const NOTE: &str = "info";
-
 /// Your face while the camera is off (SPEC §2.1), and in your thumbnail.
 const FACE: Pixels = px(72.);
 const THUMBNAIL_FACE: Pixels = px(24.);
@@ -148,13 +144,7 @@ fn network(view: &Huddle, ladder: &Ladder, theme: &Theme) -> Option<Stateful<Div
             .text_color(theme.warning)
             .role(Role::Status)
             .aria_live(view::accesskit::Live::Polite)
-            .child(design::icon(
-                match view.call_note {
-                    Some(_) => NOTE,
-                    None => NETWORK,
-                },
-                ladder.icon_row,
-            ))
+            .child(design::icon(look::line_glyph(view), ladder.icon_row))
             .child(div().min_w_0().truncate().child(line)),
     )
 }

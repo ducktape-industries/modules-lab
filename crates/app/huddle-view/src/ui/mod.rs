@@ -21,7 +21,7 @@ use view::{
 
 use crate::look::{
     self, ALERT, CHECK, HEADPHONES, LEAVE, MIC, MIC_OFF, PLAY, SPEAKER, SPEAKING, STOP, VIDEO,
-    VIDEO_OFF, black, glass, muted_mark, trouble_glyph, white,
+    VIDEO_OFF, black, glass, line_glyph, muted_mark, trouble_glyph, white,
 };
 use crate::people::{self, PEOPLE};
 use crate::words::{self, Device};
@@ -906,7 +906,7 @@ fn room(view: &Huddle, cx: &mut Context<Huddle>, theme: &Theme) -> Stateful<Div>
         .children(people::voices(view, cx))
         .child(stage(view, compact, network.clone(), cx, theme))
         .when(!compact, |room| {
-            room.children(network.map(|line| call::network_row(call::glyph(view), line, theme)))
+            room.children(network.map(|line| call::network_row(line_glyph(view), line, theme)))
                 .child(bar(view, cx, theme))
         })
 }
@@ -959,7 +959,7 @@ fn stage(
         return stage
             .child(float_strip(view, main, cx, theme))
             .children(trouble_rows(view, cx, theme))
-            .children(network.map(|line| call::network_glass(call::glyph(view), line)))
+            .children(network.map(|line| call::network_glass(line_glyph(view), line)))
             .when(view.no_keep_on_top_line, |stage| {
                 stage.child(no_keep_on_top_line(cx))
             });

@@ -228,9 +228,13 @@ pub struct Huddle {
     /// The people Invite lists: identity's people, you aside.
     #[serde(skip)]
     pub(crate) invitable: Loadable<Vec<Profile>>,
-    /// Why the last call did not go on, said until the next.
+    /// Why the call's last op did not go through: on the check until the
+    /// next call, in the room for [`call::NOTE_SECONDS`].
     #[serde(skip)]
     pub(crate) call_note: Option<String>,
+    /// When the note was said, by the view's clock.
+    #[serde(skip)]
+    pub(crate) noted: u64,
     /// Seconds on the view's clock, and when the room was entered, a
     /// recording started and the camera was last placed, by it.
     #[serde(skip)]
@@ -670,6 +674,8 @@ impl Huddle {
     pub(crate) fn leave_room(&mut self, cx: &mut Context<Self>) {
         self.hang_up(cx);
         self.screen = Screen::Check;
+        // what the room said stays in the room
+        self.call_note = None;
         self.menu = None;
         self.camera_since = self.ticks;
         self.no_keep_on_top_line = false;

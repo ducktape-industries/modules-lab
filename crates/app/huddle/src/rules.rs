@@ -1,8 +1,9 @@
 //! What each [`Op`](crate::Op) checks and writes: it reads first, then
-//! writes, so a refused op leaves the store as it found it. Join and Invite
-//! are refused once a call is over ([`Call::over`]); Leave, Decline and End,
-//! which only take people out, are refused only once it has ended, so a
-//! call that went over with no write can still be closed.
+//! writes, so a refused op leaves the store as it found it. Join is refused
+//! once a call is over ([`Call::over`]); Invite, which rings again, and
+//! Leave, Decline and End, which take people out, are refused only once it
+//! has ended, so a call that went over with no write can still be rung
+//! again by the one left in it, or closed.
 use ::program::live::{grant, revoke};
 use ::program::{
     Error, ExecCtx, already_exists, capacity, invalid, not_found, unauthorized, wrong_state,
