@@ -16,6 +16,7 @@ use view::{Entity, Role};
 
 use crate::{FLOAT, Huddle, RECORD_SECONDS};
 
+mod call;
 mod phone;
 
 fn camera(id: &str, name: &str, default: bool, facing: Facing) -> CameraDevice {
@@ -289,7 +290,7 @@ fn a_list_read_again_without_the_pick_lets_it_and_its_trouble_go() {
     cx.simulate_click("huddle-menu-1");
     let (key, ..) = camera_piece(&cx).unwrap();
     unplugged(&cx);
-    cx.simulate_media_state(&key, status(MediaStatus::NoDevice));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::NoDevice));
     assert!(cx.has_text("No camera found"));
     cx.simulate_click("huddle-pick-camera");
     cx.run_until_parked();
@@ -308,7 +309,7 @@ fn try_again_does_not_ask_again_for_a_camera_that_went_away() {
     cx.simulate_click("huddle-menu-1");
     let (key, ..) = camera_piece(&cx).unwrap();
     unplugged(&cx);
-    cx.simulate_media_state(&key, status(MediaStatus::Gone));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::Gone));
     assert!(cx.has_text("The camera went away"));
     cx.simulate_click("huddle-camera-retry");
     cx.run_until_parked();
@@ -325,7 +326,7 @@ fn a_device_gone_says_why_when_the_host_knows() {
     let (mut cx, ..) = opened();
     let (key, ..) = camera_piece(&cx).unwrap();
     cx.simulate_media_state(
-        &key,
+        key.clone(),
         MediaState {
             status: MediaStatus::Gone,
             detail: "A call or another app took the camera.".into(),
@@ -338,11 +339,11 @@ fn a_device_gone_says_why_when_the_host_knows() {
     cx.simulate_click("huddle-camera-retry");
     cx.run_until_parked();
     let (key, ..) = camera_piece(&cx).unwrap();
-    cx.simulate_media_state(&key, status(MediaStatus::Gone));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::Gone));
     assert!(cx.has_text(fallback));
     let key = mic_key(&cx);
     cx.simulate_media_state(
-        &key,
+        key.clone(),
         MediaState {
             status: MediaStatus::Gone,
             detail: "A phone call took the microphone.".into(),
@@ -359,7 +360,9 @@ fn picking_a_microphone_or_speaker_ends_the_live_loop() {
     let (mut cx, ..) = opened();
     for picker in ["huddle-pick-speaker", "huddle-pick-microphone"] {
         let key = mic_key(&cx);
-        cx.simulate_media_state(&key, live("Built-in Microphone"));
+        // the piece opens its device anew on a pick: starting, then live
+        cx.simulate_media_state(key.clone(), status(MediaStatus::Starting));
+        cx.simulate_media_state(key.clone(), live("Built-in Microphone"));
         cx.simulate_click("huddle-monitor");
         assert!(mic_piece(&cx).unwrap().3, "looping");
         cx.simulate_click(picker);
@@ -374,17 +377,17 @@ fn picking_a_microphone_or_speaker_ends_the_live_loop() {
 fn a_live_loop_the_host_stopped_turns_its_switch_off() {
     let (mut cx, ..) = opened();
     let key = mic_key(&cx);
-    cx.simulate_media_state(&key, live("Built-in Microphone"));
+    cx.simulate_media_state(key.clone(), live("Built-in Microphone"));
     cx.simulate_click("huddle-monitor");
     assert!(mic_piece(&cx).unwrap().3, "looping");
     let stopped = MediaState {
         monitor_stopped: true,
         ..live("Built-in Microphone")
     };
-    cx.simulate_media_state(&key, stopped);
+    cx.simulate_media_state(key.clone(), stopped);
     assert!(!mic_piece(&cx).unwrap().3, "the loop ends");
     assert_eq!(toggled(&cx, "huddle-monitor"), Some(false));
-    cx.simulate_media_state(&key, live("Built-in Microphone"));
+    cx.simulate_media_state(key.clone(), live("Built-in Microphone"));
     cx.simulate_click("huddle-monitor");
     assert!(mic_piece(&cx).unwrap().3, "on again");
 }
@@ -566,7 +569,7 @@ fn a_long_menu_keeps_its_active_row_in_sight() {
 fn record_then_play_back() {
     let (mut cx, _, ticks) = opened();
     let key = mic_key(&cx);
-    cx.simulate_media_state(&key, live("Built-in Microphone"));
+    cx.simulate_media_state(key.clone(), live("Built-in Microphone"));
     assert!(cx.has_text("Hear how you sound to others."));
     cx.simulate_click("huddle-record");
     assert_eq!(
@@ -576,7 +579,7 @@ fn record_then_play_back() {
         }]
     );
     cx.simulate_media_state(
-        &key,
+        key.clone(),
         MediaState {
             playback: Playback::Recording,
             ..live("Built-in Microphone")
@@ -590,7 +593,7 @@ fn record_then_play_back() {
     cx.run_until_parked();
     assert!(cx.has_text("0:04"), "{:?}", cx.texts());
     cx.simulate_media_state(
-        &key,
+        key.clone(),
         MediaState {
             playback: Playback::Playing,
             ..live("Built-in Microphone")
@@ -650,7 +653,7 @@ fn test_works_while_muted() {
     // when it does not play
     cx.simulate_click("huddle-mic");
     let key = mic_key(&cx);
-    cx.simulate_media_state(&key, status(MediaStatus::Denied));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::Denied));
     cx.host()
         .refuse::<MicrophoneChime>("host_fault", "no such speaker");
     assert!(!disabled(&cx, "huddle-speaker-test"));
@@ -675,7 +678,7 @@ fn the_live_loop_waits_for_its_switch_and_mute_lets_the_microphone_go() {
         "no loop before the microphone is live"
     );
     let key = mic_key(&cx);
-    cx.simulate_media_state(&key, live("Built-in Microphone"));
+    cx.simulate_media_state(key.clone(), live("Built-in Microphone"));
     cx.simulate_click("huddle-monitor");
     assert!(mic_piece(&cx).unwrap().3);
     cx.simulate_click("huddle-mic");
@@ -698,7 +701,7 @@ fn the_live_loop_waits_for_its_switch_and_mute_lets_the_microphone_go() {
 fn trouble_is_said_and_retried() {
     let (mut cx, ..) = opened();
     let (first, ..) = camera_piece(&cx).unwrap();
-    cx.simulate_media_state(&first, status(MediaStatus::Denied));
+    cx.simulate_media_state(first.clone(), status(MediaStatus::Denied));
     assert!(cx.has_text("Camera access is off"));
     assert!(cx.has_text(
         "Your system refused this app the camera. Check the device's permissions (or your \
@@ -709,17 +712,17 @@ fn trouble_is_said_and_retried() {
     cx.run_until_parked();
     assert_ne!(camera_piece(&cx).unwrap().0, first, "a new piece");
     let key = mic_key(&cx);
-    cx.simulate_media_state(&key, status(MediaStatus::Gone));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::Gone));
     assert!(cx.has_text("The microphone went away"));
     cx.simulate_click("huddle-microphone-retry");
     let key = mic_key(&cx);
-    cx.simulate_media_state(&key, status(MediaStatus::NoDevice));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::NoDevice));
     assert!(cx.has_text("No microphone found"));
     let (camera, ..) = camera_piece(&cx).unwrap();
-    cx.simulate_media_state(&camera, status(MediaStatus::NoDevice));
+    cx.simulate_media_state(camera.clone(), status(MediaStatus::NoDevice));
     assert!(cx.has_text("No camera found"));
     cx.simulate_click("huddle-camera-without");
-    assert!(cx.has_text("Only you are here. Calls with others are not connected yet."));
+    assert!(cx.has_text("Only you are here. Invite someone to call them."));
     assert!(camera_piece(&cx).is_none(), "joined without the camera");
 }
 
@@ -731,7 +734,7 @@ fn a_missing_camera_in_the_room_offers_no_join() {
     cx.simulate_click("huddle-join");
     cx.run_until_parked();
     let (key, ..) = camera_piece(&cx).unwrap();
-    cx.simulate_media_state(&key, status(MediaStatus::NoDevice));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::NoDevice));
     assert!(cx.has_text("No camera found"));
     assert!(cx.find("huddle-camera-retry").is_some());
     assert!(cx.find("huddle-camera-without").is_none());
@@ -744,7 +747,7 @@ fn a_refusal_opens_the_settings_where_the_host_can() {
     let (mut cx, ..) = opened();
     let (key, ..) = camera_piece(&cx).unwrap();
     cx.simulate_media_state(
-        &key,
+        key.clone(),
         MediaState {
             status: MediaStatus::Denied,
             detail: "Open System Settings → Privacy & Security → Camera, turn Ducktape on, \
@@ -771,7 +774,7 @@ fn join_and_leave_switch_screens_keeping_picks() {
     cx.simulate_click("huddle-menu-1");
     cx.simulate_click("huddle-mirror");
     cx.simulate_click("huddle-join");
-    assert!(cx.has_text("Only you are here. Calls with others are not connected yet."));
+    assert!(cx.has_text("Only you are here. Invite someone to call them."));
     assert!(cx.has_text("00:00 · only you"), "{:?}", cx.texts());
     let (_, device, mirror, fit) = camera_piece(&cx).unwrap();
     assert_eq!(
@@ -802,7 +805,7 @@ fn the_room_mutes_by_key_and_shows_who_speaks() {
     cx.simulate_click("huddle-join");
     let key = mic_key(&cx);
     cx.simulate_media_state(
-        &key,
+        key.clone(),
         MediaState {
             speaking: true,
             ..live("Built-in Microphone")
@@ -840,7 +843,7 @@ fn a_microphone_in_trouble_in_the_room_says_so() {
     cx.simulate_click("huddle-join");
     cx.run_until_parked();
     let key = mic_key(&cx);
-    cx.simulate_media_state(&key, status(MediaStatus::Gone));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::Gone));
     assert!(mic_piece(&cx).is_none(), "a vanished microphone is let go");
     assert_eq!(
         cx.interactivity("huddle-mic").aria.description.as_deref(),
@@ -857,7 +860,7 @@ fn a_microphone_in_trouble_in_the_room_says_so() {
     cx.simulate_resize(320., 200.);
     cx.run_until_parked();
     let key = mic_key(&cx);
-    cx.simulate_media_state(&key, status(MediaStatus::Busy));
+    cx.simulate_media_state(key.clone(), status(MediaStatus::Busy));
     assert!(cx.has_text("Another app is using the microphone"));
     cx.simulate_click("huddle-microphone-retry");
     cx.run_until_parked();
@@ -1224,7 +1227,7 @@ fn the_float_says_muted_speaking_off_and_gone() {
     let _placement = floated(&mut cx, (320., 200.));
     let key = mic_key(&cx);
     cx.simulate_media_state(
-        &key,
+        key.clone(),
         MediaState {
             speaking: true,
             ..live("Built-in Microphone")
@@ -1246,7 +1249,7 @@ fn the_float_says_muted_speaking_off_and_gone() {
     );
     assert!(cx.find("huddle-mark-muted").is_some());
     let (first, ..) = camera_piece(&cx).unwrap();
-    cx.simulate_media_state(&first, status(MediaStatus::Gone));
+    cx.simulate_media_state(first.clone(), status(MediaStatus::Gone));
     assert!(cx.has_text("The camera went away"));
     assert!(camera_piece(&cx).is_none(), "a vanished camera is let go");
     cx.simulate_click("huddle-camera-retry");

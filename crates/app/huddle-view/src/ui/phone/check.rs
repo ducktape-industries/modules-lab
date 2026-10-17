@@ -70,7 +70,7 @@ pub(super) fn screen(
                 ))
                 .child(mirror(view, cx, ladder, theme)),
         )
-        .child(join(cx, ladder, theme))
+        .child(join(view, cx, ladder, theme))
 }
 
 /// Your picture, square across the body less its insets (a phone held
@@ -426,17 +426,29 @@ fn switch_row(
         .child(switch)
 }
 
-/// Join, at the foot under a hairline, never scrolled away.
-fn join(cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme) -> Div {
+/// Join, at the foot under a hairline, never scrolled away; why the last
+/// call did not go on over it.
+fn join(view: &Huddle, cx: &mut Context<Huddle>, ladder: &Ladder, theme: &Theme) -> Div {
+    let note = view.call_note.clone().map(|note| {
+        div()
+            .id("huddle-call-note")
+            .text_type(ladder.caption)
+            .text_color(theme.muted)
+            .role(Role::Status)
+            .aria_live(view::accesskit::Live::Polite)
+            .child(note)
+    });
     let join = cx.listener(|view: &mut Huddle, _: &ClickEvent, _, cx| view.enter_room(cx));
     div()
         .flex_none()
         // a column stretches the button it holds across its width
         .flex()
         .flex_col()
+        .gap(design::space::SM)
         .p(design::space::BLOCK)
         .border_t_1()
         .border_color(theme.border)
+        .children(note)
         .child(
             design::button("huddle-join", words::JOIN, ladder, theme, join)
                 .kind(ButtonKind::Primary),

@@ -16,8 +16,13 @@ pub(crate) enum Device {
 /// The view's name, and the window's title on the check.
 pub(crate) const HUDDLE: &str = "Huddle";
 
-/// The window's title in the room.
-pub(crate) const IN_THE_ROOM: &str = "Huddle \u{b7} just you";
+/// The window's title in the room: just you, or how many are in it.
+pub(crate) fn in_the_room(people: usize) -> String {
+    match people {
+        0 | 1 => "Huddle \u{b7} just you".into(),
+        people => format!("Huddle \u{b7} {people}"),
+    }
+}
 
 /// A picker naming no device the host listed: the system picks.
 pub(crate) const SYSTEM_DEFAULT: &str = "System default";
@@ -68,8 +73,8 @@ pub(crate) const JOIN: &str = "Join huddle";
 /// Out of the room.
 pub(crate) const LEAVE: &str = "Leave";
 
-/// The room is honest about who is in it.
-pub(crate) const SOLO: &str = "Only you are here. Calls with others are not connected yet.";
+/// The room says when no one else is in it.
+pub(crate) const SOLO: &str = "Only you are here. Invite someone to call them.";
 
 /// What fixes a device's trouble.
 pub(crate) const OPEN_SETTINGS: &str = "Open Settings";
@@ -81,9 +86,74 @@ pub(crate) const UNSUPPORTED_DETAIL: &str = "This copy of Ducktape was built wit
      microphone support, so a huddle has nothing to carry. Install a full build.";
 
 /// The room's clock, and who is in the room.
-pub(crate) fn alone(clock: &str) -> String {
-    format!("{clock} \u{b7} only you")
+pub(crate) fn in_room(clock: &str, people: usize) -> String {
+    match people {
+        0 | 1 => format!("{clock} \u{b7} only you"),
+        people => format!("{clock} \u{b7} {people}"),
+    }
 }
+
+/// The count by the bar's people glyph, as a reader hears it.
+pub(crate) fn in_the_huddle(people: usize) -> String {
+    format!("{people} in the huddle")
+}
+
+/// The chip past the stage: the people not on it.
+pub(crate) fn more(people: usize) -> String {
+    format!("+{people}")
+}
+
+/// The same chip, as a reader hears it.
+pub(crate) fn more_in_the_huddle(people: usize) -> String {
+    format!("{people} more in the huddle")
+}
+
+// ---------- the call ----------
+
+/// An account identity names nothing for.
+pub(crate) fn account(number: u64) -> String {
+    format!("account {number}")
+}
+
+/// A ring: the incoming card, the phone's incoming screen and the notice.
+pub(crate) fn calling(caller: &str) -> String {
+    format!("{caller} is calling")
+}
+
+/// Under a ring: how many are asked into the call, when it is more than
+/// two (a call of two says nothing).
+pub(crate) fn huddle_with(people: usize) -> String {
+    match people {
+        0..=2 => String::new(),
+        people => format!("Huddle with {people} people"),
+    }
+}
+
+/// A ring's answers.
+pub(crate) const ANSWER: &str = "Answer";
+pub(crate) const DECLINE: &str = "Decline";
+
+/// The invite control and its list.
+pub(crate) const INVITE: &str = "Invite";
+pub(crate) const INVITE_PEOPLE: &str = "Invite people";
+
+/// The invite list with no one in it.
+pub(crate) const NO_ONE_TO_INVITE: &str = "No one else on this network yet";
+
+/// The network row: the call's tracks are not through.
+pub(crate) const RECONNECTING: &str = "Reconnecting\u{2026}";
+
+/// A call refused by the program or the node, said in the room.
+pub(crate) fn call_trouble(why: &str) -> String {
+    format!("The call did not go through: {why}")
+}
+
+/// The call ended under the person: the caller ended it, or it was over.
+pub(crate) const CALL_ENDED: &str = "The call ended.";
+
+/// Why an op of the call is not known to have gone through: the node
+/// never said.
+pub(crate) const NO_ANSWER: &str = "no answer came back";
 
 /// A kind of device, as its picker's label and its group in a menu say it.
 pub(crate) fn kind(kind: Kind) -> &'static str {
@@ -91,6 +161,7 @@ pub(crate) fn kind(kind: Kind) -> &'static str {
         Kind::Camera => "Camera",
         Kind::Microphone => "Microphone",
         Kind::Speaker => "Speaker",
+        Kind::Person => "People",
     }
 }
 
@@ -100,6 +171,7 @@ pub(crate) fn menu(which: Which) -> &'static str {
         Which::Kind(of) => kind(of),
         Which::Sound => "Microphone and speaker",
         Which::Routes => PLAY_THROUGH,
+        Which::Invite => INVITE_PEOPLE,
     }
 }
 

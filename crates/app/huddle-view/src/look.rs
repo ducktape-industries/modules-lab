@@ -7,6 +7,7 @@
 use view::Div;
 use view::prelude::*;
 
+use crate::Huddle;
 use crate::words::Device;
 
 // the glyphs both trees draw, by the Lucide names `design::icon` draws
@@ -23,10 +24,21 @@ pub(crate) const STOP: &str = "square";
 pub(crate) const LEAVE: &str = "phone-off";
 pub(crate) const CHECK: &str = "check";
 const CAMERA_OFF: &str = "camera-off";
+const NETWORK: &str = "wifi-off";
+const NOTE: &str = "info";
 const PERSON: &str = "user-round";
 
 /// How big the person's glyph is in their face, of the face's side.
 const FACE_GLYPH: f32 = 0.4;
+
+/// The room's line's glyph: a note on the call while the line says it,
+/// else the network's.
+pub(crate) fn line_glyph(view: &Huddle) -> &'static str {
+    match view.noting() {
+        true => NOTE,
+        false => NETWORK,
+    }
+}
 
 /// The glass over the picture.
 pub(crate) fn glass() -> Hsla {

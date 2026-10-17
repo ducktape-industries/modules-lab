@@ -2,8 +2,13 @@
 # output under $(BUILD_TARGET); none is committed.
 CARGO ?= cargo
 WASM_OPT ?= wasm-opt
-PROGRAMS := trade arcade
+PROGRAMS := trade arcade huddle
 VIEWS := trade-view arcade-view browser-view huddle-view
+# The programs whose view crate (<program>-view) also builds the program's
+# notifier (`notifier` feature, `export_notifier!`): `wasm-notifiers` builds
+# each as <program>.notify.wasm, and the founding packs it as the program's
+# `ducktape.notify` section.
+NOTIFIERS := huddle
 
 BUILD_TARGET := $(abspath $(or $(CARGO_TARGET_DIR),target))
 RELEASE := $(BUILD_TARGET)/wasm32-unknown-unknown/release
@@ -42,7 +47,7 @@ APP_REF ?= dev
 CORE_REF ?=
 LIVE = PROGRAMS="$(PROGRAMS)" QA="$(QA)" KIT="$(KIT)" STAGE="$(STAGE)" APP_REF="$(APP_REF)" CORE_REF="$(CORE_REF)" OUT="$(BUILD_TARGET)/live" RELEASE="$(RELEASE)" MAKE="$(MAKE)" sh live/live.sh
 
-.PHONY: test wasm-programs wasm-describes wasm-views shots live live-down bot
+.PHONY: test wasm-programs wasm-describes wasm-views wasm-notifiers shots live live-down bot
 
 ## fmt, clippy and the native tests: each view on a fake host.
 test:
@@ -67,6 +72,14 @@ wasm-describes:
 ## as modules gates its own, and prints `name  bytes`.
 wasm-views:
 	@$(foreach v,$(VIEWS),$(WASM_BUILD) -p $(v) && WASM_OPT=$(WASM_OPT) sh $(SDK_TOOLS)/view-gate.sh $(v) $(RELEASE)/$(subst -,_,$(v)).wasm || exit 1;)
+
+## builds every notifier into $(RELEASE)/<program>.notify.wasm, optimized
+## and ABI-checked (alloc/init/tick) as modules gates its own, in a target
+## dir of its own (the view crate with `notifier` on is another unit), and
+## prints `name  bytes`.
+wasm-notifiers:
+	@mkdir -p $(RELEASE)
+	@$(foreach p,$(NOTIFIERS),$(WASM_BUILD) --target-dir $(BUILD_TARGET)/notify/$(p) -p $(p)-view --features notifier && cp $(BUILD_TARGET)/notify/$(p)/wasm32-unknown-unknown/release/$(p)_view.wasm $(RELEASE)/$(p).notify.wasm && WASM_OPT=$(WASM_OPT) sh $(SDK_TOOLS)/view-gate.sh $(p).notify $(RELEASE)/$(p).notify.wasm notifier || exit 1;)
 
 ## a view with no node: writes the frames trade-view draws and has the
 ## app's real renderer paint them into shots/*.png (Linux: Xvfb, xdotool,
