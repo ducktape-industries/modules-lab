@@ -1,8 +1,8 @@
-//! What a lab stage is seeded with after its founding (`book.rs`): two
+//! What a lab stage is seeded with after its founding ([`book`]): two
 //! accounts with their practice funds, one's orders resting on both sides
 //! of BTC/USD, and two market orders of the other's that trade against
-//! them. `cargo run -p trade --example seed -- HISTORY OUT` reads the
-//! founding's params (`examples/history` writes them) for the price the
+//! them. `cargo run -p trade-stage --bin seed -- HISTORY OUT` reads the
+//! founding's params (the `history` binary writes them) for the price the
 //! history ends at, and writes each op as the borsh bytes the node's CLI
 //! submits, into OUT, a directory it makes anew:
 //!
@@ -19,8 +19,7 @@ use std::{env, fs, path::Path};
 
 use borsh::BorshSerialize;
 use trade::{History, MARKETS, Op, UNIT};
-
-mod book;
+use trade_stage::book;
 
 /// The names of the two accounts: the taker's, whose wallet the app opens
 /// with, and the maker's.

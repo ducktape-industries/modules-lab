@@ -57,7 +57,7 @@ test:
 
 ## builds every program for wasm32 into $(RELEASE)/<name>.wasm, unpacked:
 ## packing its view and describe module into it is the founding's job
-## (`live/live.sh`, by `crates/app/trade/examples/pack.rs`).
+## (`live/live.sh`, by `crates/tools/pack`).
 wasm-programs:
 	@mkdir -p $(RELEASE)
 	@$(foreach p,$(PROGRAMS),$(WASM_BUILD) --target-dir $(BUILD_TARGET)/programs/$(p) -p $(p) --features program && cp $(call program_wasm,programs,$(p)) $(RELEASE)/ || exit 1;)

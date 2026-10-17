@@ -1,0 +1,17 @@
+[package]
+name = "trade-stage"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+# What a lab stage's Trade is founded and seeded with, made off the chain:
+# the week of history (`history`) and the first book (`seed`), and the same
+# two as a library for Trade's live example.
+[dependencies]
+# the markets, the history's bars and the ops, as the program has them
+trade.workspace = true
+borsh.workspace = true
+# the op that gives a seeded wallet its account
+identity.workspace = true
+# the key scheme that op names
+program.workspace = true

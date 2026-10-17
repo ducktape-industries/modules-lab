@@ -1,11 +1,11 @@
-//! One program as a founding takes it: `cargo run -p trade --example pack
-//! -- SECTION PROGRAM PAYLOAD OUT` writes PROGRAM with PAYLOAD in it as the
-//! custom section SECTION, `ducktape.view` (a view), `ducktape.describe`
+//! One program as a founding takes it:
+//! `cargo run -p pack -- SECTION PROGRAM PAYLOAD OUT` writes PROGRAM with
+//! PAYLOAD in it as the custom section SECTION, `ducktape.view` (a view), `ducktape.describe`
 //! (a describe module) or `ducktape.notify` (a notifier), through
 //! programs' own packer (`founding::embed`, `founding::embed_describe`,
 //! `founding::embed_notify`), which checks each and replaces a section of
 //! that name already there. OUT may be PROGRAM. Every program of a lab
-//! stage goes through it (`live/live.sh`), not trade's alone.
+//! stage goes through it (`live/live.sh`).
 use std::{env, fs, process};
 
 fn main() {

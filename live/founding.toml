@@ -4,7 +4,7 @@
 
 # The program with its view and its describe module packed into it. The
 # params are its markets' past: a week of every market's minutes
-# (`crates/app/trade/examples/history.rs`).
+# (`crates/tools/trade-stage`'s `history`).
 [[programs]]
 id = "trade"
 code = "trade.wasm"

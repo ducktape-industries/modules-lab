@@ -1,0 +1,11 @@
+[package]
+name = "pack"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+# One program as a founding takes it, with its view, describe module or
+# notifier packed in: every program of a lab stage goes through it.
+[dependencies]
+# programs' own packer, which checks each section it embeds
+founding.workspace = true
