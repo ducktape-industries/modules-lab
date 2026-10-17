@@ -97,6 +97,7 @@ impl View for Browser {
     const NAME: &'static str = words::BROWSER;
     const DESCRIPTION: &'static str = "Web pages in tabs.";
     const ICON: &'static str = "icons/globe.svg";
+    const TINT: Tint = Tint::Violet;
     // `web`: the pages; `host`: the links the app opens here
     // (`host.route`) and the window's title (`host.title`); `link`: the
     // phone's addresses handed to its own browser (`link.open`)

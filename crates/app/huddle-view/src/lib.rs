@@ -272,6 +272,7 @@ impl View for Huddle {
     const NAME: &'static str = words::HUDDLE;
     const DESCRIPTION: &'static str = "Check your camera and microphone, then call people.";
     const ICON: &'static str = "icons/video.svg";
+    const TINT: Tint = Tint::Red;
     // `camera` and `microphone`: the pieces and their device lists; `clock`:
     // the room's clock, the recording's countdown and a ring's check;
     // `host`: who reads, the window's title, the float and where the pane

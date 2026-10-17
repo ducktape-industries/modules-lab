@@ -111,6 +111,7 @@ impl View for Arcade {
     const NAME: &'static str = words::ARCADE;
     const DESCRIPTION: &'static str = "Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, with a board of everyone's best scores, and Tetris versus.";
     const ICON: &'static str = "icons/gamepad-2.svg";
+    const TINT: Tint = Tint::Pink;
     const CAPABILITIES: &'static [Capability] = &[
         Capability::Program,
         Capability::Op,
