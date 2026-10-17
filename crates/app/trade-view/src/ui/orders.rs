@@ -7,6 +7,7 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use trade::{Balance, Fill, Op, Order, Side};
+use view::accesskit::Live;
 use view::design::Ladder;
 use view::prelude::*;
 use view::{Div, Paged, Stateful};
@@ -122,13 +123,21 @@ impl Trade {
                 theme,
                 cx.listener(|view, _: &ClickEvent, _, cx| view.submit(Op::CancelAll, cx)),
             )),
-            Panel::Balances => Some(link(
-                "trade-fund",
-                words::GET_FUNDS,
-                trades,
-                theme,
-                cx.listener(|view, _: &ClickEvent, _, cx| view.submit(Op::Fund, cx)),
-            )),
+            Panel::Balances => {
+                let sending = self.is_sending(&Op::Fund);
+                let label = match sending {
+                    true => words::GETTING_FUNDS,
+                    false => words::GET_FUNDS,
+                };
+                let fund = link(
+                    "trade-fund",
+                    label,
+                    trades && !sending,
+                    theme,
+                    cx.listener(|view, _: &ClickEvent, _, cx| view.fund(cx)),
+                );
+                Some(fund.when(sending, |fund| fund.aria_busy(true)))
+            }
             _ => None,
         };
         let bar = div()
@@ -144,8 +153,19 @@ impl Trade {
             .children(action);
         let refused = self.refusal.as_ref().map(|(_, said)| {
             nothing(said.clone(), theme)
+                .id("trade-refusal")
                 .bg(theme.danger_soft)
                 .text_color(theme.danger)
+                .role(Role::Alert)
+                .aria_live(Live::Assertive)
+        });
+        let granted = self.granted.map(|said| {
+            nothing(said, theme)
+                .id("trade-granted")
+                .bg(theme.success_soft)
+                .text_color(theme.success)
+                .role(Role::Status)
+                .aria_live(Live::Polite)
         });
         let body = match self.session.account {
             None => nothing(words::SIGNED_OUT, theme).into_any_element(),
@@ -165,6 +185,7 @@ impl Trade {
             .border_color(theme.border)
             .child(bar)
             .children(refused)
+            .children(granted)
             .child(body)
     }
 

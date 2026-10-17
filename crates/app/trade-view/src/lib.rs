@@ -88,6 +88,10 @@ pub struct Trade {
     /// refused, and why; the ticket keeps its own.
     #[serde(skip)]
     pub(crate) refusal: Option<(Op, String)>,
+    /// What the reader's last Get practice funds came to, said where it
+    /// was pressed until their next write or another account.
+    #[serde(skip)]
+    pub(crate) granted: Option<&'static str>,
     /// The cancels, cancel alls and grants on their way: each one's
     /// control waits for its answer. The ticket's order is
     /// `ticket.placing`.

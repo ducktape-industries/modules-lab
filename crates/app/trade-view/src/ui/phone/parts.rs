@@ -77,6 +77,20 @@ pub(super) fn refusal(said: Option<&str>, theme: &Theme) -> Option<Stateful<Div>
     })
 }
 
+/// What the reader's last grant came to, over the balances it changed.
+pub(super) fn granted(said: &'static str, theme: &Theme) -> Stateful<Div> {
+    div()
+        .id("trade-granted")
+        .px(space::BLOCK)
+        .py(space::MD)
+        .bg(theme.success_soft)
+        .text_type(LADDER.secondary)
+        .text_color(theme.success)
+        .role(Role::Status)
+        .aria_live(Live::Polite)
+        .child(said)
+}
+
 /// The note that there is no link to a node: what is shown is the last
 /// read, and nothing is sent.
 // SDK gap: a note strip (a ground, a glyph and a sentence)

@@ -95,6 +95,27 @@ fn a_cancel_a_cancel_all_and_a_grant_send_their_ops() {
 }
 
 #[test]
+fn a_grant_says_it_is_on_its_way_then_what_it_did() {
+    let (mut cx, ..) = wide();
+    cx.simulate_click("trade-balances");
+    cx.host().never::<Submit<trade::Trade>>();
+    cx.simulate_click("trade-fund");
+    shows(&cx, &["Getting practice funds\u{2026}"]);
+    assert!(!pressable(&cx, "trade-fund"), "one grant at a time");
+
+    let (mut cx, ..) = wide();
+    cx.simulate_click("trade-balances");
+    cx.simulate_click("trade-fund");
+    cx.run_until_parked();
+    shows(&cx, &["Practice funds topped up to the grant."]);
+    assert!(pressable(&cx, "trade-fund"));
+    // the reader's next write takes the note away
+    cx.simulate_click("trade-open");
+    cx.simulate_click("trade-cancel-all");
+    assert!(cx.find("trade-granted").is_none());
+}
+
+#[test]
 fn what_the_program_refused_a_cancel_for_is_said_over_the_rows() {
     let (mut cx, _, world) = wide();
     let refusal = "order 6 is not open";
