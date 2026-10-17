@@ -380,7 +380,9 @@ fn an_end_link_leaves_its_call_and_no_other() {
     );
     assert_eq!(line.joins(), 1, "no Join on the way out");
     assert!(line.cx.find("huddle-join").is_some(), "on the check");
-    assert_eq!(line.pieces().camera, Some(None), "publishing nothing");
+    let pieces = line.pieces();
+    assert_eq!(pieces.camera, Some(None), "publishing nothing");
+    assert_eq!(pieces.microphone, Some((None, false)), "no hot mic");
 
     // out of every call: the same end again sends nothing
     let sent = line.sent.borrow().len();
