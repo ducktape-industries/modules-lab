@@ -4,7 +4,7 @@
 //! --preconfirm trade` with an op's borsh bytes, `NODE query trade` with a
 //! query's.
 //!
-//! `cargo run -p trade --example bot -- NODE HOME WALLET` runs until it is
+//! `cargo run -p trade-bot -- NODE HOME WALLET` runs until it is
 //! stopped. HOME is the node's workspace (`DUCKTAPE_HOME`, the wallet's key
 //! in `HOME/keys/`), the wallet's password is `DUCKTAPE_PASSWORD`. `make bot`
 //! runs it as `bo` on the stage `make live` made; on a network, a service

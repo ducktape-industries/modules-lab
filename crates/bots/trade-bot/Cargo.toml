@@ -1,0 +1,16 @@
+[package]
+name = "trade-bot"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+# Trade's market maker: a process off the chain that trades as one wallet
+# through the node's own binary, never a view.
+[dependencies]
+# the ops, queries and markets, as the program has them
+trade.workspace = true
+# the wallet's account, by its key
+identity.workspace = true
+# a page of open orders
+store.workspace = true
+borsh.workspace = true

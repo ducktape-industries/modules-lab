@@ -15,6 +15,7 @@ it is.
 | `crates/app/huddle` | calls between accounts: who is asked in, who joined, and each one's row in the call's live room: the program |
 | `crates/app/huddle-view` | its view: check your camera and microphone, then call people, on the SDK's `camera`, `microphone` and remote pieces; and, built with `notifier`, its notifier: a call ringing you |
 | `crates/bots/tetris-bot` | a Tetris versus player with an account of its own: a client of the node's live lane, playing the view's own match step |
+| `crates/bots/trade-bot` | Trade's market maker: a process off the chain that keeps every market's book two-sided and its price moving, through the node's own binary |
 
 The SDK is programs at the rev the app pins (`Cargo.toml`'s `sdk-line`),
 so the pin moves when the app's does.
@@ -380,14 +381,10 @@ There is no runner that keeps one view alive without a node. What there is:
    stops it.
 
    `make bot QA=/path/to/qa` keeps every market of that stage moving until
-   Ctrl-C (or `make live-down`): `examples/bot.rs`, as wallet `bo`, walks
-   a mid from each market's last price, rests four prices a side about it
-   and moves them as it walks (the new prices first, then the old ones
-   cancelled by id, so the book is never empty), and takes once in each
-   market a round, so the 1m candles form. A submit takes 0.1 to 0.3 s
-   there (the node's CLI starts, opens the key and waits for the op to
-   preconfirm) and the rounds follow each other: about 9 rounds and 450
-   ops a minute in all, and 10 to 13 trades a minute in each market.
+   Ctrl-C (or `make live-down`): `crates/bots/trade-bot`, as wallet `bo`.
+   Every 20 s it moves each market's fair price, keeps three prices a side
+   resting about it and takes once in each market towards it, so the 1m
+   candles form; garage runs the same bot as a service.
 
    The stage's programs is the rev this workspace pins, and its app is
    `APP_REF` (`dev` when not given), which must pin that same rev:
