@@ -342,6 +342,68 @@ fn a_call_link_joins_at_once() {
     );
 }
 
+/// A ring's end link (`call/<id>/leave`, opened when the answered call is
+/// ended from the system's call screen) leaves that call as Leave does,
+/// joining nothing first; an end for another call, or with no call, does
+/// nothing. An end right behind its answer finds the call answered.
+#[test]
+fn an_end_link_leaves_its_call_and_no_other() {
+    let mut line = line(false);
+    line.block(
+        ADA,
+        Op::Start {
+            call: ADAS.into(),
+            invited: vec![ME],
+        },
+    );
+    line.route.send(format!("call/{ADAS}"));
+    line.cx.run_until_parked();
+    assert_eq!(line.joins(), 1);
+
+    // another call's end: still in Ada's
+    line.route.send("call/call-old/leave".into());
+    line.cx.run_until_parked();
+    assert!(line.cx.find("huddle-bar").is_some(), "still in the room");
+    assert!(
+        !line
+            .sent
+            .borrow()
+            .iter()
+            .any(|op| matches!(op, Op::Leave { .. }))
+    );
+
+    line.route.send(format!("call/{ADAS}/leave"));
+    line.cx.run_until_parked();
+    assert_eq!(
+        line.sent.borrow().last(),
+        Some(&Op::Leave { call: ADAS.into() })
+    );
+    assert_eq!(line.joins(), 1, "no Join on the way out");
+    assert!(line.cx.find("huddle-join").is_some(), "on the check");
+    let pieces = line.pieces();
+    assert_eq!(pieces.camera, Some(None), "publishing nothing");
+    assert_eq!(pieces.microphone, Some((None, false)), "no hot mic");
+
+    // out of every call: the same end again sends nothing
+    let sent = line.sent.borrow().len();
+    line.route.send(format!("call/{ADAS}/leave"));
+    line.cx.run_until_parked();
+    assert_eq!(line.sent.borrow().len(), sent);
+
+    // answered and ended in one go: in, then out
+    line.route.send(format!("call/{ADAS}"));
+    line.route.send(format!("call/{ADAS}/leave"));
+    line.cx.run_until_parked();
+    assert_eq!(
+        line.sent.borrow()[sent..],
+        [
+            Op::Join { call: ADAS.into() },
+            Op::Leave { call: ADAS.into() }
+        ]
+    );
+    assert!(line.cx.find("huddle-join").is_some(), "on the check");
+}
+
 /// Invite in a room with no call starts one, ringing whoever was picked,
 /// under the id the host mints; the pieces then publish into it. The
 /// tracks' `Waiting` sends one Join, however many say it; one more once a

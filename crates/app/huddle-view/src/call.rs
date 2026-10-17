@@ -173,7 +173,7 @@ impl Call {
 impl Huddle {
     /// Follows what calls need for as long as the view runs: the session
     /// (who you are), the program's blocks (the calls ringing you) and the
-    /// links opened into the view (`call/<id>`: answer it).
+    /// links opened into the view ([`Huddle::opened`]).
     pub(crate) fn watch_calls(&mut self, cx: &mut Context<Self>) {
         cx.follow::<HostSession>((), |view, session, cx| match session {
             Ok(next) => view.session_changed(next, cx),
@@ -195,20 +195,31 @@ impl Huddle {
         .detach();
         cx.follow::<HostRoute>((), |_, route, cx| match route {
             Ok(route) => {
-                if let Some(id) = route.strip_prefix("call/") {
-                    // after this update, where the window says what the
-                    // pointer is
-                    let id = id.to_owned();
-                    cx.spawn(async move |view, cx| {
-                        let _ = view
-                            .update_in(cx, |view, window, cx| view.answer(id, window.touch(), cx));
-                    })
-                    .detach();
-                }
+                // after this update, where the window says what the pointer
+                // is; each in the order the links were opened, so an end
+                // right behind its answer finds the call answered
+                cx.spawn(async move |view, cx| {
+                    let _ = view.update_in(cx, |view, window, cx| {
+                        view.opened(&route, window.touch(), cx)
+                    });
+                })
+                .detach();
             }
             Err(refusal) => cx.log_refused("the links opened here", &refusal),
         })
         .detach();
+    }
+
+    /// A link opened into the view, by its route: `call/<id>` (a ring's
+    /// link) answers call `id`; `call/<id>/leave` (a ring's end link: the
+    /// person ended the answered call from the system's call screen) leaves
+    /// it, and only it. Any other route opens nothing.
+    fn opened(&mut self, route: &str, touch: bool, cx: &mut Context<Self>) {
+        match route.split('/').collect::<Vec<_>>().as_slice() {
+            ["call", id] => self.answer((*id).to_owned(), touch, cx),
+            ["call", id, "leave"] => self.leave_call(id, cx),
+            _ => {}
+        }
     }
 
     fn session_changed(&mut self, next: Session, cx: &mut Context<Self>) {
@@ -398,6 +409,17 @@ impl Huddle {
         }
         self.send(Op::Decline { call: id }, cx);
         cx.notify();
+    }
+
+    /// Out of call `id` as Leave takes the person out, when the room is in
+    /// it. In another call, or none (a link that opens the view finds
+    /// none), nothing: the end of a call the room has left already, landing
+    /// late, must not end the call the person is in now, and with no call
+    /// the room publishes nothing, so no one hears or sees them.
+    fn leave_call(&mut self, id: &str, cx: &mut Context<Self>) {
+        if self.call.as_ref().is_some_and(|call| call.id == id) {
+            self.leave(cx);
+        }
     }
 
     /// Out of the call: the pieces leave the frame with it, and the

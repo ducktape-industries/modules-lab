@@ -13,7 +13,9 @@
 //! them into it. Your camera and microphone publish into your own tracks
 //! of its room; each other person is heard through a voice the view places
 //! for them, and seen through a picture on the stage. Answer, or a link to
-//! the call (`call/<id>`), joins at once.
+//! the call (`call/<id>`), joins at once; a link to its leave
+//! (`call/<id>/leave`, what a phone opens when the call is ended from the
+//! system's call screen) leaves it.
 //!
 //! Join floats the room in the same press (`host.float`): the pane leaves
 //! the desk into a small window of its own, kept above other apps' windows,
