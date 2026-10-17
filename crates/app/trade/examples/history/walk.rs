@@ -1,18 +1,17 @@
 //! A week of every market's minutes, made up: the history a lab stage is
-//! founded with. `cargo run -p trade --example history -- OUT` writes the
-//! founding's params, a borsh `Vec<History>`.
+//! founded with (`main.rs` writes it for `make live`) and Trade's live
+//! example founds its fake node with.
 //!
 //! A market walks from its own start. A minute closes where it opened,
 //! moved by the sum of three draws (so most moves are small) and by the
 //! drift of the four hours it is in, both in millionths of the price. Its
 //! wicks reach one draw past the body, and its volume is a draw of lots,
 //! twice as heavy in the second half of each day. Integers only and a seed
-//! a market: every run writes the same bytes.
-
-use std::{env, fs};
+//! a market: every run gives the same bars.
 
 use trade::{Bar, History, LOT, MARKETS, UNIT};
 
+/// A week of minutes: the bars of each market's history.
 const MINUTES: usize = 7 * 24 * 60;
 /// The most one of a minute's three draws moves the price, in millionths.
 const MOVE: i64 = 400;
@@ -84,23 +83,7 @@ fn walk(market: u8) -> History {
     }
 }
 
-fn main() {
-    let out = env::args().nth(1).expect("usage: history OUT");
-    let histories: Vec<History> = (0u8..).take(MARKETS.len()).map(walk).collect();
-    for history in &histories {
-        let (first, last) = (history.bars[0], history.bars[MINUTES - 1]);
-        let high = history.bars.iter().map(|bar| bar.high).max().unwrap_or(0);
-        let low = history.bars.iter().map(|bar| bar.low).min().unwrap_or(0);
-        let shown = |price: u64| price as f64 / UNIT as f64;
-        println!(
-            "{}: {} bars, from {} to {}, between {} and {}",
-            MARKETS[usize::from(history.market)].name,
-            history.bars.len(),
-            shown(first.open),
-            shown(last.close),
-            shown(low),
-            shown(high),
-        );
-    }
-    fs::write(&out, borsh::to_vec(&histories).expect("a history encodes")).expect("OUT is written");
+/// Every market's week, in [`MARKETS`]' order.
+pub fn histories() -> Vec<History> {
+    (0u8..).take(MARKETS.len()).map(walk).collect()
 }

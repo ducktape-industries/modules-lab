@@ -6447,6 +6447,7 @@ dependencies = [
 name = "trade-view"
 version = "0.1.0"
 dependencies = [
+ "borsh",
  "gpui-pre",
  "program",
  "serde",

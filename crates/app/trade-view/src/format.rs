@@ -55,12 +55,32 @@ pub(crate) fn total(value: u64) -> String {
     quote(value.saturating_add(UNIT / 200))
 }
 
+/// Whether markets are paid in asset `asset`.
+fn paid_in(asset: u8) -> bool {
+    MARKETS.iter().any(|market| market.quote == asset)
+}
+
 /// A balance of asset `asset`: what markets are paid in reads as a sum,
 /// what they trade as an amount.
 pub(crate) fn balance(asset: u8, value: u64) -> String {
-    match MARKETS.iter().any(|market| market.quote == asset) {
+    match paid_in(asset) {
         true => quote(value),
         false => amount(value),
+    }
+}
+
+/// `value` with no places it does not need: a grant of `10,000`, a
+/// balance of `0.65`.
+pub(crate) fn trimmed(value: u64) -> String {
+    fixed(value, places([value]))
+}
+
+/// A balance of asset `asset` in a line of several: a sum as [`balance`]
+/// writes it, an amount [`trimmed`].
+pub(crate) fn brief(asset: u8, value: u64) -> String {
+    match paid_in(asset) {
+        true => quote(value),
+        false => trimmed(value),
     }
 }
 

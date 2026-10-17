@@ -23,3 +23,7 @@ store.workspace = true
 [dev-dependencies]
 # a test writes the frame it drew as the JSON the app's `--render-tree` reads
 serde_json.workspace = true
+# `examples/live.rs`: the view in the real app over the fake node, and the
+# order id its seed reads back
+view = { workspace = true, features = ["rig"] }
+borsh.workspace = true
