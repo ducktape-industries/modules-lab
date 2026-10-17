@@ -201,9 +201,9 @@ pub(crate) const GET_FUNDS: &str = "Get practice funds";
 /// Get practice funds while the grant is on its way.
 pub(crate) const GETTING_FUNDS: &str = "Getting practice funds\u{2026}";
 /// The grant landed.
-pub(crate) const FUNDED: &str = "Practice funds added: every asset is at its grant.";
+pub(crate) const FUNDED: &str = "Practice funds topped up to the grant.";
 /// Get practice funds pressed with every asset at its grant: nothing went.
-pub(crate) const AT_GRANT: &str = "Every asset is at its grant already: nothing to add.";
+pub(crate) const AT_GRANT: &str = "Every asset was already at its grant: nothing to add.";
 pub(crate) const NO_OPEN_ORDERS: &str = "No open orders";
 pub(crate) const NO_ORDERS: &str = "No orders yet";
 pub(crate) const NO_FILLS: &str = "No fills yet";

@@ -89,7 +89,7 @@ pub struct Trade {
     #[serde(skip)]
     pub(crate) refusal: Option<(Op, String)>,
     /// What the reader's last Get practice funds came to, said where it
-    /// was pressed until their next write.
+    /// was pressed until their next write or another account.
     #[serde(skip)]
     pub(crate) granted: Option<&'static str>,
     /// The cancels, cancel alls and grants on their way: each one's

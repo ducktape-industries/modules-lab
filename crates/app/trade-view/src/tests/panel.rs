@@ -107,8 +107,12 @@ fn a_grant_says_it_is_on_its_way_then_what_it_did() {
     cx.simulate_click("trade-balances");
     cx.simulate_click("trade-fund");
     cx.run_until_parked();
-    shows(&cx, &["Practice funds added: every asset is at its grant."]);
+    shows(&cx, &["Practice funds topped up to the grant."]);
     assert!(pressable(&cx, "trade-fund"));
+    // the reader's next write takes the note away
+    cx.simulate_click("trade-open");
+    cx.simulate_click("trade-cancel-all");
+    assert!(cx.find("trade-granted").is_none());
 }
 
 #[test]

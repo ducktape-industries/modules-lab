@@ -4,12 +4,11 @@
 //! over the same button.
 use trade::{ASSETS, Op};
 use view::AnyElement;
-use view::accesskit::Live;
 use view::design::space;
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
-use super::parts::{quiet, refusal, refused, scroller};
+use super::parts::{granted, quiet, refusal, refused, scroller};
 use super::{LADDER, back};
 use crate::{Trade, format, words};
 
@@ -118,20 +117,6 @@ fn grant(view: &Trade, cx: &mut Context<Trade>, theme: &Theme) -> Div {
                 .text_color(theme.muted)
                 .child(words::grants(&grants)),
         )
-}
-
-/// What the reader's last grant came to, over the balances it changed.
-fn granted(said: &'static str, theme: &Theme) -> Stateful<Div> {
-    div()
-        .id("trade-granted")
-        .px(space::BLOCK)
-        .py(space::MD)
-        .bg(theme.success_soft)
-        .text_type(LADDER.secondary)
-        .text_color(theme.success)
-        .role(Role::Status)
-        .aria_live(Live::Polite)
-        .child(said)
 }
 
 /// Get practice funds: off while the reader may not, saying it is on its

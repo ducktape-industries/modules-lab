@@ -129,13 +129,14 @@ impl Trade {
                     true => words::GETTING_FUNDS,
                     false => words::GET_FUNDS,
                 };
-                Some(link(
+                let fund = link(
                     "trade-fund",
                     label,
                     trades && !sending,
                     theme,
                     cx.listener(|view, _: &ClickEvent, _, cx| view.fund(cx)),
-                ))
+                );
+                Some(fund.when(sending, |fund| fund.aria_busy(true)))
             }
             _ => None,
         };
@@ -152,8 +153,11 @@ impl Trade {
             .children(action);
         let refused = self.refusal.as_ref().map(|(_, said)| {
             nothing(said.clone(), theme)
+                .id("trade-refusal")
                 .bg(theme.danger_soft)
                 .text_color(theme.danger)
+                .role(Role::Alert)
+                .aria_live(Live::Assertive)
         });
         let granted = self.granted.map(|said| {
             nothing(said, theme)

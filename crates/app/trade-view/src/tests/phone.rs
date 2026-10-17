@@ -224,7 +224,7 @@ fn a_grant_says_it_is_on_its_way_then_what_it_did() {
         &cx,
         &[
             "Get practice funds",
-            "Practice funds added: every asset is at its grant.",
+            "Practice funds topped up to the grant.",
         ],
     );
 }
@@ -232,10 +232,11 @@ fn a_grant_says_it_is_on_its_way_then_what_it_did() {
 #[test]
 fn a_grant_with_every_asset_full_sends_nothing_and_says_so() {
     let mut world = sample::board();
+    // what resting orders hold counts, as the program counts it
     let full = |(asset, granted): (u8, &trade::Asset)| trade::Balance {
         asset,
-        free: granted.grant,
-        held: 0,
+        free: granted.grant - 1,
+        held: 1,
     };
     world.balances = (0u8..).zip(&trade::ASSETS).map(full).collect();
     let (mut cx, ..) = finger(world, Some(READER));
@@ -244,7 +245,7 @@ fn a_grant_with_every_asset_full_sends_nothing_and_says_so() {
     assert!(ops(&cx).is_empty());
     shows(
         &cx,
-        &["Every asset is at its grant already: nothing to add."],
+        &["Every asset was already at its grant: nothing to add."],
     );
 }
 

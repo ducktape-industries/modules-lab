@@ -290,14 +290,17 @@ impl Trade {
 
     /// One op to the program, from an account with a link: what it
     /// changed is read again. A refused order says why in the ticket, any
-    /// other op where it was pressed, as a grant that landed says so. While it is on its way the ticket is
-    /// placing, or the op is one of those `sending`; a cancel the program
-    /// took waits on until the open orders are read again without it.
+    /// other op where it was pressed; a grant that landed says so there
+    /// too. While it is on its way the ticket is placing, or the op is one
+    /// of those `sending`; a cancel the program took waits on until the
+    /// open orders are read again without it. An answer that comes back
+    /// to another account says nothing: it was not theirs.
     pub(crate) fn submit(&mut self, op: Op, cx: &mut Context<Self>) {
         if !self.may_trade() {
             return;
         }
         let placing = matches!(op, Op::Place { .. });
+        let account = self.session.account;
         self.granted = None;
         match placing {
             true => {
@@ -319,6 +322,9 @@ impl Trade {
             }
             if let Some(at) = view.sending.iter().position(|sent| *sent == op) {
                 view.sending.remove(at);
+            }
+            if view.session.account != account {
+                return;
             }
             let refused = match result {
                 Ok(Submitted::Applied { .. }) => {
@@ -345,15 +351,15 @@ impl Trade {
         .detach();
     }
 
-    /// Get practice funds. With every asset at its grant on the balances
-    /// on screen no op goes, as it would add nothing, and the reader is
-    /// told so; else the op goes, and says what it did once it landed.
+    /// Get practice funds. With every asset at its grant on balances read
+    /// since the last block that moved them, no op goes, as it would add
+    /// nothing, and the reader is told so; else the op goes, and says what
+    /// it did once it landed.
     pub(crate) fn fund(&mut self, cx: &mut Context<Self>) {
-        if self
-            .balances
-            .ready()
-            .is_some_and(|balances| at_grant(balances))
-        {
+        if !self.may_trade() {
+            return;
+        }
+        if matches!(&self.balances, Loadable::Ready(balances) if at_grant(balances)) {
             (self.refusal, self.granted) = (None, Some(words::AT_GRANT));
             return cx.notify();
         }
