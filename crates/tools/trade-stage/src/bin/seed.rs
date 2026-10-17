@@ -1,4 +1,4 @@
-//! What a lab stage is seeded with after its founding (`book.rs`): two
+//! What a lab stage is seeded with after its founding ([`book`]): two
 //! accounts with their practice funds, one's orders resting on both sides
 //! of BTC/USD, and two market orders of the other's that trade against
 //! them. `cargo run -p trade-stage --bin seed -- HISTORY OUT` reads the

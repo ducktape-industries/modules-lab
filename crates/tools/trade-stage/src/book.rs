@@ -1,9 +1,9 @@
 //! The book a lab stage is seeded with after its founding, so the view
 //! opens on a market that is alive: one account's orders resting on both
 //! sides of BTC/USD around the price the history ends at, and two market
-//! orders of another's that trade against them. The `seed` binary writes them as
-//! the bytes the node's CLI submits (`make live`); Trade's live example
-//! submits them to its fake node.
+//! orders of another's that trade against them. The `seed` binary writes
+//! them as the bytes the node's CLI submits (`make live`); Trade's live
+//! example submits them to its fake node.
 
 use trade::{ASSETS, LOT, MARKETS, Op, Side, UNIT};
 

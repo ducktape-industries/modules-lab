@@ -1,8 +1,8 @@
 //! `cargo run -p trade-view --example live`: Trade in the real app over a
 //! fake node (`view::rig`), founded and seeded as `make live` founds and
-//! seeds a lab stage (`crates/tools/trade-stage`): a
-//! week of every market's minutes, a maker's book around BTC/USD's last
-//! price, and the reader's two market orders that trade against it. Then
+//! seeds a lab stage (`crates/tools/trade-stage`): a week of every
+//! market's minutes, a maker's book around BTC/USD's last price, and the
+//! reader's two market orders that trade against it. Then
 //! the reader rests three limit orders and cancels a fourth, so every
 //! board has its rows: the book and the tape, the orders' lines on the
 //! chart, open orders, an order history with every state, fills and
