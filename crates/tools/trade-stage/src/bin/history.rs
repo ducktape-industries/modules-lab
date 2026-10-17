@@ -1,12 +1,11 @@
 //! Writes the founding's params of a lab stage, a borsh `Vec<History>`:
-//! the week of every market's minutes `walk.rs` makes up.
-//! `cargo run -p trade --example history -- OUT`.
+//! the week of every market's minutes [`walk`] makes up.
+//! `cargo run -p trade-stage --bin history -- OUT`.
 
 use std::{env, fs};
 
 use trade::{MARKETS, UNIT};
-
-mod walk;
+use trade_stage::walk;
 
 fn main() {
     let out = env::args().nth(1).expect("usage: history OUT");

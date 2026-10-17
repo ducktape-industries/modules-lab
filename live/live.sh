@@ -80,8 +80,8 @@ and this workspace pins programs $sdk.
 The app refuses a view built on another SDK line: pass APP_REF=<a ref of the app that pins $sdk>."
 
 "$MAKE" wasm-programs wasm-describes wasm-views wasm-notifiers
-cargo run -q -p trade --example history -- "$OUT/trade.params"
-cargo run -q -p trade --example seed -- "$OUT/trade.params" "$OUT/seed"
+cargo run -q -p trade-stage --bin history -- "$OUT/trade.params"
+cargo run -q -p trade-stage --bin seed -- "$OUT/trade.params" "$OUT/seed"
 
 # The node, the app and the founding programs published, with its founding.toml, in the
 # stage's programs/ (copied anew each build). `up` copies those only for a stage that has
@@ -90,8 +90,8 @@ cargo run -q -p trade --example seed -- "$OUT/trade.params" "$OUT/seed"
 
 # Each program as a founding takes it: its view (<program>-view), then its describe
 # module, then its notifier where it has one (<program>.notify.wasm, `make
-# wasm-notifiers`), each a custom section, by programs' own packer (`examples/pack.rs`).
-pack() { cargo run -q -p trade --example pack -- "$@"; }
+# wasm-notifiers`), each a custom section, by programs' own packer (`crates/tools/pack`).
+pack() { cargo run -q -p pack -- "$@"; }
 for program in $PROGRAMS; do
   name=$(echo "$program" | tr - _)
   pack ducktape.view "$RELEASE/$name.wasm" "$RELEASE/${name}_view.wasm" "$dir/programs/$name.wasm"

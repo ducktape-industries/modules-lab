@@ -1,5 +1,5 @@
-//! One program as a founding takes it: `cargo run -p trade --example pack
-//! -- SECTION PROGRAM PAYLOAD OUT` writes PROGRAM with PAYLOAD in it as the
+//! One program as a founding takes it: `cargo run -p pack --
+//! SECTION PROGRAM PAYLOAD OUT` writes PROGRAM with PAYLOAD in it as the
 //! custom section SECTION, `ducktape.view` (a view), `ducktape.describe`
 //! (a describe module) or `ducktape.notify` (a notifier), through
 //! programs' own packer (`founding::embed`, `founding::embed_describe`,

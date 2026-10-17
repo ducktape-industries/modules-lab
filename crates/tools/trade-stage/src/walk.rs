@@ -1,5 +1,5 @@
 //! A week of every market's minutes, made up: the history a lab stage is
-//! founded with (`main.rs` writes it for `make live`) and Trade's live
+//! founded with (the `history` binary writes it for `make live`) and Trade's live
 //! example founds its fake node with.
 //!
 //! A market walks from its own start. A minute closes where it opened,

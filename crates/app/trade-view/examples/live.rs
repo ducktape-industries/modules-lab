@@ -1,6 +1,6 @@
 //! `cargo run -p trade-view --example live`: Trade in the real app over a
 //! fake node (`view::rig`), founded and seeded as `make live` founds and
-//! seeds a lab stage (`trade`'s `examples/history` and `examples/seed`): a
+//! seeds a lab stage (`crates/tools/trade-stage`): a
 //! week of every market's minutes, a maker's book around BTC/USD's last
 //! price, and the reader's two market orders that trade against it. Then
 //! the reader rests three limit orders and cancels a fourth, so every
@@ -8,12 +8,8 @@
 //! chart, open orders, an order history with every state, fills and
 //! balances.
 use trade::{History, LOT, MARKETS, Op, Side, UNIT};
+use trade_stage::{book, walk};
 use view::rig::{self, Network};
-
-#[path = "../../trade/examples/seed/book.rs"]
-mod book;
-#[path = "../../trade/examples/history/walk.rs"]
-mod walk;
 
 /// ETH/USD and DUCK/USD, by their places in [`MARKETS`].
 const ETH: u8 = 1;

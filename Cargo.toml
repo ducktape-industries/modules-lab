@@ -6,7 +6,7 @@
 
 [workspace]
 resolver = "2"
-members = ["crates/app/trade", "crates/app/trade-view", "crates/app/arcade", "crates/app/arcade-view", "crates/app/huddle", "crates/app/browser-view", "crates/app/huddle-view", "crates/bots/tetris-bot", "crates/bots/trade-bot"]
+members = ["crates/app/trade", "crates/app/trade-view", "crates/app/arcade", "crates/app/arcade-view", "crates/app/huddle", "crates/app/browser-view", "crates/app/huddle-view", "crates/bots/tetris-bot", "crates/bots/trade-bot", "crates/tools/pack", "crates/tools/trade-stage"]
 
 [workspace.package]
 edition = "2024"
@@ -25,11 +25,11 @@ program = { git = "https://github.com/ducktape-industries/programs", rev = "2421
 store = { git = "https://github.com/ducktape-industries/programs", rev = "24217143f1cd826a65db34eb74b33a2bfd63846a" }
 describe = { git = "https://github.com/ducktape-industries/programs", rev = "24217143f1cd826a65db34eb74b33a2bfd63846a" }
 # The op that gives a key its account: what a live stage's seed sends first
-# (`crates/app/trade/examples/seed`), the market maker's account by its
+# (`crates/tools/trade-stage`), the market maker's account by its
 # key (`crates/bots/trade-bot`), and the profiles arcade-view reads names from.
 identity = { git = "https://github.com/ducktape-industries/programs", rev = "24217143f1cd826a65db34eb74b33a2bfd63846a" }
 # What packs a program with its view and its describe module, as a founding
-# takes it (`crates/app/trade/examples/pack.rs`, which `live/live.sh` runs).
+# takes it (`crates/tools/pack`, which `live/live.sh` runs).
 founding = { git = "https://github.com/ducktape-industries/programs", rev = "24217143f1cd826a65db34eb74b33a2bfd63846a" }
 # The chain id a live track's namespace starts with (`ChainId::of`), as the
 # app names it: what tetris-bot names the versus room by.

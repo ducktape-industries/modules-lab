@@ -26,4 +26,6 @@ serde_json.workspace = true
 # `examples/live.rs`: the view in the real app over the fake node, and the
 # order id its seed reads back
 view = { workspace = true, features = ["rig"] }
+# `examples/live.rs`: the history and the book a lab stage starts from
+trade-stage = { path = "../../tools/trade-stage" }
 borsh.workspace = true

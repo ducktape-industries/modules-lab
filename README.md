@@ -16,6 +16,8 @@ it is.
 | `crates/app/huddle-view` | its view: check your camera and microphone, then call people, on the SDK's `camera`, `microphone` and remote pieces; and, built with `notifier`, its notifier: a call ringing you |
 | `crates/bots/tetris-bot` | a Tetris versus player with an account of its own: a client of the node's live lane, playing the view's own match step |
 | `crates/bots/trade-bot` | Trade's market maker: a process off the chain that keeps every market's book two-sided and its price moving, through the node's own binary |
+| `crates/tools/pack` | one program as a founding takes it: its view, describe module or notifier packed in by programs' own packer; every program of a lab stage goes through it |
+| `crates/tools/trade-stage` | what a lab stage's Trade starts from: the week of every market's minutes (the founding's params) and the first book it is seeded with |
 
 The SDK is programs at the rev the app pins (`Cargo.toml`'s `sdk-line`),
 so the pin moves when the app's does.
@@ -37,12 +39,12 @@ A market's past is given at the founding: the program's params are a borsh
 before the founding block's. Each bar is written as its span's candle and
 folded into every coarser span's; a finer span starts with none. A history
 is candles, not trades: the tape and the fills start at the founding. With
-no params every market starts empty. `examples/history.rs` writes a week of
+no params every market starts empty. `crates/tools/trade-stage`'s `history` writes a week of
 every market's minutes, a seeded walk in integers, the same bytes on every
 run:
 
 ```sh
-cargo run -p trade --example history -- trade.params
+cargo run -p trade-stage --bin history -- trade.params
 ```
 
 ## trade-view
@@ -364,12 +366,12 @@ There is no runner that keeps one view alive without a node. What there is:
 
    It builds every program, its describe module and its view, packs those
    two into `<program>.wasm` as custom sections with programs' own
-   `founding` packer (`crates/app/trade/examples/pack.rs`), and founds stage `lab`
+   `founding` packer (`crates/tools/pack`), and founds stage `lab`
    (`STAGE=`) with them: the founding programs published for the rev this
    workspace pins, which `kit build` copies into the stage's `programs/`,
    with the lab's programs beside its own and `live/founding.toml`'s
    entries after them, the week of history as trade's params. Then it seeds the
-   stage with the ops `examples/seed.rs` writes. Wallet `dev`, the one the
+   stage with the ops `crates/tools/trade-stage`'s `seed` writes. Wallet `dev`, the one the
    app opens with, gets an account and its funds; a second wallet, `bo`,
    rests 36 orders around BTC/USD's last price; two market orders of
    `dev`'s trade against them. It ends with the command that opens the app
