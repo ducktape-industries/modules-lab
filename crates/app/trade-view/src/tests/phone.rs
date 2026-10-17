@@ -208,6 +208,47 @@ fn an_account_with_nothing_is_told_how_to_fill_it() {
 }
 
 #[test]
+fn a_grant_says_it_is_on_its_way_then_what_it_did() {
+    let (mut cx, ..) = phone();
+    cx.simulate_click("trade-balances");
+    cx.host().never::<Submit<trade::Trade>>();
+    cx.simulate_click("trade-fund");
+    shows(&cx, &["Getting practice funds\u{2026}"]);
+
+    let (mut cx, ..) = phone();
+    cx.simulate_click("trade-balances");
+    cx.simulate_click("trade-fund");
+    cx.run_until_parked();
+    assert_eq!(ops(&cx), [Op::Fund]);
+    shows(
+        &cx,
+        &[
+            "Get practice funds",
+            "Practice funds added: every asset is at its grant.",
+        ],
+    );
+}
+
+#[test]
+fn a_grant_with_every_asset_full_sends_nothing_and_says_so() {
+    let mut world = sample::board();
+    let full = |(asset, granted): (u8, &trade::Asset)| trade::Balance {
+        asset,
+        free: granted.grant,
+        held: 0,
+    };
+    world.balances = (0u8..).zip(&trade::ASSETS).map(full).collect();
+    let (mut cx, ..) = finger(world, Some(READER));
+    cx.simulate_click("trade-balances");
+    cx.simulate_click("trade-fund");
+    assert!(ops(&cx).is_empty());
+    shows(
+        &cx,
+        &["Every asset is at its grant already: nothing to add."],
+    );
+}
+
+#[test]
 fn buy_and_sell_open_the_ticket_on_their_side_and_a_level_at_its_price() {
     let (mut cx, view, _) = phone();
     btc(&mut cx);

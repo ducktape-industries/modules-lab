@@ -4,6 +4,7 @@
 //! over the same button.
 use trade::{ASSETS, Op};
 use view::AnyElement;
+use view::accesskit::Live;
 use view::design::space;
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
@@ -61,6 +62,7 @@ pub(super) fn page(view: &Trade, cx: &mut Context<Trade>, theme: &Theme) -> AnyE
     .child(
         scroller("trade-balances-page")
             .children(refusal(view.refused(|op| *op == Op::Fund), theme))
+            .children(view.granted.map(|said| granted(said, theme)))
             .child(body),
     )
     .into_any_element()
@@ -118,15 +120,34 @@ fn grant(view: &Trade, cx: &mut Context<Trade>, theme: &Theme) -> Div {
         )
 }
 
-/// Get practice funds: off while the reader may not, waiting while the
-/// grant is on its way.
+/// What the reader's last grant came to, over the balances it changed.
+fn granted(said: &'static str, theme: &Theme) -> Stateful<Div> {
+    div()
+        .id("trade-granted")
+        .px(space::BLOCK)
+        .py(space::MD)
+        .bg(theme.success_soft)
+        .text_type(LADDER.secondary)
+        .text_color(theme.success)
+        .role(Role::Status)
+        .aria_live(Live::Polite)
+        .child(said)
+}
+
+/// Get practice funds: off while the reader may not, saying it is on its
+/// way while the grant is (a busy button under a finger keeps its look).
 fn fund(
     view: &Trade,
     cx: &mut Context<Trade>,
     theme: &Theme,
 ) -> design::Button<impl Fn(&ClickEvent, &mut Window, &mut App) + 'static> {
-    let fund = cx.listener(|view: &mut Trade, _: &ClickEvent, _, cx| view.submit(Op::Fund, cx));
-    design::button("trade-fund", words::GET_FUNDS, LADDER, theme, fund)
+    let sending = view.is_sending(&Op::Fund);
+    let label = match sending {
+        true => words::GETTING_FUNDS,
+        false => words::GET_FUNDS,
+    };
+    let fund = cx.listener(|view: &mut Trade, _: &ClickEvent, _, cx| view.fund(cx));
+    design::button("trade-fund", label, LADDER, theme, fund)
         .enabled(view.may_trade())
-        .busy(view.is_sending(&Op::Fund))
+        .busy(sending)
 }

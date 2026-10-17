@@ -5,7 +5,7 @@
 use std::rc::Rc;
 
 use store::PageRequest;
-use trade::{MAX_ROWS, Op, Order, ask};
+use trade::{ASSETS, Balance, MAX_ROWS, Op, Order, ask};
 use view::Paged;
 use view::host::Page;
 use view::methods::Submitted;
@@ -51,7 +51,7 @@ impl Trade {
             // the rows on screen are another account's
             (self.balances, self.open) = (Loadable::Idle, Loadable::Idle);
             (self.history, self.fills) = (None, None);
-            self.refusal = None;
+            (self.refusal, self.granted) = (None, None);
             self.ticket.refusal.clear();
         }
         // a link that came back reads everything; else another account
@@ -290,7 +290,7 @@ impl Trade {
 
     /// One op to the program, from an account with a link: what it
     /// changed is read again. A refused order says why in the ticket, any
-    /// other op where it was pressed. While it is on its way the ticket is
+    /// other op where it was pressed, as a grant that landed says so. While it is on its way the ticket is
     /// placing, or the op is one of those `sending`; a cancel the program
     /// took waits on until the open orders are read again without it.
     pub(crate) fn submit(&mut self, op: Op, cx: &mut Context<Self>) {
@@ -298,6 +298,7 @@ impl Trade {
             return;
         }
         let placing = matches!(op, Op::Place { .. });
+        self.granted = None;
         match placing {
             true => {
                 self.ticket.refusal.clear();
@@ -326,6 +327,8 @@ impl Trade {
                     }
                     if cancels(&op) {
                         view.settling.push(op);
+                    } else if op == Op::Fund {
+                        view.granted = Some(words::FUNDED);
                     }
                     return view.refresh(cx);
                 }
@@ -341,6 +344,30 @@ impl Trade {
         })
         .detach();
     }
+
+    /// Get practice funds. With every asset at its grant on the balances
+    /// on screen no op goes, as it would add nothing, and the reader is
+    /// told so; else the op goes, and says what it did once it landed.
+    pub(crate) fn fund(&mut self, cx: &mut Context<Self>) {
+        if self
+            .balances
+            .ready()
+            .is_some_and(|balances| at_grant(balances))
+        {
+            (self.refusal, self.granted) = (None, Some(words::AT_GRANT));
+            return cx.notify();
+        }
+        self.submit(Op::Fund, cx);
+    }
+}
+
+/// Whether each asset of `balances` is at its grant or over it, its
+/// resting orders' share counted, as `Op::Fund` counts it.
+fn at_grant(balances: &[Balance]) -> bool {
+    (0u8..).zip(&ASSETS).all(|(asset, granted)| {
+        let has = balances.iter().find(|balance| balance.asset == asset);
+        has.is_some_and(|has| has.free.saturating_add(has.held) >= granted.grant)
+    })
 }
 
 /// Whether `op` cancels the reader's open orders: one, or all of them.
