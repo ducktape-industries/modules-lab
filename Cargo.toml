@@ -25,7 +25,7 @@ program = { git = "https://github.com/ducktape-industries/programs", rev = "2421
 store = { git = "https://github.com/ducktape-industries/programs", rev = "24217143f1cd826a65db34eb74b33a2bfd63846a" }
 describe = { git = "https://github.com/ducktape-industries/programs", rev = "24217143f1cd826a65db34eb74b33a2bfd63846a" }
 # The op that gives a key its account: what a live stage's seed sends first
-# (`crates/app/trade/examples/seed.rs`), the market maker's account by its
+# (`crates/app/trade/examples/seed`), the market maker's account by its
 # key (`crates/bots/trade-bot`), and the profiles arcade-view reads names from.
 identity = { git = "https://github.com/ducktape-industries/programs", rev = "24217143f1cd826a65db34eb74b33a2bfd63846a" }
 # What packs a program with its view and its describe module, as a founding
