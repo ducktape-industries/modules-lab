@@ -10,7 +10,7 @@ use gpui::point;
 use view::Canvas;
 use view::prelude::*;
 
-use crate::games::{Fact, Rng, square};
+use crate::games::{Area, Fact, Rng, Still, square};
 
 pub(crate) const COLS: i32 = 24;
 pub(crate) const ROWS: i32 = 16;
@@ -184,10 +184,24 @@ impl Snake {
     }
 }
 
-/// The hub's picture of the game: a snake turning toward its food, in the
-/// middle of its 208 x 120 px.
-pub(crate) fn preview(theme: &Theme) -> Canvas {
-    let (cell, left, top) = (12., 48., 18.);
+/// A cell of the hub's picture, and its grid's top left in
+/// [`STILL`](crate::games::STILL).
+const PICTURE_CELL: f32 = 12.;
+const PICTURE_AT: (f32, f32) = (48., 0.);
+
+/// The part of [`STILL`](crate::games::STILL) the picture draws on: the
+/// grid's columns 0 to 9 and rows 3 to 5, the body's and the food's.
+pub(crate) const DRAWN: Area = (
+    PICTURE_AT.0,
+    PICTURE_AT.1 + 3. * PICTURE_CELL,
+    10. * PICTURE_CELL,
+    3. * PICTURE_CELL,
+);
+
+/// The hub's picture of the game: a snake turning toward its food, where
+/// `still` puts it.
+pub(crate) fn preview(still: Still, theme: &Theme) -> Canvas {
+    let (cell, (left, top)) = (PICTURE_CELL, PICTURE_AT);
     let body = [
         (0, 5),
         (1, 5),
@@ -201,16 +215,16 @@ pub(crate) fn preview(theme: &Theme) -> Canvas {
     ];
     let mut drawn = canvas().size_full();
     for (x, y) in body {
-        let at = square(
+        let at = still.square(
             left + x as f32 * cell + 1.,
-            top + y as f32 * cell - 18.,
+            top + y as f32 * cell,
             cell - 2.,
             cell - 2.,
         );
         drawn = drawn.rect(at, theme.foreground);
     }
-    let food = point(px(left + 9.5 * cell), px(top + 3.5 * cell - 18.));
-    drawn.circle(food, px(4.), theme.danger)
+    let food = still.point(left + 9.5 * cell, top + 3.5 * cell);
+    drawn.circle(food, still.length(4.), theme.danger)
 }
 
 #[cfg(test)]

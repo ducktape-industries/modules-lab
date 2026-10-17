@@ -8,7 +8,13 @@
 //! paused or over, an overlay and the top ten. Each game is one file of
 //! its rules and its board's drawing (`tetris.rs`, `snake.rs`, `merge.rs`
 //! for 2048, `mines.rs`, `breakout.rs`, `invaders.rs`), behind one enum
-//! (`games.rs`). `data.rs` is everything the view follows and asks.
+//! (`games.rs`). `data.rs` is everything the view follows and asks, and
+//! `words.rs` what both trees say.
+//!
+//! Two designs, the model shared: under a pointer the desktop's tree
+//! (`ui.rs`, the hub, the games and versus), under a finger the phone's
+//! (`ui/phone/`), where no game is played and the boards are read. The
+//! root picks one once.
 //!
 //! A game runs on the host's clock: `clock.ticks` delivers one item per
 //! redraw however far behind the host is, with no time on it, so a tick
@@ -27,13 +33,14 @@ mod mines;
 mod play;
 mod snake;
 pub mod tetris;
+mod ui;
 pub mod versus;
+mod words;
 
-use gpui::relative;
 use serde::{Deserialize, Serialize};
 use view::prelude::*;
 
-use data::Row;
+use data::Board;
 use games::Game;
 use versus::Versus;
 
@@ -48,9 +55,13 @@ pub struct Arcade {
     /// The reader's best of every game, as the program keeps it.
     #[serde(skip)]
     pub(crate) bests: Loadable<Vec<u64>>,
-    /// The open game's top ten, each with its account's name.
+    /// What identity calls the reader.
     #[serde(skip)]
-    pub(crate) board: Loadable<Vec<Row>>,
+    pub(crate) reader_name: Loadable<String>,
+    /// The board open: the open game's on the desktop, the one the reader
+    /// opened on the phone.
+    #[serde(skip)]
+    pub(crate) board: Board,
     /// The clock while a game runs: its period, and the subscription,
     /// which ends when it is dropped.
     #[serde(skip)]
@@ -97,7 +108,7 @@ pub(crate) enum Post {
 }
 
 impl View for Arcade {
-    const NAME: &'static str = "Arcade";
+    const NAME: &'static str = words::ARCADE;
     const DESCRIPTION: &'static str = "Tetris, Snake, 2048, Minesweeper, Breakout and Space Invaders, with a board of everyone's best scores, and Tetris versus.";
     const ICON: &'static str = "icons/gamepad-2.svg";
     const CAPABILITIES: &'static [Capability] = &[
@@ -116,27 +127,15 @@ impl View for Arcade {
 
 impl Render for Arcade {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = *cx.global::<Theme>();
-        let ladder = &design::ladder(window.touch());
         let size = window.viewport_size();
         self.viewport = (size.width.into(), size.height.into());
-        let screen = match (self.versus.is_some(), self.play.is_some()) {
-            (true, _) => self
-                .versus_screen(window, cx, ladder, &theme)
-                .into_any_element(),
-            (false, true) => self.play_screen(cx, ladder, &theme).into_any_element(),
-            (false, false) => self.hub(cx, &theme).into_any_element(),
-        };
-        div()
-            .id("arcade")
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(theme.background)
-            .text_color(theme.foreground)
-            .text_size(design::text::BODY)
-            .line_height(relative(1.3))
-            .child(screen)
+        // one wasm, two designs, the model shared: a finger gets the
+        // phone's screens, a pointer the desktop's
+        if window.touch() {
+            ui::phone::render(self, cx)
+        } else {
+            ui::render(self, window, cx)
+        }
     }
 }
 

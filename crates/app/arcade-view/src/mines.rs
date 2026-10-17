@@ -14,7 +14,7 @@ use gpui::point;
 use view::prelude::*;
 use view::{Canvas, Div, FontWeight};
 
-use crate::games::{Fact, Rng, square};
+use crate::games::{Area, Fact, Rng, Still, square};
 
 pub(crate) const COLS: i32 = 16;
 pub(crate) const ROWS: i32 = 16;
@@ -359,18 +359,34 @@ fn neighbours((x, y): (i32, i32)) -> impl Iterator<Item = (i32, i32)> {
         .filter(|(x, y)| (0..COLS).contains(x) && (0..ROWS).contains(y))
 }
 
-/// The hub's picture of the game: a corner of a field half cleared.
-pub(crate) fn preview(theme: &Theme) -> Canvas {
-    let cell = 14.;
-    let shown = [
-        "##....##", "#.....##", "#......#", "##.....#", "###..###", "########",
-    ];
+/// The hub's picture of the game: a corner of a field half cleared, a
+/// `#` a covered cell.
+const PICTURE: [&str; 6] = [
+    "##....##", "#.....##", "#......#", "##.....#", "###..###", "########",
+];
+
+/// A cell of [`PICTURE`], and its top left in
+/// [`STILL`](crate::games::STILL).
+const PICTURE_CELL: f32 = 14.;
+const PICTURE_AT: (f32, f32) = (48., 18.);
+
+/// The part of [`STILL`](crate::games::STILL) the picture draws on.
+pub(crate) const DRAWN: Area = (
+    PICTURE_AT.0,
+    PICTURE_AT.1,
+    PICTURE[0].len() as f32 * PICTURE_CELL,
+    PICTURE.len() as f32 * PICTURE_CELL,
+);
+
+/// [`PICTURE`] with a flag on it, where `still` puts it.
+pub(crate) fn preview(still: Still, theme: &Theme) -> Canvas {
+    let (cell, (left, top)) = (PICTURE_CELL, PICTURE_AT);
     let mut drawn = canvas().size_full();
-    for (y, row) in shown.iter().enumerate() {
+    for (y, row) in PICTURE.iter().enumerate() {
         for (x, mark) in row.chars().enumerate() {
-            let at = square(
-                48. + x as f32 * cell,
-                18. + y as f32 * cell,
+            let at = still.square(
+                left + x as f32 * cell,
+                top + y as f32 * cell,
                 cell - 1.,
                 cell - 1.,
             );
@@ -383,13 +399,16 @@ pub(crate) fn preview(theme: &Theme) -> Canvas {
             );
         }
     }
-    let pole = 48. + 7. * cell + 5.;
+    let pole = left + 7. * cell + 5.;
     drawn
         .rect(
-            square(pole, 18. + 4. * cell + 3., 1.5, 7.),
+            still.square(pole, top + 4. * cell + 3., 1.5, 7.),
             theme.foreground,
         )
-        .rect(square(pole, 18. + 4. * cell + 3., 4., 3.), theme.danger)
+        .rect(
+            still.square(pole, top + 4. * cell + 3., 4., 3.),
+            theme.danger,
+        )
 }
 
 #[cfg(test)]
